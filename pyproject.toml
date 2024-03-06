@@ -1,5 +1,5 @@
 [project]
-name = "examplepyapp"
+name = "usansred"
 description = "Example Python repo for neutrons"
 dynamic = ["version"]
 requires-python = ">=3.10"
@@ -36,7 +36,7 @@ dirty = "{version}+d{build_date:%Y%m%d}"
 distance-dirty = "{next_version}.dev{distance}+d{build_date:%Y%m%d%H%M}"
 
 [tool.versioningit.write]
-file = "src/packagenamepy/_version.py"
+file = "src/usansred/_version.py"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -46,7 +46,7 @@ exclude = ["tests*", "scripts*", "docs*", "notebooks*"]
 "*" = ["*.yml","*.yaml","*.ini"]
 
 [project.gui-scripts]
-packagenamepy = "packagenamepy.packagename:gui"
+usansred = "usansred.usansred:gui"
 
 
 [tool.pytest.ini_options]

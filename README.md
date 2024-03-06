@@ -60,15 +60,8 @@ After you create a new repository using this repo as template, please follow the
     8.5 Python is moving away from `setup.cfg`/`setup.py`, and we would like to follow the trend for our new projects.
 
 
-9. Specify package name at  src/packagenamepy
+9. Specify package name at  src/usansred
 
-
-10. Specify package name at: src/packagenamepy/packagename.py
-
-11. If a GUI isn't used, delete the MVP structure at src/packagenamepy:
-    11.1: mainwindow.py
-    11.2: home/
-    11.3: help/
 
 
 11. Clear the content of this file and add your own README.md as the project README file. We recommend putting badges of the project status at the top of the README file. For more information about badges, please refer to [shields.io](https://shields.io/).
