@@ -79,11 +79,11 @@ class Scan:
         """
         Load experiment data files
         """
-        self.loadMonitorFile()
+        self.load_monitor_file()
         self.loadDetectorFile()
         return
 
-    def loadMonitorFile(self):
+    def load_monitor_file(self):
         """
         Load monitor file
         """
@@ -98,8 +98,8 @@ class Scan:
         """
         Load detector file
         """
-        XYData = []
-        IQData = []
+        xy_data = []
+        iq_data = []
 
         for bank in range(self.numOfBanks):
             filePath = os.path.join(
@@ -108,13 +108,13 @@ class Scan:
 
             # self.detectorData['FilePath'].append( filePath )
 
-            XYData = self.readXYFile(filePath)
-            IQData = self.convertXYToIQData(XYData)
+            xy_data = self.readXYFile(filePath)
+            iq_data = self.convertXYToIQData(xy_data)
 
             self.detectorData.append(
                 {
-                    "XYData": copy.deepcopy(XYData),
-                    "IQData": copy.deepcopy(IQData),
+                    "XYData": copy.deepcopy(xy_data),
+                    "IQData": copy.deepcopy(iq_data),
                     "FilePath": filePath,
                 }
             )

@@ -10,6 +10,9 @@ dependencies:
   - scipy
   - pandas
   - matplotlib
+  - pip
+  - pip:
+    - git+https://github.com/peterfpeterson/finddata@v0.8.4
   # Development dependencies
   - pre-commit
   - boa
