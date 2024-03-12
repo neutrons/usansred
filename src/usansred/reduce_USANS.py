@@ -1,10 +1,14 @@
-#!/usr/bin/env python
-import os
-import sys
-import math
+# standard imports
 import json
 import logging
+import math
+import os
+import sys
 import traceback
+import warnings
+
+# third-party imports
+# from debugpy.common.log import newline
 from mantid.simpleapi import (
     mtd,
     ConvertTableToMatrixWorkspace,
@@ -15,11 +19,9 @@ from mantid.simpleapi import (
     SumSpectra,
     Rebin,
 )
-import warnings
+from matplotlib import use
 import numpy as np
 
-# from debugpy.common.log import newline
-from matplotlib import use
 
 use("agg")
 np.seterr(all="ignore")

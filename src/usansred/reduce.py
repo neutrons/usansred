@@ -1,11 +1,13 @@
-#!/usr/bin/env python
+# standard imports
+import copy
+import logging
 import os
 import csv
 import math
+
+# third-party imports
 import numpy
-import copy
 from scipy.optimize import curve_fit
-import logging
 
 
 """summary.py: summary of the reduced data."""

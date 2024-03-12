@@ -1,10 +1,9 @@
-#!/usr/bin/env python
-
-import os
+# standard imports
 import csv
-import sys
-import pandas
 import logging
+import os
+import pandas
+import sys
 
 """summary.py: summary of the reduced data."""
 # from mpmath import fp
