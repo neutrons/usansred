@@ -9,14 +9,14 @@ repos:
       args: [--allow-multiple-documents]
       exclude: "conda.recipe/meta.yaml"
     - id: end-of-file-fixer
-      exclude: "tests/cis_tests/.*"
+      exclude: "tests/data/.*"
     - id: trailing-whitespace
-      exclude: "tests/cis_tests/.*"
+      exclude: "tests/data/.*"
 - repo: https://github.com/astral-sh/ruff-pre-commit
   rev: v0.2.2
   hooks:
     - id: ruff
       args: [--fix, --exit-non-zero-on-fix]
-      exclude: "tests/cis_tests/.*"
+      exclude: "tests/data/.*"
     - id: ruff-format
-      exclude: "tests/cis_tests/.*"
+      exclude: "tests/data/.*"
