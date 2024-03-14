@@ -1,6 +1,6 @@
 [project]
 name = "usansred"
-description = "Example Python repo for neutrons"
+description = "Reduction backend for USANS"
 dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
@@ -9,7 +9,7 @@ dependencies = [
 license = { text = "MIT" }
 
 [project.urls]
-homepage = "https://github.com/neutrons/python_project_template/"  # if no homepage, use repo url
+homepage = "https://github.com/neutrons/usansred/"
 
 [build-system]
 requires = [
@@ -44,9 +44,6 @@ exclude = ["tests*", "scripts*", "docs*", "notebooks*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yml","*.yaml","*.ini"]
-
-[project.gui-scripts]
-usansred = "usansred.usansred:gui"
 
 
 [tool.pytest.ini_options]

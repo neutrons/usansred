@@ -7,6 +7,7 @@ dependencies:
   - python=3.10
   - versioningit
   - mantid=6.8.0
+  - numpy
   - scipy
   - pandas
   - matplotlib
@@ -14,6 +15,7 @@ dependencies:
   - pip:
     - git+https://github.com/peterfpeterson/finddata@v0.8.4
   # Development dependencies
+  - setuptools
   - pre-commit
   - boa
   - conda-build < 4  # conda-build 24.x has a bug, missing update_index from conda_build.index
