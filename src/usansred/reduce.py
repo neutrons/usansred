@@ -1,19 +1,19 @@
 # standard imports
+import argparse
 import copy
 import logging
 import os
 import csv
 import math
+import warnings
 
 # third-party imports
+from scipy.optimize import differential_evolution
 import numpy
 from scipy.optimize import curve_fit
 
-
-"""summary.py: summary of the reduced data."""
-# from mpmath import fp
-# from openpyxl import chartsheet
-# from numpy.distutils.exec_command import filepath_from_subprocess_output
+# usansred imports
+from usansred.summary import reportFromCSV
 
 __author__ = "Yingrui Shang"
 __copyright__ = "Copyright 2021, NSD, ORNL"
@@ -442,9 +442,6 @@ class Sample:
         initVals = [3.8e-6, 0.1, 0.8]
         peakArea = None
         qOffset = None
-
-        from scipy.optimize import differential_evolution
-        import warnings
 
         # function for genetic algorithm to minimize (sum of squared error)
         def sumOfSquaredError(parameterTuple):
@@ -1029,9 +1026,6 @@ class Experiment:
 
 
 if __name__ == "__main__":
-    from usansred.summary import reportFromCSV
-    import argparse
-
     parser = argparse.ArgumentParser(description="USANS data reduction at ORNL.")
     # parser.add_argument('csv file', metavar='csv_file', type=string, nargs='+',
     #                    help='path to the csv data file')
