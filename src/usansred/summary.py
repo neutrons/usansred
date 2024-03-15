@@ -1,3 +1,5 @@
+"""summary.py: summary of the reduced data."""
+
 # standard imports
 import csv
 import logging
@@ -5,9 +7,6 @@ import os
 import pandas
 import sys
 
-"""summary.py: summary of the reduced data."""
-# from mpmath import fp
-# from openpyxl import chartsheet
 __author__ = "Yingrui Shang"
 __copyright__ = "Copyright 2021, NSD, ORNL"
 
@@ -17,8 +16,6 @@ console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logging.getLogger("").addHandler(console)
 __all__ = ["reportFromCSV"]
-
-
 suffix = 0
 
 

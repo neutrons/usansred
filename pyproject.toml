@@ -11,6 +11,9 @@ license = { text = "MIT" }
 [project.urls]
 homepage = "https://github.com/neutrons/usansred/"
 
+[project.scripts]
+reduceUSANS = "usansred.reduce_USANS:main"
+
 [build-system]
 requires = [
   "setuptools >= 40.6.0",

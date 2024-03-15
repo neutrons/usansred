@@ -1,4 +1,5 @@
 # standard imports
+import csv
 import json
 import logging
 import math
@@ -22,6 +23,9 @@ from mantid.simpleapi import (
 from matplotlib import use
 import numpy as np
 
+# usansred imports
+from usansred import reduce
+from usansred.summary import reportFromCSV
 
 use("agg")
 np.seterr(all="ignore")
@@ -56,11 +60,12 @@ def get_sequence_info(seq_file):
     return seq_dict
 
 
-if __name__ == "__main__":
+def main():
     # check number of arguments
     if len(sys.argv) != 3:
         print("autoreduction code requires a filename and an output directory")
-        sys.exit()
+        sys.exit(1)
+
     if not (os.path.isfile(sys.argv[1])):
         print("data file ", sys.argv[1], " not found")
         sys.exit()
@@ -91,9 +96,8 @@ if __name__ == "__main__":
     roi_min = (
         mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Min").value[-1]
     )
-    roi_step = (
-        mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Size").value[-1]
-    )
+    # roi_step = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Size").value[-1]
+
     # Reference to the item in the wavelength array
     main_index = 1
     for i in range(1, 8):
@@ -469,8 +473,6 @@ if __name__ == "__main__":
     else:
         pass
 
-    import csv
-
     autocsvfile = os.path.join(outdir, "auto.csv")
 
     with open(autocsvfile, "w", newline="") as autocsv:
@@ -485,9 +487,6 @@ if __name__ == "__main__":
 
     sys.path.insert(2, "/SNS/USANS/shared/autoreduce/usans-reduction")
 
-    from usansred import reduce
-    from usansred.summary import reportFromCSV
-
     autodir = os.path.join(outdir, "auto")
     if not os.path.exists(autodir):
         os.makedirs(autodir)
@@ -498,3 +497,7 @@ if __name__ == "__main__":
     reportFromCSV(autocsvfile, exp.outputFolder)
 
     # seq_dict = get_sequence_info(os.path.join(outdir, "scan_%s.json" % sequence_first_run))
+
+
+if __name__ == "__main__":
+    main()
