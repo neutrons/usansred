@@ -12,7 +12,7 @@
 {% set build_number = 0 %}
 
 package:
-  name: mypackagename
+  name: usansred
   version: {{ version_number }}
 
 source:
@@ -35,10 +35,19 @@ requirements:
 
   run:
     - python
+    - mantid=6.8.0
+    - numpy
+    - scipy
+    - pandas
+    - matplotlib
+
+tests:
+  imports:
+    - usansred
 
 about:
   home: {{ url }}
   license: {{ license }}
-  license_family: GPL
+  license_family: MIT
   license_file: ../LICENSE
   summary: {{ description }}
