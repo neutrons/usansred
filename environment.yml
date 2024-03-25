@@ -15,6 +15,7 @@ dependencies:
   - pip:
     - git+https://github.com/peterfpeterson/finddata@v0.8.4
   # Development dependencies
+  - libarchive
   - setuptools
   - pre-commit
   - boa
