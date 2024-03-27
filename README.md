@@ -39,3 +39,14 @@ synchronized across these files:
 - environment.yml
 - conda.recipe/meta.yml
 - .github/workflows/package.yml
+
+## Read *the* Docs
+A repository webhook is setup to automatically trigger the latest documentation build.
+
+### Manual build
+You can manually trigger a build in your working directory with the following:
+```
+cd docs
+make clean html
+```
+This creates the html files at `docs/build/html`
