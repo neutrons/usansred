@@ -21,6 +21,10 @@ install the package in development mode with `pip`:
 By installing the package in development mode, one doesn't need to re-install package `usanred` in conda
 environment `usansred` after every change to the source code.
 
+pre-commit Hooks
+----------------
+
+
 Updating mantid dependency
 --------------------------
 The mantid version and the mantid conda channel (`mantid/label/main` or `mantid/label/nightly`) **must** be
