@@ -29,8 +29,8 @@ line-length = 119
 [tool.ruff]
 line-length = 120
 # https://beta.ruff.rs/docs/rules/
-select = ["A", "ARG", "BLE", "E", "F", "I", "PT"]
-ignore = ["F403", "F405", "F401", # wild imports and  unknown names
+lint.select = ["A", "ARG", "BLE", "E", "F", "I", "PT"]
+lint.ignore = ["F403", "F405", "F401", # wild imports and  unknown names
 ]
 
 [tool.versioningit.vcs]
