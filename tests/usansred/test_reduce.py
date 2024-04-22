@@ -64,13 +64,10 @@ def test_main(mock_parse_arguments, data_server, tmp_path):
     reduceUSANS()
     # compare the content of output files with files containing expected results
     goldendir = os.path.join(os.path.dirname(mock_args.path), "reduced")  # where the expected content resides
-    names = ["EmptyPCell", "S115_dry", "S115_pc3"]
-    suffixes = ["", "_lbs", "_lb", "_unscaled"]
-    for name in names:
-        for suffix in suffixes:
+    for name in ["EmptyPCell", "S115_dry", "S115_pc3"]:
+        for suffix in ["", "_lbs", "_lb", "_unscaled"]:
             filename = f"UN_{name}_det_1{suffix}.txt"
-            output = os.path.join(tmp_path, filename)
-            expected = os.path.join(goldendir, filename)
+            output, expected = os.path.join(tmp_path, filename), os.path.join(goldendir, filename)
             if os.path.exists(expected):  # file "UN_EmptyPCell_det_1_lbs.txt" does not exist
                 compare_lines(output, expected)
 
