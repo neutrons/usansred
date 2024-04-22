@@ -39,6 +39,7 @@ requirements:
     - numpy
     - scipy
     - pandas
+    - xlsxwriter
     - matplotlib
 
 tests:
