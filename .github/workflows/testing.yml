@@ -1,4 +1,4 @@
-name: unit-test
+name: testing
 
 on:
   workflow_dispatch:
@@ -29,7 +29,11 @@ jobs:
       - name: run unit tests
         run: |
           echo "running unit tests"
-          python -m pytest --cov=src --cov-report=xml --cov-report=term-missing tests/
+          python -m pytest -m "not datarepo and not sns_mounted" --cov=src --cov-report=xml --cov-report=term-missing tests/
+      - name: run integration tests
+        run: |
+          echo "running integration tests"
+          python -m pytest -m "datarepo" --cov=src --cov-report=xml --cov-report=term-missing tests/
       - name: upload coverage to codecov
         uses: codecov/codecov-action@v1
       - name: build conda package
