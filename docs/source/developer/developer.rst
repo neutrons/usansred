@@ -61,7 +61,11 @@ An intro to Git LFS in the context of the Neutron Data Project is found in the
 (login required).
 
 
+Coverage reports
+----------------
 
+GitHuh actions create reports for unit and integration tests, then combine into one report and upload it to
+`Codecov <https://app.codecov.io/gh/neutrons/usansred>`_.
 
 
 Building the documentation
