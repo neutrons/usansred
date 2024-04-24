@@ -29,18 +29,21 @@ jobs:
       - name: run unit tests
         run: |
           echo "running unit tests"
-          python -m pytest -m "not datarepo and not sns_mounted" --cov=src --cov-report=xml --cov-report=term-missing tests/
+          python -m pytest -vv -m "not datarepo and not sns_mounted" --cov=src --cov-report=xml --cov-report=term-missing tests/
           mv .coverage .coverage.unit
       - name: run integration tests
         run: |
           echo "running integration tests"
-          python -m pytest -m "datarepo" --cov=src --cov-report=xml  --cov-report=term-missing tests/
+          git submodule update --init
+          python -m pytest -vv -m "datarepo" --cov=src --cov-report=xml  --cov-report=term-missing tests/
           mv .coverage .coverage.integration
       - name: combine coverage reports
         run: |
           coverage combine  # merge all .coverage.* files into .coverage
       - name: upload coverage to codecov
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: build conda package
         run: |
           # set up environment
