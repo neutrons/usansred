@@ -936,14 +936,14 @@ class Experiment:
         )  # The working folder for this experiment, default is current folder
         self.samples = []
         self.logbin = logbin
+        self.outputFolder = outputFolder
 
-        if outputFolder is None:
+        if bool(outputFolder) is False:  # in case `outputFolder` is an empty string
             self.outputFolder = os.path.join(self.folder, "reduced")
         self.numOfBanks = 4
 
         if not os.path.exists(csvFilePath):
-            logging.info(f"The file path: {csvFilePath} does not exist")
-            raise
+            raise FileNotFoundError(f"The file path: {csvFilePath} does not exist")
 
         self.folder = os.path.dirname(csvFilePath)
 
@@ -988,17 +988,14 @@ class Experiment:
         """
         if outputFolder is not None:
             self.outputFolder = outputFolder
-
         if not os.path.exists(self.outputFolder):
             os.makedirs(self.outputFolder)
+
         try:
             self.background.reduce()
-
         except:  # noqa E722
             msg = "Cannot reduce background" + self.background.name
             logging.info(msg)
-
-            # traceback.print_exc()
 
         for sample in self.samples:
             try:
@@ -1025,27 +1022,24 @@ class Experiment:
         self.background.dumpReducedDataToCSV()
 
 
-if __name__ == "__main__":
+def parse_arguments():
     parser = argparse.ArgumentParser(description="USANS data reduction at ORNL.")
-    # parser.add_argument('csv file', metavar='csv_file', type=string, nargs='+',
-    #                    help='path to the csv data file')
     parser.add_argument(
         "-l", "--logbin", help="flag of logbinning", action="store_true"
     )
-
+    parser.add_argument("-o", "--output", help="output directory", default="")
     parser.add_argument("path")
+    return parser.parse_args()
 
-    args = parser.parse_args()
 
-    # target_csvfile = sys.path(args.path)
-
+def main():
+    args = parse_arguments()
     if not os.path.exists(args.path):
-        print("The csv file doesn't exist")
-        raise SystemExit(1)
-
-    # csvFile = sys.argv[1]
-
-    exp = Experiment(args.path, logbin=args.logbin)
+        raise FileNotFoundError(f"The csv file {args.path} doesn't exist")
+    exp = Experiment(args.path, logbin=args.logbin, outputFolder=args.output)
     exp.reduce()
-
     reportFromCSV(args.path, exp.outputFolder)
+
+
+if __name__ == "__main__":
+    main()

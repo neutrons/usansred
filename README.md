@@ -1,5 +1,6 @@
 # USANSRED
 Backend code for the reduction of USANS data.
+(originally forked from https://code.ornl.gov/rys/usans-reduction/)
 
 5. Having code coverage, `codecov.yaml` is **strongly recommended**, please refer to [Code coverage](https://coverage.readthedocs.io/en/coverage-5.5/) for more information.
 
@@ -24,29 +25,9 @@ Backend code for the reduction of USANS data.
     8.5 Python is moving away from `setup.cfg`/`setup.py`, and we would like to follow the trend for our new projects.
 
 
-9. Specify package name at  src/usansred
-
-
-
 11. Clear the content of this file and add your own README.md as the project README file. We recommend putting badges of the project status at the top of the README file. For more information about badges, please refer to [shields.io](https://shields.io/).
 
 
-# Developer's corner
+# Developer
 
-## Updating mantid dependency
-The mantid version and the mantid conda channel (`mantid/label/main` or `mantid/label/nightly`) **must** be
-synchronized across these files:
-- environment.yml
-- conda.recipe/meta.yml
-- .github/workflows/package.yml
-
-## Read *the* Docs
-A repository webhook is setup to automatically trigger the latest documentation build.
-
-### Manual build
-You can manually trigger a build in your working directory with the following:
-```
-cd docs
-make clean html
-```
-This creates the html files at `docs/build/html`
+Developer documentation at [readthedocs]()https://usansred.readthedocs.io/en/latest/source/developer.html

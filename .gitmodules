@@ -1,0 +1,3 @@
+[submodule "tests/usansred-data"]
+	path = tests/usansred-data
+	url = https://code.ornl.gov/sns-hfir-scse/infrastructure/test-data/usansred-data.git

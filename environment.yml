@@ -10,6 +10,7 @@ dependencies:
   - numpy
   - scipy
   - pandas
+  - xlsxwriter
   - matplotlib
   - pip
   - pip:

@@ -1,17 +1,29 @@
-.. Purpose: The root document of the project, which serves as welcome page and contains the root
-.. of the "table of contents tree" (or toctree).
-   
-usansred project documentation
-==============================================================
-.. note::
+.. usansred documentation root file
 
-   This project is under active development.
+Welcome to usansred documentation
+=================================
+
+User Guide
+----------
+
+.. toctree::
+   :titlesonly:
+
+   /source/user/conda_environments
+   /source/user/reduce
+
+Developer Guide
+---------------
+
+.. toctree::
+   :titlesonly:
+
+   /source/developer/developer
 
 Contents
 ---------
 
 .. toctree::
-   :maxdepth: 1
+   :titlesonly:
 
    source/reference
-

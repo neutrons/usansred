@@ -12,7 +12,7 @@ license = { text = "MIT" }
 homepage = "https://github.com/neutrons/usansred/"
 
 [project.scripts]
-reduceUSANS = "usansred.reduce_USANS:main"
+reduceUSANS = "usansred.reduce:main"
 
 [build-system]
 requires = [
@@ -25,6 +25,13 @@ build-backend = "setuptools.build_meta"
 
 [tool.black]
 line-length = 119
+
+[tool.ruff]
+line-length = 120
+# https://beta.ruff.rs/docs/rules/
+lint.select = ["A", "ARG", "BLE", "E", "F", "I", "PT"]
+lint.ignore = ["F403", "F405", "F401", # wild imports and  unknown names
+]
 
 [tool.versioningit.vcs]
 method = "git"
@@ -57,7 +64,8 @@ testpaths = ["tests"]
 python_files = ["test*.py"]
 norecursedirs = [".git", "tmp*", "_tmp*", "__pycache__", "*dataset*", "*data_set*"]
 markers = [
-    "mymarker: example markers goes here"
+    "datarepo: using repository usansred-data",
+    "sns_mounted: requires the /SNS filesystem"
 ]
 
 [tool.pylint]
