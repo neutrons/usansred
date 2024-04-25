@@ -1,16 +1,16 @@
 # standard imports
 import argparse
 import copy
-import logging
-import os
 import csv
+import logging
 import math
+import os
 import warnings
 
-# third-party imports
-from scipy.optimize import differential_evolution
 import numpy
-from scipy.optimize import curve_fit
+
+# third-party imports
+from scipy.optimize import curve_fit, differential_evolution
 
 # usansred imports
 from usansred.summary import reportFromCSV
@@ -56,15 +56,8 @@ class Scan:
             "FilePath": None,
         }
 
-        self.detectorData = []
-        """
-        list of
-        {
-            'XYData':None,
-            'IQData':None,
-            'FilePath':[],
-            }
-        """
+        self.detectorData = []  # a list of items {'XYData':None, 'IQData':None, 'FilePath':[]}
+
         self.load()
 
         return
@@ -87,9 +80,7 @@ class Scan:
         """
         Load monitor file
         """
-        self.monitorData["FilePath"] = os.path.join(
-            self.experiment.folder, self._getMonitorFileName()
-        )
+        self.monitorData["FilePath"] = os.path.join(self.experiment.folder, self._getMonitorFileName())
         self.monitorData["XYData"] = self.readXYFile(self.monitorData["FilePath"])
         self.monitorData["IQData"] = self.convertXYToIQData(self.monitorData["XYData"])
         return
@@ -102,9 +93,7 @@ class Scan:
         iq_data = []
 
         for bank in range(self.numOfBanks):
-            filePath = os.path.join(
-                self.experiment.folder, self._getDetectorFileName(bank)
-            )
+            filePath = os.path.join(self.experiment.folder, self._getDetectorFileName(bank))
 
             # self.detectorData['FilePath'].append( filePath )
 
@@ -143,22 +132,16 @@ class Scan:
         return XYData
 
     def convertXYToIQData(self, XYData):
-        """
-        Convert XY data to I(Q)
-        XYData - a dictionary of lists
-                XYData = {
-                    "X": [],
-                    "Y": [],
-                    "E": [],
-                    "T": []
-                    }
-        return - a dictionary of lists
-                IQData = {
-                    "Q": [],
-                    "I": [],
-                    "E": [],
-                    "T": []
-                    }
+        r"""Convert XY data to I(Q)
+
+        Parameters
+        ----------
+        XYData: dict
+        A dictionary of lists, XYData = {"X": [], "Y": [], "E": [], "T": []}
+
+        Returns
+        -------
+        Dictionary of lists {"Q": [], "I": [], "E": [], "T": []}
         """
 
         IQData = {"Q": [], "I": [], "E": [], "T": []}
@@ -178,9 +161,7 @@ class Scan:
         return - a string of file name
         """
 
-        return (
-            "USANS_" + self.number + "_detector_scan_ARN_peak_" + str(bank + 1) + ".txt"
-        )
+        return "USANS_" + self.number + "_detector_scan_ARN_peak_" + str(bank + 1) + ".txt"
 
     def _getMonitorFileName(self):
         """
@@ -368,13 +349,9 @@ class Sample:
                 for mq, mi, me, di, de in it:
                     if mq in momentum_transfer:
                         idx = momentum_transfer.index(mq)
-                        # Rdat[BeanPoint]=((Rdat[BeanPoint]*(Sdat[BeanPoint])^2+(rdu[MyCount]/rmu[MyCount])*(sdu[MyCount]/rmu[MyCount])^2))/((Sdat[BeanPoint])^2+(sdu[MyCount]/rmu[MyCount])^2)
                         var = energy[idx] ** 2 + (de / mi) ** 2
 
-                        intensity[idx] = (
-                            intensity[idx] * (energy[idx] ** 2)
-                            + (di / mi) * (de / mi) ** 2
-                        ) / var
+                        intensity[idx] = (intensity[idx] * (energy[idx] ** 2) + (di / mi) * (de / mi) ** 2) / var
                         energy[idx] = var**0.5
                     else:
                         momentum_transfer.append(mq)
@@ -404,16 +381,15 @@ class Sample:
         msg = f"Scans stitched together for sample {self.name}\n"
         logging.info(msg)
         for scan in self.scans:
-            msg += f"theta range ({scan.number}): {min(scan.detectorData[0]['IQData']['Q'])} - {max(scan.detectorData[0]['IQData']['Q'])}  \n"
+            q_range = f"{min(scan.detectorData[0]['IQData']['Q'])} - {max(scan.detectorData[0]['IQData']['Q'])}"
+            msg += f"theta range ({scan.number}): {q_range}\n"
         logging.info(msg)
 
         hScale = 2 * (math.pi**2.0) * 1.0 / (Experiment.primWave * 3600.0 * 180.0)
         for scan in self.scans:
             tempq = [qq * hScale for qq in scan.detectorData[0]["IQData"]["Q"]]
             tempq = [math.fabs(qq) for qq in tempq]
-            msg += (
-                f"Q range ({scan.number}): {min(tempq)} - {max(tempq)} Angtrom^(-1) \n"
-            )
+            msg += f"Q range ({scan.number}): {min(tempq)} - {max(tempq)} Angtrom^(-1) \n"
         logging.info(msg)
 
         return
@@ -433,9 +409,7 @@ class Sample:
             https://www.wavemetrics.net/doc/igorman/V-01%20Reference.pdf
             """
             # return k0 + k1 * numpy.exp( -1 * ( (x - k2) / k3 ) ** 2. )
-            return k0 + 1.0 / (k1 * numpy.sqrt(2 * math.pi)) * numpy.exp(
-                -1.0 / 2.0 * ((x - k2) / k1) ** 2.0
-            )
+            return k0 + 1.0 / (k1 * numpy.sqrt(2 * math.pi)) * numpy.exp(-1.0 / 2.0 * ((x - k2) / k1) ** 2.0)
 
         assert self.size > 0
 
@@ -445,9 +419,7 @@ class Sample:
 
         # function for genetic algorithm to minimize (sum of squared error)
         def sumOfSquaredError(parameterTuple):
-            warnings.filterwarnings(
-                "ignore"
-            )  # do not print warnings by genetic algorithm
+            warnings.filterwarnings("ignore")  # do not print warnings by genetic algorithm
             val = _gaussian(numpy.array(self.data["Q"]), *parameterTuple)
             return numpy.sum((numpy.array(self.data["I"]) - val) ** 2.0)
 
@@ -476,20 +448,12 @@ class Sample:
             # 2*(Pi^2)*HarNo/(PrimWavel*3600*180)
             hScale = 2 * (math.pi**2.0) * bank / (Experiment.primWave * 3600.0 * 180.0)
             # VerScale=VertAngle*(DarWidth/HarNo)*Pi/(3600*180)*Sthick//10
-            vScale = (
-                Experiment.vAngle
-                * (Experiment.DarwinWidth / bank)
-                * math.pi
-                / (3600.0 * 180.0)
-                * self.thickness
-            )
+            vScale = Experiment.vAngle * (Experiment.DarwinWidth / bank) * math.pi / (3600.0 * 180.0) * self.thickness
 
             print(self.name)
 
             if guess_init:
-                initVals = generate_Initial_Parameters(
-                    numpy.array(self.data["Q"]), numpy.array(self.data["I"])
-                )
+                initVals = generate_Initial_Parameters(numpy.array(self.data["Q"]), numpy.array(self.data["I"]))
 
             bestVals, sigma = curve_fit(
                 _gaussian,
@@ -504,21 +468,11 @@ class Sample:
 
             # peakArea = bestVals[1] * bestVals[3] / ( ( 2 * math.pi ) ** .5 )
             peakArea = (
-                1.0
-                / (bestVals[1] * math.sqrt(2 * math.pi))
-                * bestVals[1]
-                * math.sqrt(2.0)
-                / ((2 * math.pi) ** 0.5)
+                1.0 / (bestVals[1] * math.sqrt(2 * math.pi)) * bestVals[1] * math.sqrt(2.0) / ((2 * math.pi) ** 0.5)
             )
 
             # DarTest = bestVals[3] * (math.pi) ** .5 * bank / Experiment.DarwinWidth
-            DarTest = (
-                bestVals[1]
-                * math.sqrt(2.0)
-                * (math.pi) ** 0.5
-                * bank
-                / Experiment.DarwinWidth
-            )
+            DarTest = bestVals[1] * math.sqrt(2.0) * (math.pi) ** 0.5 * bank / Experiment.DarwinWidth
 
             if DarTest <= 0.13:
                 qOffset = bestVals[2]
@@ -539,8 +493,8 @@ class Sample:
             }
 
             self.dataScaled.append(dataScaled)
-
-        msg = f"Recale finished for {self.name}, Q range: {min(self.dataScaled[0]['Q'])} - {max(self.dataScaled[0]['Q'])} 1/angtrom \n"
+        q_range = f"{min(self.dataScaled[0]['Q'])} - {max(self.dataScaled[0]['Q'])}"
+        msg = f"Rescale finished for {self.name}, Q range: {q_range} 1/angtrom \n"
         logging.info(msg)
 
         return
@@ -563,13 +517,7 @@ class Sample:
 
         # The fundamental Q width of the measurement
         harNo = 1.0  # Only the first harmonic peak is used
-        fundamentalStep = (
-            2
-            * math.pi**2
-            * Experiment.DarwinWidth
-            * harNo
-            / (Experiment.primWave * 3600.0 * 180.0)
-        )
+        fundamentalStep = 2 * math.pi**2 * Experiment.DarwinWidth * harNo / (Experiment.primWave * 3600.0 * 180.0)
 
         # Step multiplier
         alpha = math.exp(math.log(10) / Experiment.stepPerDec)
@@ -577,9 +525,7 @@ class Sample:
         kappa = 2.0 * (alpha - 1) / (alpha + 1)
 
         # floor ((ln((MyQ[InLength-1])/Qmin))/(ln(alpha)))
-        numOfBins = math.floor(
-            math.log(max(data["Q"]) / Experiment.minQ) / math.log(alpha)
-        )
+        numOfBins = math.floor(math.log(max(data["Q"]) / Experiment.minQ) / math.log(alpha))
 
         logQ = [Experiment.minQ * (alpha**ii) for ii in range(numOfBins)]
         logI = [None] * numOfBins
@@ -603,13 +549,10 @@ class Sample:
                         k2 = data["Q"][origIdx + 1] - data["Q"][origIdx]
                         k3 = lq - data["Q"][origIdx + 1]
                         # rtemp[outindex]=((k3/k2)+1)*MyR[inindex+1]-(k3/k2)*MyR[inindex]
-                        logI[lIdx] = ((k3 / k2) + 1) * data["I"][origIdx + 1] - (
-                            k3 / k2
-                        ) * data["I"][origIdx]
-                        # stemp[outindex]=((((k3/k2)+1)^2)*(MyS[inindex+1]^2)+((k3/k2)^2)*(MyS[inindex]^2))//*(k2/Testval)^2
-                        logE[lIdx] = (((k3 / k2) + 1) ** 2.0) * (
-                            data["E"][origIdx + 1] ** 2.0
-                        ) + ((k3 / k2) ** 2.0) * (data["E"][origIdx] ** 2.0)
+                        logI[lIdx] = ((k3 / k2) + 1) * data["I"][origIdx + 1] - (k3 / k2) * data["I"][origIdx]
+                        logE[lIdx] = (((k3 / k2) + 1) ** 2.0) * (data["E"][origIdx + 1] ** 2.0) + ((k3 / k2) ** 2.0) * (
+                            data["E"][origIdx] ** 2.0
+                        )
                         logW[lIdx] = 1
                     else:
                         origIdx += 1
@@ -631,18 +574,12 @@ class Sample:
                             # stemp[outindex]=(MyS[InIndex]^2)*((MyQ[inindex]+FunStep/2-stepmin)/funstep)^2
                             logI[lIdx] = (
                                 data["I"][origIdx]
-                                * (
-                                    (data["Q"][origIdx] + fundamentalStep / 2.0)
-                                    - stepmin
-                                )
+                                * ((data["Q"][origIdx] + fundamentalStep / 2.0) - stepmin)
                                 / fundamentalStep
                             )
-                            logW[lIdx] = (
-                                data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin
-                            ) / fundamentalStep
+                            logW[lIdx] = (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
                             logE[lIdx] = (data["E"][origIdx] ** 2.0) * (
-                                (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin)
-                                / fundamentalStep
+                                (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
                             ) ** 2.0
                         else:
                             # rtemp[outindex]+=MyR[Inindex]*((MyQ[inindex]+FunStep/2)-stepmin)/funstep
@@ -650,18 +587,12 @@ class Sample:
                             # stemp[outindex]+=(MyS[InIndex]^2)*((MyQ[inindex]+FunStep/2-stepmin)/funstep)^2
                             logI[lIdx] += (
                                 data["I"][origIdx]
-                                * (
-                                    (data["Q"][origIdx] + fundamentalStep / 2.0)
-                                    - stepmin
-                                )
+                                * ((data["Q"][origIdx] + fundamentalStep / 2.0) - stepmin)
                                 / fundamentalStep
                             )
-                            logW[lIdx] += (
-                                data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin
-                            ) / fundamentalStep
+                            logW[lIdx] += (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
                             logE[lIdx] += (data["E"][origIdx] ** 2.0) * (
-                                (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin)
-                                / fundamentalStep
+                                (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
                             ) ** 2.0
                     elif (self.data["Q"][origIdx] + fundamentalStep / 2.0) > stepmax:
                         if logI[lIdx] is None:
@@ -670,35 +601,24 @@ class Sample:
                             # stemp[outindex]=(MyS[InIndex]^2)*((stepmax-(MyQ[inindex]-FunStep/2))/funstep)^2
                             logI[lIdx] = (
                                 data["I"][origIdx]
-                                * (
-                                    stepmax
-                                    - (data["Q"][origIdx] - fundamentalStep / 2.0)
-                                )
+                                * (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0))
                                 / fundamentalStep
                             )
-                            logW[lIdx] = (
-                                stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0)
-                            ) / fundamentalStep
+                            logW[lIdx] = (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
                             logE[lIdx] = (data["E"][origIdx] ** 2.0) * (
-                                (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0))
-                                / fundamentalStep
+                                (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
                             ) ** 2.0
                         else:
                             logI[lIdx] += (
                                 data["I"][origIdx]
-                                * (
-                                    stepmax
-                                    - (data["Q"][origIdx] - fundamentalStep / 2.0)
-                                )
+                                * (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0))
                                 / fundamentalStep
                             )
                             logW[lIdx] += (
-                                stepmax
-                                - (self.data["Q"][origIdx] - fundamentalStep / 2.0)
+                                stepmax - (self.data["Q"][origIdx] - fundamentalStep / 2.0)
                             ) / fundamentalStep
                             logE[lIdx] += (data["E"][origIdx] ** 2.0) * (
-                                (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0))
-                                / fundamentalStep
+                                (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
                             ) ** 2.0
                     else:
                         if logI[lIdx] is None:
@@ -731,7 +651,9 @@ class Sample:
         """
         if self.experiment.logbin:
             assert self.isLogBinned
-            msg = f"Logbinned data are used for background subtraction. Sample {self.name}, background {background.name}"
+            msg = (
+                f"Logbinned data are used for background subtraction. Sample {self.name}, background {background.name}"
+            )
             logging.info(msg)
             # The logbinned data a subtracted from logbinned
             data = self.dataLogBinned
@@ -749,13 +671,8 @@ class Sample:
                 num_of_bins = bgNumOfBins
                 momentum_transfer = bgData["Q"].copy()
 
-            intensity = [
-                data["I"][ii] - scale_f * bgData["I"][ii] for ii in range(num_of_bins)
-            ]
-            energy = [
-                (data["E"][ii] ** 2.0 + (scale_f * bgData["E"][ii]) ** 2.0) ** 0.5
-                for ii in range(num_of_bins)
-            ]
+            intensity = [data["I"][ii] - scale_f * bgData["I"][ii] for ii in range(num_of_bins)]
+            energy = [(data["E"][ii] ** 2.0 + (scale_f * bgData["E"][ii]) ** 2.0) ** 0.5 for ii in range(num_of_bins)]
 
             self.dataBgSubtracted["Q"] = momentum_transfer.copy()
             self.dataBgSubtracted["I"] = intensity.copy()
@@ -770,9 +687,7 @@ class Sample:
             self.dataBgSubtracted["Q"] = dataScaled["Q"].copy()
             self.dataBgSubtracted["I"] = (dataScaled["I"] - interBg).copy()
             # FIXME The error bar got intepolated as well
-            self.dataBgSubtracted["E"] = (
-                (numpy.array(dataScaled["E"]) ** 2 + interBgE**2) ** 0.5
-            ).copy()
+            self.dataBgSubtracted["E"] = ((numpy.array(dataScaled["E"]) ** 2 + interBgE**2) ** 0.5).copy()
 
         msg = f"background subtracted from sample {self.name}, (background sample {background.name})"
         logging.info(msg)
@@ -786,15 +701,23 @@ class Sample:
         logBinnedData=True,
         bgSubtractedData=True,
     ):
-        """
-        dump the data to output folder defined in experiment
-        detectorData, scaleData, logBinnedData, bgSubtractedData - flags to indicate which set of data to dump
+        r"""Dump the data to output folder defined in experiment
 
-        filenames follow the legacy Igor output file names
-                "UN_" + sampleName + "_det_1.txt", \
-                "UN_" + sampleName + "_det_1_lb.txt", \
-                "UN_" + sampleName + "_det_1_lbs.txt"
-        return
+        Filenames follow the legacy Igor output file names
+            ``"UN_" + sampleName + "_det_1.txt"``
+            ``"UN_" + sampleName + "_det_1_lb.txt"``
+            ``"UN_" + sampleName + "_det_1_lbs.txt"``
+
+        Parameters
+        ----------
+        detectorData: bool
+            dump detector data if `True`
+        scaledData: bool
+            dump scaling data if `True`
+        logBinnedData: bool
+            dump log binned data if `True`
+        bgSubtractedData: bool
+            dump background subtracted data if `True`
         """
         if detectorData is True and self.data:
             file_name = "UN_" + self.name + "_det_1_unscaled.txt"
@@ -856,7 +779,8 @@ class Sample:
     @property
     def data(self):
         """
-        The main data from detector, stitched and normalized with monitor data, currently the first bank detector data, scaled with monitor
+        The main data from detector, stitched and normalized with monitor data,
+         currently the first bank detector data, scaled with monitor
         """
         if self.detectorData:
             return self.detectorData[0]
@@ -1000,7 +924,7 @@ class Experiment:
         for sample in self.samples:
             try:
                 sample.reduce()
-            except Exception as ee:
+            except Exception as ee:  # noqa BLE001
                 msg = "Cannot reduce sample" + sample.name
                 msg += str(ee)
                 logging.info(msg)
@@ -1024,9 +948,7 @@ class Experiment:
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="USANS data reduction at ORNL.")
-    parser.add_argument(
-        "-l", "--logbin", help="flag of logbinning", action="store_true"
-    )
+    parser.add_argument("-l", "--logbin", help="flag of logbinning", action="store_true")
     parser.add_argument("-o", "--output", help="output directory", default="")
     parser.add_argument("path")
     return parser.parse_args()

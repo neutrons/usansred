@@ -12,6 +12,14 @@ User Guide
    /source/user/conda_environments
    /source/user/reduce
 
+API
+---
+
+.. toctree::
+   :titlesonly:
+
+   /source/api/usansred
+
 Developer Guide
 ---------------
 
