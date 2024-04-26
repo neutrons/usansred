@@ -26,6 +26,7 @@ Developer Guide
 .. toctree::
    :titlesonly:
 
+   /source/developer/contributing
    /source/developer/developer
 
 Contents

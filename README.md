@@ -4,8 +4,10 @@ Backend code for the reduction of USANS data.
 
 # User
 
-User guide at [readthedocs]()https://usansred.readthedocs.io/en/latest/source/user.html
+User guide at [readthedocs](https://usansred.readthedocs.io/en/latest/source/user.html)
 
 # Developer
 
-Developer documentation at [readthedocs]()https://usansred.readthedocs.io/en/latest/source/developer.html
+Developer documentation at [readthedocs](https://usansred.readthedocs.io/en/latest/source/developer.html)
+
+- [contributing to the project](https://usansred.readthedocs.io/en/latest/source/contributing.html)
