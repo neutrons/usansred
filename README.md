@@ -18,4 +18,4 @@ User guide at [readthedocs](https://usansred.readthedocs.io/en/latest)
 
 Developer documentation at [readthedocs](https://usansred.readthedocs.io/en/latest)
 
-- [contributing to the project](https://usansred.readthedocs.io/en/latest/source/contributing.html)
+- [contributing to the project](https://usansred.readthedocs.io/en/latest/source/developer/contributing.html)
