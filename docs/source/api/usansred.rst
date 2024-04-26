@@ -1,19 +1,11 @@
-.. api_usansred
+.. api_usansred:
 
 usansred package
 ================
 
-Submodules
-----------
-
-.. (include explicit links to sections because toctree doesn't work)
-
-- :ref:`usansred-reduce`
-- :ref:`usansred-reduce-usans`
-- :ref:`usansred-summary`
-
-
-.. _usansred-reduce:
+.. contents::
+   :local:
+   :depth: 1
 
 usansred.reduce
 ---------------
@@ -23,8 +15,6 @@ usansred.reduce
    :undoc-members:
    :show-inheritance:
 
-.. _usansred-reduce-usans:
-
 usansred.reduce\_USANS
 ----------------------
 
@@ -32,8 +22,6 @@ usansred.reduce\_USANS
    :members:
    :undoc-members:
    :show-inheritance:
-
-.. _usansred-summary:
 
 usansred.summary
 ----------------

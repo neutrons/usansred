@@ -1,10 +1,11 @@
-.. developer_documentation
+.. _developer_documentation:
 
 Developer Documentation
 =======================
 
-.. toctree::
-   :maxdepth: 1
+.. contents::
+   :local:
+   :depth: 1
 
 Local Environment
 -----------------
@@ -24,6 +25,16 @@ environment `usansred` after every change to the source code.
 pre-commit Hooks
 ----------------
 
+Development procedure
+---------------------
+
+1. A developer is assigned with a task during neutron status meeting and changes the task's status to **In Progress**.
+2. The developer creates a branch off *next* and completes the task in this branch.
+3. The developer creates a pull request (PR) off *next*.
+4. Any new features or bugfixes must be covered by new and/or refactored automated tests.
+5. The developer asks for another developer as a reviewer to review the PR.
+   A PR can only be approved and merged by the reviewer.
+6. The developer changes the task’s status to **Complete** and closes the associated issue.
 
 Updating mantid dependency
 --------------------------
@@ -81,3 +92,9 @@ To manually build the documentation:
 
 After this, point your browser to
 `file:///path/to/usansred/docs/build/html/index.html`
+
+
+Creating a stable release
+-------------------------
+- Follow the `Software Maturity Model <https://ornl-neutrons.atlassian.net/wiki/spaces/NDPD/pages/23363585/Software+Maturity+Model>`_ for continous versioning as well as creating release candidates and stable releases.
+- Update the :ref:`Release Notes <release_notes>` with major fixes, updates and additions since last stable release.

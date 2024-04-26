@@ -17,27 +17,3 @@ Getting access to the main project
 ----------------------------------
 Direct commit access to the project is currently restricted to core developers.
 All other contributions should be done through pull requests.
-
-
-Development procedure
----------------------
-
-1. A developer is assigned with a task during neutron status meeting and changes the task's status to **In Progress**.
-2. The developer creates a branch off *next* and completes the task in this branch.
-3. The developer creates a pull request (PR) off *next*.
-4. The developer asks for another developer as a reviewer to review the PR.
-   A PR can only be approved and merged by the reviewer.
-5. The developer changes the task’s status to **Complete** and closes the associated issue.
-
-
-Contacting the Team
--------------------
-The best mechanism for a user to request a change is to contact the SANS CIS.
-Please email `Yingrui Shang`_ with your request.
-
-.. _Yingrui Shang: shangy@ornl.gov
-
-A change needs to be in the form of a:
-
-- Story for any enhancement request
-- Defect for any bug fix request.
