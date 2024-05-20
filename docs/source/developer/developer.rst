@@ -25,6 +25,14 @@ environment `usansred` after every change to the source code.
 pre-commit Hooks
 ----------------
 
+Activate the hooks by typing in the terminal:
+
+.. code-block:: bash
+
+   $> cd cd /path/to/mr_reduction/
+   $> conda activate mr_reduction
+   (mr_reduction)$> pre-commit install
+
 Development procedure
 ---------------------
 
