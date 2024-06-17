@@ -6,7 +6,7 @@ channels:
 dependencies:
   - python=3.10
   - versioningit
-  - mantid=6.8.0
+  - mantid=6.9.1
   - numpy
   - scipy
   - pandas
