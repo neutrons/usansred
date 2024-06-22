@@ -6,12 +6,9 @@ channels:
 dependencies:
   - python=3.10
   - versioningit
-  - mantid=6.9.1
-  - numpy
-  - scipy
+  - mantidworkbench=6.9.1
   - pandas
   - xlsxwriter
-  - matplotlib
   - pip
   - pip:
     - git+https://github.com/peterfpeterson/finddata@v0.8.4
