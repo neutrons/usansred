@@ -13,7 +13,7 @@ Release Notes
 
 **Of interest to the Developer:**
 
-- PR #XYZ: one-liner description
+- PR #12: switch from mantid to mantidworkbench conda package
 
 1.0.0
 -----
