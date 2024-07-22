@@ -3,8 +3,24 @@
 Release Notes
 =============
 
+<Next Release>
+--------------
+(date of release)
+
+**Of interest to the User**:
+
+- PR #XYZ: one-liner description
+
+**Of interest to the Developer:**
+
+- PR #12: switch from mantid to mantidworkbench conda package
+
 1.0.0
 -----
+2024-05-06
+
+This is the first release of USANSRED.
+
 - repository implements the `OpenSSF Best Practices Badge Program <https://www.bestpractices.dev/en/criteria/0>`_
 - codecov reports for every accepted change, uploaded to `codecov usansred <https://app.codecov.io/gh/neutrons/usansred>`_
 - generation of conda packages, uploaded to the `neutrons channel <https://anaconda.org/neutrons/usansred/files>`_
