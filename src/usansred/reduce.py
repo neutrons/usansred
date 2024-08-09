@@ -676,6 +676,26 @@ class Sample:
 
         return (logQ, logI, logE)
 
+    def _match_or_interpolate(q_data, q_bg, i_bg, e_bg, tolerance=1e-5):
+        """Match q_bg values to q_data directly if close enough, otherwise interpolate"""
+        
+        i_bg_matched = np.zeros_like(q_data)
+        e_bg_matched = np.zeros_like(q_data)
+        
+        for i, q in enumerate(q_data):
+            # Find the index in q_bg that is closest to the current q_data value
+            idx = np.argmin(np.abs(q_bg - q))
+            if abs((q_bg[idx] - q) / q) <= tolerance:
+                # If the q_bg value is close enough to the q_data value, use it directly
+                i_bg_matched[i] = i_bg[idx]
+                e_bg_matched[i] = e_bg[idx]
+            else:
+                # Otherwise, interpolate
+                i_bg_matched[i] = np.interp(q, q_bg, i_bg)
+                e_bg_matched[i] = np.interp(q, q_bg, e_bg)
+        
+        return i_bg_matched, e_bg_matched
+    
     def subtractBg(self, background, vScale=1.0):
         """
         Subtract the background
@@ -683,27 +703,6 @@ class Sample:
 
         return
         """
-        
-        def _match_or_interpolate(q_data, q_bg, i_bg, e_bg, tolerance=1e-5):
-            """Match q_bg values to q_data directly if close enough, otherwise interpolate"""
-            
-            i_bg_matched = np.zeros_like(q_data)
-            e_bg_matched = np.zeros_like(q_data)
-            
-            for i, q in enumerate(q_data):
-                # Find the index in q_bg that is closest to the current q_data value
-                idx = np.argmin(np.abs(q_bg - q))
-                if abs((q_bg[idx] - q) / q) <= tolerance:
-                    # If the q_bg value is close enough to the q_data value, use it directly
-                    i_bg_matched[i] = i_bg[idx]
-                    e_bg_matched[i] = e_bg[idx]
-                else:
-                    # Otherwise, interpolate
-                    i_bg_matched[i] = np.interp(q, q_bg, i_bg)
-                    e_bg_matched[i] = np.interp(q, q_bg, e_bg)
-            
-            return i_bg_matched, e_bg_matched
-
         
         if self.experiment.logbin:
             assert self.isLogBinned
@@ -749,7 +748,7 @@ class Sample:
             e_bg = np.array(bgScaled['E'])
         
             # Interpolate bg I and E values at data Q points
-            i_bg_interp, e_bg_interp = _match_or_interpolate(q_data, q_bg, i_bg, e_bg)
+            i_bg_interp, e_bg_interp = self._match_or_interpolate(q_data, q_bg, i_bg, e_bg)
         
             # Subtract background
             i_subtracted = i_data - i_bg_interp
