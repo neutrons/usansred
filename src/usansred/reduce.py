@@ -338,12 +338,14 @@ class Sample:
 
         for bank in range(self.experiment.numOfBanks):
             for scan in self.scans:
-                it = zip(
+                it = list(
+                    zip(
                     scan.monitorData["IQData"]["Q"],
                     scan.monitorData["IQData"]["I"],
                     scan.monitorData["IQData"]["E"],
                     scan.detectorData[bank]["IQData"]["I"],
                     scan.detectorData[bank]["IQData"]["E"],
+                    )
                 )
 
                 for mq, mi, me, di, de in it:
