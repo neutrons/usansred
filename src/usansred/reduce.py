@@ -425,7 +425,7 @@ class Sample:
             val = _gaussian(numpy.array(self.data["Q"]), *parameterTuple)
             return numpy.sum((numpy.array(self.data["I"]) - val) ** 2.0)
 
-        def generate_Initial_Parameters(test_x, test_y):
+        def generate_initial_parameters(test_x, test_y):
             # min and max used for bounds
             max_x = max(test_x)
             # minX = min(test_X)
@@ -444,6 +444,36 @@ class Sample:
             result = differential_evolution(sumOfSquaredError, parameterBounds, seed=3)
             return result.x
 
+        def clean_iq(qScaled, iScaled, eScaled):
+            '''
+            Remove duplicate values in q by:
+            Taking average of all i values with same q
+            Taking standard deviation of error values of e with same q
+            return - 
+                cleaned q, i, and error values
+            '''
+            from collections import defaultdict
+            import math
+        
+            # Dictionary to store sums for averaging I and propagating errors for E
+            sum_dict = defaultdict(lambda: {'I_sum': 0, 'I_count': 0, 'E_sum_squares': 0})
+            
+            for q, i, e in zip(qScaled, iScaled, eScaled):
+                sum_dict[q]['I_sum'] += i
+                sum_dict[q]['I_count'] += 1
+                sum_dict[q]['E_sum_squares'] += e ** 2
+        
+            q_cleaned = []
+            i_cleaned = []
+            e_cleaned = []
+        
+            for q, values in sum_dict.items():
+                q_cleaned.append(q)
+                i_cleaned.append(values['I_sum'] / values['I_count'])
+                e_cleaned.append(math.sqrt(values['E_sum_squares']))
+        
+            return q_cleaned, i_cleaned, e_cleaned
+
         for bb in range(self.numOfBanks):
             bank = bb + 1
 
@@ -455,7 +485,7 @@ class Sample:
             print(self.name)
 
             if guess_init:
-                initVals = generate_Initial_Parameters(numpy.array(self.data["Q"]), numpy.array(self.data["I"]))
+                initVals = generate_initial_parameters(numpy.array(self.data["Q"]), numpy.array(self.data["I"]))
 
             bestVals, sigma = curve_fit(
                 _gaussian,
@@ -487,11 +517,13 @@ class Sample:
             iScaled = [ii / vScale / peakArea for ii in self.data["I"]]
             eScaled = [ee / vScale / peakArea for ee in self.data["E"]]
 
+            qcleaned, icleaned, ecleaned = clean_iq(qScaled, iScaled, eScaled)
+
             dataScaled = {
-                "Q": qScaled.copy(),
-                "I": iScaled.copy(),
-                "E": eScaled.copy(),
-                "T": [],
+                'Q': qcleaned.copy(),
+                'I': icleaned.copy(),
+                'E': ecleaned.copy(),
+                'T':[]
             }
 
             self.dataScaled.append(dataScaled)
