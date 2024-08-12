@@ -39,6 +39,7 @@ requirements:
     - numpy
     - scipy
     - pandas
+    - finddata=0.10
     - xlsxwriter
     - matplotlib
 
