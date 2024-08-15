@@ -9,9 +9,8 @@ dependencies:
   - mantidworkbench=6.9.1
   - pandas
   - xlsxwriter
+  - neutrons::finddata=0.10
   - pip
-  - pip:
-    - git+https://github.com/peterfpeterson/finddata@v0.8.4
   # Development dependencies
   - libmamba
   - libarchive
