@@ -679,20 +679,20 @@ class Sample:
     def _match_or_interpolate(q_data, q_bg, i_bg, e_bg, tolerance=1e-5):
         """Match q_bg values to q_data directly if close enough, otherwise interpolate"""
         
-        i_bg_matched = np.zeros_like(q_data)
-        e_bg_matched = np.zeros_like(q_data)
+        i_bg_matched = numpy.zeros_like(q_data)
+        e_bg_matched = numpy.zeros_like(q_data)
         
         for i, q in enumerate(q_data):
             # Find the index in q_bg that is closest to the current q_data value
-            idx = np.argmin(np.abs(q_bg - q))
+            idx = numpy.argmin(numpy.abs(q_bg - q))
             if abs((q_bg[idx] - q) / q) <= tolerance:
                 # If the q_bg value is close enough to the q_data value, use it directly
                 i_bg_matched[i] = i_bg[idx]
                 e_bg_matched[i] = e_bg[idx]
             else:
                 # Otherwise, interpolate
-                i_bg_matched[i] = np.interp(q, q_bg, i_bg)
-                e_bg_matched[i] = np.interp(q, q_bg, e_bg)
+                i_bg_matched[i] = numpy.interp(q, q_bg, i_bg)
+                e_bg_matched[i] = numpy.interp(q, q_bg, e_bg)
         
         return i_bg_matched, e_bg_matched
     
@@ -739,20 +739,20 @@ class Sample:
             bgScaled = self.experiment.background.dataScaled[0]
 
             # Convert things to numpy arrays
-            q_data = np.array(dataScaled['Q'])
-            i_data = np.array(dataScaled['I'])
-            e_data = np.array(dataScaled['E'])
+            q_data = numpy.array(dataScaled['Q'])
+            i_data = numpy.array(dataScaled['I'])
+            e_data = numpy.array(dataScaled['E'])
         
-            q_bg = np.array(bgScaled['Q'])
-            i_bg = np.array(bgScaled['I'])
-            e_bg = np.array(bgScaled['E'])
+            q_bg = numpy.array(bgScaled['Q'])
+            i_bg = numpy.array(bgScaled['I'])
+            e_bg = numpy.array(bgScaled['E'])
         
             # Interpolate bg I and E values at data Q points
             i_bg_interp, e_bg_interp = self._match_or_interpolate(q_data, q_bg, i_bg, e_bg)
         
             # Subtract background
             i_subtracted = i_data - i_bg_interp
-            e_subtracted = np.sqrt(e_data**2 + e_bg_interp**2)
+            e_subtracted = numpy.sqrt(e_data**2 + e_bg_interp**2)
             
             self.dataBgSubtracted["Q"] = q_data
             self.dataBgSubtracted["I"] = i_subtracted
