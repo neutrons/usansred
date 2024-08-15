@@ -676,7 +676,7 @@ class Sample:
 
         return (logQ, logI, logE)
 
-    def _match_or_interpolate(q_data, q_bg, i_bg, e_bg, tolerance=1e-5):
+    def _match_or_interpolate(self, q_data, q_bg, i_bg, e_bg, tolerance=1e-5):
         """Match q_bg values to q_data directly if close enough, otherwise interpolate"""
         
         i_bg_matched = numpy.zeros_like(q_data)
