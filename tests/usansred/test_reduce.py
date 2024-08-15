@@ -10,7 +10,7 @@ import pytest
 
 # usansred imports
 from usansred.reduce import main as reduceUSANS
-from usansred.reduce import Sample
+from usansred.reduce import Sample,Experiment
 
 
 def read_numbers_from_file(filename):
