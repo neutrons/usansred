@@ -1,5 +1,7 @@
 # import standard
 import os
+import numpy as np
+import random
 from unittest.mock import MagicMock
 from unittest.mock import patch as mock_patch
 
@@ -8,6 +10,7 @@ import pytest
 
 # usansred imports
 from usansred.reduce import main as reduceUSANS
+from usansred.reduce import Sample,Experiment
 
 
 def read_numbers_from_file(filename):
@@ -71,6 +74,28 @@ def test_main(mock_parse_arguments, data_server, tmp_path):
             if os.path.exists(expected):  # file "UN_EmptyPCell_det_1_lbs.txt" does not exist
                 compare_lines(output, expected)
 
+@pytest.mark.datarepo()
+def test_sample_match_or_interpolate(data_server, tmp_path):
+    # Get the testing data and temp output directory
+    # Create new Experiment instance
+    csvpath = data_server.path_to("setup.csv")
+    tmpoutput = str(tmp_path)
+    exp = Experiment(csvpath, logbin=False, outputFolder=tmpoutput)
+
+    # Genearte testing data
+    qq = np.array([dd * 1e-5 for dd in range(1, 100)])
+    ii = -np.log(qq) * 1e3
+    bb = ii * 0.01
+    
+    # Generate a list of 100 random numbers
+    ee = [random.random() for _ in range(1, 100)]
+
+    sample_test = exp.samples[0]
+
+    iibgmatched, eebgmatched = sample_test._match_or_interpolate(qq, qq, bb, ee)
+
+    check = (iibgmatched - bb == 0.)
+    assert np.all(check), "Background interpolation calculation is not right in Sample._match_or_interpolate"
 
 if __name__ == "__main__":
     pytest.main([__file__])

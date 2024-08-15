@@ -338,12 +338,14 @@ class Sample:
 
         for bank in range(self.experiment.numOfBanks):
             for scan in self.scans:
-                it = zip(
+                it = list(
+                    zip(
                     scan.monitorData["IQData"]["Q"],
                     scan.monitorData["IQData"]["I"],
                     scan.monitorData["IQData"]["E"],
                     scan.detectorData[bank]["IQData"]["I"],
                     scan.detectorData[bank]["IQData"]["E"],
+                    )
                 )
 
                 for mq, mi, me, di, de in it:
@@ -423,7 +425,7 @@ class Sample:
             val = _gaussian(numpy.array(self.data["Q"]), *parameterTuple)
             return numpy.sum((numpy.array(self.data["I"]) - val) ** 2.0)
 
-        def generate_Initial_Parameters(test_x, test_y):
+        def generate_initial_parameters(test_x, test_y):
             # min and max used for bounds
             max_x = max(test_x)
             # minX = min(test_X)
@@ -442,6 +444,36 @@ class Sample:
             result = differential_evolution(sumOfSquaredError, parameterBounds, seed=3)
             return result.x
 
+        def clean_iq(qScaled, iScaled, eScaled):
+            '''
+            Remove duplicate values in q by:
+            Taking average of all i values with same q
+            Taking standard deviation of error values of e with same q
+            return - 
+                cleaned q, i, and error values
+            '''
+            from collections import defaultdict
+            import math
+        
+            # Dictionary to store sums for averaging I and propagating errors for E
+            sum_dict = defaultdict(lambda: {'I_sum': 0, 'I_count': 0, 'E_sum_squares': 0})
+            
+            for q, i, e in zip(qScaled, iScaled, eScaled):
+                sum_dict[q]['I_sum'] += i
+                sum_dict[q]['I_count'] += 1
+                sum_dict[q]['E_sum_squares'] += e ** 2
+        
+            q_cleaned = []
+            i_cleaned = []
+            e_cleaned = []
+        
+            for q, values in sum_dict.items():
+                q_cleaned.append(q)
+                i_cleaned.append(values['I_sum'] / values['I_count'])
+                e_cleaned.append(math.sqrt(values['E_sum_squares']))
+        
+            return q_cleaned, i_cleaned, e_cleaned
+
         for bb in range(self.numOfBanks):
             bank = bb + 1
 
@@ -453,7 +485,7 @@ class Sample:
             print(self.name)
 
             if guess_init:
-                initVals = generate_Initial_Parameters(numpy.array(self.data["Q"]), numpy.array(self.data["I"]))
+                initVals = generate_initial_parameters(numpy.array(self.data["Q"]), numpy.array(self.data["I"]))
 
             bestVals, sigma = curve_fit(
                 _gaussian,
@@ -485,11 +517,13 @@ class Sample:
             iScaled = [ii / vScale / peakArea for ii in self.data["I"]]
             eScaled = [ee / vScale / peakArea for ee in self.data["E"]]
 
+            qcleaned, icleaned, ecleaned = clean_iq(qScaled, iScaled, eScaled)
+
             dataScaled = {
-                "Q": qScaled.copy(),
-                "I": iScaled.copy(),
-                "E": eScaled.copy(),
-                "T": [],
+                'Q': qcleaned.copy(),
+                'I': icleaned.copy(),
+                'E': ecleaned.copy(),
+                'T':[]
             }
 
             self.dataScaled.append(dataScaled)
@@ -642,6 +676,26 @@ class Sample:
 
         return (logQ, logI, logE)
 
+    def _match_or_interpolate(self, q_data, q_bg, i_bg, e_bg, tolerance=1e-5):
+        """Match q_bg values to q_data directly if close enough, otherwise interpolate"""
+        
+        i_bg_matched = numpy.zeros_like(q_data)
+        e_bg_matched = numpy.zeros_like(q_data)
+        
+        for i, q in enumerate(q_data):
+            # Find the index in q_bg that is closest to the current q_data value
+            idx = numpy.argmin(numpy.abs(q_bg - q))
+            if abs((q_bg[idx] - q) / q) <= tolerance:
+                # If the q_bg value is close enough to the q_data value, use it directly
+                i_bg_matched[i] = i_bg[idx]
+                e_bg_matched[i] = e_bg[idx]
+            else:
+                # Otherwise, interpolate
+                i_bg_matched[i] = numpy.interp(q, q_bg, i_bg)
+                e_bg_matched[i] = numpy.interp(q, q_bg, e_bg)
+        
+        return i_bg_matched, e_bg_matched
+    
     def subtractBg(self, background, vScale=1.0):
         """
         Subtract the background
@@ -649,6 +703,7 @@ class Sample:
 
         return
         """
+        
         if self.experiment.logbin:
             assert self.isLogBinned
             msg = (
@@ -682,12 +737,26 @@ class Sample:
             # only the first bank is processed
             dataScaled = self.dataScaled[0]
             bgScaled = self.experiment.background.dataScaled[0]
-            interBg = numpy.interp(dataScaled["Q"], bgScaled["Q"], bgScaled["I"])
-            interBgE = numpy.interp(dataScaled["Q"], bgScaled["Q"], bgScaled["E"])
-            self.dataBgSubtracted["Q"] = dataScaled["Q"].copy()
-            self.dataBgSubtracted["I"] = (dataScaled["I"] - interBg).copy()
-            # FIXME The error bar got intepolated as well
-            self.dataBgSubtracted["E"] = ((numpy.array(dataScaled["E"]) ** 2 + interBgE**2) ** 0.5).copy()
+
+            # Convert things to numpy arrays
+            q_data = numpy.array(dataScaled['Q'])
+            i_data = numpy.array(dataScaled['I'])
+            e_data = numpy.array(dataScaled['E'])
+        
+            q_bg = numpy.array(bgScaled['Q'])
+            i_bg = numpy.array(bgScaled['I'])
+            e_bg = numpy.array(bgScaled['E'])
+        
+            # Interpolate bg I and E values at data Q points
+            i_bg_interp, e_bg_interp = self._match_or_interpolate(q_data, q_bg, i_bg, e_bg)
+        
+            # Subtract background
+            i_subtracted = i_data - i_bg_interp
+            e_subtracted = numpy.sqrt(e_data**2 + e_bg_interp**2)
+            
+            self.dataBgSubtracted["Q"] = q_data
+            self.dataBgSubtracted["I"] = i_subtracted
+            self.dataBgSubtracted["E"] = e_subtracted
 
         msg = f"background subtracted from sample {self.name}, (background sample {background.name})"
         logging.info(msg)

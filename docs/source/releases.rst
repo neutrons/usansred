@@ -14,7 +14,8 @@ Release Notes
 **Of interest to the Developer:**
 
 - PR #14 transition from pip to conda when installing dependency finddata
-- PR #12 switch from mantid to mantidworkbench conda package
+- PR #13: Take average of intensity values with duplicate Q AND solve the issue with bg interpolation when bg q and sample q values are too close or identical
+- PR #12: switch from mantid to mantidworkbench conda package
 
 1.0.0
 -----
