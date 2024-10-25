@@ -35,7 +35,7 @@ requirements:
 
   run:
     - python
-    - mantid=6.8.0
+    - mantid=6.11
     - numpy
     - scipy
     - pandas
