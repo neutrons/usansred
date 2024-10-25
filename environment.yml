@@ -6,7 +6,7 @@ channels:
 dependencies:
   - python=3.10
   - versioningit
-  - mantidworkbench=6.9.1
+  - mantidworkbench=6.11
   - pandas
   - xlsxwriter
   - neutrons::finddata=0.10
