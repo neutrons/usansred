@@ -11,7 +11,7 @@ User Guide
 
    /source/user/conda_environments
    /source/user/reduce
-   /source/releases
+   /source/release_notes
 
 Contacting the Team
 +++++++++++++++++++
