@@ -30,3 +30,9 @@ This is the first release of USANSRED.
 - generation of conda packages, uploaded to the `neutrons channel <https://anaconda.org/neutrons/usansred/files>`_
 - `online documentation <https://usansred.readthedocs.io/en/latest/>`_ for the user and the developer.
 - executable script `reduceUSANS` is the entry point for all reduction jobs
+
+1.0.1
+-----
+2025-02-28
+
+- Changed the algorithm in background subtraction when binning is not applied. Changed to absolute tolerance when matching the sample data points with background data points, so that low Q values with very small differences can be compared and subtracted. 
