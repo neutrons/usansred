@@ -685,7 +685,7 @@ class Sample:
         for i, q in enumerate(q_data):
             # Find the index in q_bg that is closest to the current q_data value
             idx = numpy.argmin(numpy.abs(q_bg - q))
-            if abs((q_bg[idx] - q) / q) <= tolerance:
+            if abs((q_bg[idx] - q)) <= max(tolerance * q, 1e-6):
                 # If the q_bg value is close enough to the q_data value, use it directly
                 i_bg_matched[i] = i_bg[idx]
                 e_bg_matched[i] = e_bg[idx]

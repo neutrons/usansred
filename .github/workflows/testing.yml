@@ -16,13 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: conda-incubator/setup-miniconda@v3
+        name: Setup Conda
         with:
           auto-update-conda: true
           channels: mantid/label/main,conda-forge,defaults
-          mamba-version: "*"
+          miniforge-version: latest
           environment-file: environment.yml
-          cache-environment-key: ${{ runner.os }}-env-${{ hashFiles('**/environment.yml') }}
-          cache-downloads-key: ${{ runner.os }}-downloads-${{ hashFiles('**/environment.yml') }}
       - name: install additional dependencies
         run: |
           echo "installing additional dependencies if cannot be installed from conda"
