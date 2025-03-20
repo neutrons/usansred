@@ -13,6 +13,7 @@ Release Notes
 
 **Of interest to the Developer:**
 
+- PR 18: update Mantid dependency to 6.12
 - PR 17: instructions to add/replace data files
 - PR 15: update Mantid dependency to 6.11
 - PR 14: transition from pip to conda when installing dependency finddata
