@@ -3,21 +3,22 @@
 Release Notes
 =============
 
-<Next Release>
---------------
-(date of release)
+.. 1.1.0
+.. -----
+.. (date of release)
 
-**Of interest to the User**:
+.. **Of interest to the User**:
 
-- PR #XYZ: one-liner description
+.. - PR #XYZ: one-liner description
 
-**Of interest to the Developer:**
+.. **Of interest to the Developer:**
 
-- PR 17: instructions to add/replace data files
-- PR 15: update Mantid dependency to 6.11
-- PR 14: transition from pip to conda when installing dependency finddata
-- PR 13: Take average of intensity values with duplicate Q AND solve the issue with bg interpolation when bg q and sample q values are too close or identical
-- PR 12: switch from mantid to mantidworkbench conda package
+.. - PR 17: instructions to add/replace data files
+.. - PR 17: change to absolute tolerance while subtracting background
+.. - PR 15: update Mantid dependency to 6.11
+.. - PR 14: transition from pip to conda when installing dependency finddata
+.. - PR 13: Take average of intensity values with duplicate Q AND solve the issue with bg interpolation when bg q and sample q values are too close or identical
+.. - PR 12: switch from mantid to mantidworkbench conda package
 
 1.0.0
 -----
