@@ -2,11 +2,10 @@ name: usansred
 channels:
   - mantid/label/main
   - conda-forge
-  - defaults
 dependencies:
   - python=3.10
   - versioningit
-  - mantidworkbench=6.11
+  - mantidworkbench=6.12
   - pandas
   - xlsxwriter
   - neutrons::finddata=0.10
