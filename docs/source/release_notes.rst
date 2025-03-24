@@ -12,7 +12,7 @@ Release Notes
 .. - PR #XYZ: one-liner description
 
 .. **Of interest to the Developer:**
-
+.. - PR 19: Explicitly denotes the encoding regardless of Windows and Linux. It won't change anything in Linux. 
 .. - PR 18: update Mantid dependency to 6.12
 .. - PR 17: instructions to add/replace data files
 .. - PR 17: change to absolute tolerance while subtracting background
