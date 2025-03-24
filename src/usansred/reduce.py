@@ -940,7 +940,7 @@ class Experiment:
 
         self.folder = os.path.dirname(csvFilePath)
 
-        with open(csvFilePath, newline="") as csvFile:
+        with open(csvFilePath, newline="", encoding='utf-8-sig') as csvFile:
             csvReader = csv.reader(csvFile, delimiter=",")
 
             for row in csvReader:
