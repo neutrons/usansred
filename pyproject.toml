@@ -77,4 +77,123 @@ disable = ["too-many-locals",
            "duplicate-code"
 ]
 
+###################
+### Pixi config ###
+###################
+
+[tool.pixi.workspace]
+preview = ["pixi-build"]
+channels = [
+  "conda-forge",
+  "mantid/label/main",
+  "neutrons"
+]
+platforms = ["linux-64"]
+
+
+[tool.pixi.environments]
+default = {features = ["test", "package", "docs", "developer"], solve-group = "default"}
+docs = {features = ["docs"], solve-group = "docs"}
+
+[tool.pixi.pypi-dependencies]
+usansred = { path = ".", editable = true }
+
+[tool.pixi.dependencies]
+python = "=3.10"
+versioningit = "*"
+mantidworkbench = "=6.12"
+pandas = "*"
+xlsxwriter = "*"
+finddata = {version = "=0.10.1", channel="neutrons"}
+pip = "*"
+libmamba = "*"
+libarchive = "*"
+setuptools = "*"
+pre-commit = "*"
+anaconda-client = "*"
+boa = "*"
+conda-build = "<4"  # conda-build 24.x has a bug, missing update_index from conda_build.index
+conda-verify = "*"
+python-build = "*"
+pytest = "*"
+pytest-cov = "*"
+pytest-xdist = "*"
+sphinx = "*"
+sphinx-rtd-theme = "*"
+
+[tool.pixi.package]
+name = "usansred"
+version = "0.0.0"  # placeholder, overwritten by sync-version
+
+[tool.pixi.package.build]
+backend = { name = "pixi-build-python", version = "0.1.*" }
+channels = [
+  "https://prefix.dev/pixi-build-backends",
+  "https://prefix.dev/conda-forge",
+]
+
+[tool.pixi.tasks]
+# Documentation
+build-docs = { cmd = 'sphinx-build -b html docs docs/_build', description = "Build documentation" }
+test-docs = { cmd = "sphinx-build -M doctest docs docs/_build", description = "Test building the documentation" }
+# Testing
+test = { description = "Run the test suite", cmd = "pytest" }
+# Packaging
+pypi-build = { cmd = "hatch build", description = "Build the package for PyPI" }
+pypi-publish = { cmd = "twine upload dist/*", description = "Publish the package to PyPI", depends-on = [
+  "pypi-build",
+] }
+pypi-publish-test = { cmd = "twine upload --repository testpypi dist/*", description = "Publish the package to TestPyPI", depends-on = [
+  "pypi-build",
+] }
+conda-build-command = { cmd = "pixi build", description = "Build the conda package command" }
+conda-build = { description = "Build the conda package", depends-on = [
+  "sync-version",
+  "conda-build-command",
+  "reset-version",
+] }
+conda-publish = { cmd = "anaconda upload *.conda", description = "Publish the .conda package to anaconda.org", depends-on = [
+  "conda-build",
+] }
+# Misc
+audit-deps = { cmd = "pip-audit --local -s osv", description = "Audit the package dependencies for vulnerabilities" }
+clean = { cmd = 'rm -rf .pytest_cache .ruff_cache **/*.egg-info **/dist **/__pycache__', description = "Clean up various caches and build artifacts" }
+clean-conda = { cmd = "rm -f *.conda", description = "Clean the local .conda build artifacts" }
+clean-docs = { cmd = "rm -rf docs/_build", description = "Clean up documentation build artifacts" }
+clean-pypi = { cmd = "rm -rf dist", description = "Clean the PyPI build artifacts" }
+clean-all = { description = "Clean all artifacts", depends-on = [
+  "clean",
+  "clean-conda",
+  "clean-docs",
+  "clean-pypi",
+] }
+sync-version = { cmd = 'version=$(python -m versioningit); toml set tool.pixi.package.version "$version" --toml-path pyproject.toml', description = "Sync pyproject.toml version with Git version" }
+reset-version = { cmd = "toml set tool.pixi.package.version \"0.0.0\" --toml-path pyproject.toml", description = "Reset the package version to 0.0.0" }
+
+[tool.pixi.feature.test.dependencies]
+pytest = "*"
+pytest-cov = "*"
+pytest-repeat = "*"
+pytest-xdist = "*"
+
+[tool.pixi.feature.package.dependencies]
+anaconda-client = "*"
+twine = ">=6.1.0,<7"
+versioningit = "*"
+hatch = "*"
+
+[tool.pixi.feature.package.pypi-dependencies]
+toml-cli = "*"
+
+[tool.pixi.feature.developer.dependencies]
+pip = "*"
+pip-audit = "*"
+pre-commit = "*"
+ruff = "*"
+versioningit = "*"
+
+[tool.pixi.feature.docs.dependencies]
+sphinx = "*"
+sphinx_rtd_theme = "*"
+
 # Add additional 3rd party tool configuration here as needed
