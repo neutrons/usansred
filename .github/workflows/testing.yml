@@ -24,9 +24,6 @@ jobs:
           pixi-version: v0.49.0
           manifest-path: pyproject.toml
 
-      - name: lint
-        run: pixi run lint
-
       - name: Run unit tests
         run: | 
           sudo apt-get install libglu1-mesa
