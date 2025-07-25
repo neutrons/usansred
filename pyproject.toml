@@ -150,9 +150,10 @@ pypi-publish-test = { cmd = "twine upload --repository testpypi dist/*", descrip
 ] }
 conda-build-command = { cmd = "pixi build", description = "Build the conda package command" }
 conda-build = { description = "Build the conda package", depends-on = [
+  "backup-toml",
   "sync-version",
   "conda-build-command",
-  "reset-version",
+  "reset-toml",
 ] }
 conda-publish = { cmd = "anaconda upload *.conda", description = "Publish the .conda package to anaconda.org", depends-on = [
   "conda-build",
@@ -171,7 +172,8 @@ clean-all = { description = "Clean all artifacts", depends-on = [
 ] }
 combine-coverage = {description = "Combine coverage reports", cmd = "coverage combine"}
 sync-version = { cmd = 'version=$(python -m versioningit); toml set tool.pixi.package.version "$version" --toml-path pyproject.toml', description = "Sync pyproject.toml version with Git version" }
-reset-version = { cmd = "toml set tool.pixi.package.version \"0.0.0\" --toml-path pyproject.toml", description = "Reset the package version to 0.0.0" }
+backup-toml = { cmd = "cp pyproject.toml pyproject.toml.bak", description = "Backup the pyproject.toml file" }
+reset-toml = { cmd = "cp pyproject.toml.bak pyproject.toml; rm pyproject.toml.bak", description = "Reset the pyproject.toml file to the original state" }
 
 [tool.pixi.feature.test.dependencies]
 pytest = "*"
