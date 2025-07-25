@@ -138,6 +138,8 @@ build-docs = { cmd = 'sphinx-build -b html docs docs/_build', description = "Bui
 test-docs = { cmd = "sphinx-build -M doctest docs docs/_build", description = "Test building the documentation" }
 # Testing
 test = { description = "Run the test suite", cmd = "pytest" }
+unit-test = {description = "Run the unit tests", cmd = "python -m pytest -vv -m "not datarepo and not sns_mounted" --cov=src --cov-report=xml --cov-report=term-missing tests/ && mv .coverage .coverage.unit"}
+integration-test = {description = "Run the integration tests, cmd = "git submodule update --init && python -m pytest -vv -m "datarepo" --cov=src --cov-report=xml  --cov-report=term-missing tests/ && mv .coverage .coverage.integration"}
 # Packaging
 pypi-build = { cmd = "hatch build", description = "Build the package for PyPI" }
 pypi-publish = { cmd = "twine upload dist/*", description = "Publish the package to PyPI", depends-on = [
@@ -167,6 +169,7 @@ clean-all = { description = "Clean all artifacts", depends-on = [
   "clean-docs",
   "clean-pypi",
 ] }
+combine-coverage = {description = "Combine coverage reports", cmd = ""}
 sync-version = { cmd = 'version=$(python -m versioningit); toml set tool.pixi.package.version "$version" --toml-path pyproject.toml', description = "Sync pyproject.toml version with Git version" }
 reset-version = { cmd = "toml set tool.pixi.package.version \"0.0.0\" --toml-path pyproject.toml", description = "Reset the package version to 0.0.0" }
 

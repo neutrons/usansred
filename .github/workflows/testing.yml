@@ -25,9 +25,14 @@ jobs:
           manifest-path: pyproject.toml
 
       - name: Run unit tests
-        run: | 
-          sudo apt-get install libglu1-mesa
-          pixi run test
+        run: pixi run unit-test
+
+      - name: Run integration tests
+        run: pixi run integration-test
+
+      - name: Combine coverage reports
+        run: pixi run combine-coverage
+
       - name: Upload coverage to codecov
         uses: codecov/codecov-action@v5
         if: github.actor != 'dependabot[bot]'
