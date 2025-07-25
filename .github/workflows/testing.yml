@@ -40,4 +40,4 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Build conda package
-        run: pixi run build-conda
+        run: pixi run conda-build
