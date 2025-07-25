@@ -1,5 +1,6 @@
 name: testing
 
+
 on:
   workflow_dispatch:
   pull_request:
@@ -10,46 +11,31 @@ on:
 jobs:
   linux:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -l {0}
     steps:
-      - uses: actions/checkout@v3
-      - uses: conda-incubator/setup-miniconda@v3
-        name: Setup Conda
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          auto-update-conda: true
-          channels: mantid/label/main,conda-forge,defaults
-          miniforge-version: latest
-          environment-file: environment.yml
-      - name: install additional dependencies
-        run: |
-          echo "installing additional dependencies if cannot be installed from conda"
-      - name: run unit tests
-        run: |
-          echo "running unit tests"
-          python -m pytest -vv -m "not datarepo and not sns_mounted" --cov=src --cov-report=xml --cov-report=term-missing tests/
-          mv .coverage .coverage.unit
-      - name: run integration tests
-        run: |
-          echo "running integration tests"
-          git submodule update --init
-          python -m pytest -vv -m "datarepo" --cov=src --cov-report=xml  --cov-report=term-missing tests/
-          mv .coverage .coverage.integration
-      - name: combine coverage reports
-        run: |
-          coverage combine  # merge all .coverage.* files into .coverage
-      - name: upload coverage to codecov
-        uses: codecov/codecov-action@v4
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.10
+        with:
+          pixi-version: v0.49.0
+          manifest-path: pyproject.toml
+
+      - name: lint
+        run: pixi run lint
+
+      - name: Run unit tests
+        run: | 
+          sudo apt-get install libglu1-mesa
+          pixi run test
+      - name: Upload coverage to codecov
+        uses: codecov/codecov-action@v5
+        if: github.actor != 'dependabot[bot]'
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-      - name: build conda package
-        run: |
-          # set up environment
-          cd conda.recipe
-          echo "versioningit $(versioningit ../)"
-          # conda channels could have been defined in the conda-incubator, but you can copy/paste the lines
-          # below to build the conda package in your local machine
-          CHANNELS="--channel mantid/label/main --channel conda-forge --channel neutrons"
-          VERSION=$(versioningit ../) conda mambabuild $CHANNELS --output-folder . .
-          conda verify noarch/usansred*.tar.bz2
+
+      - name: Build conda package
+        run: pixi run build-conda
