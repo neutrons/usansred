@@ -4,13 +4,15 @@ Release Notes
 =============
 
 ..
-   1.1.0
+   1.1.1
    -----
    (date of release, YYY-MM-DD)
 
    **Of interest to the User**:
 
    **Of interest to the Developer:**
+
+   - PR 20: Update from using conda to using pixi for development
 ..
 
 1.1.0
