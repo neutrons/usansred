@@ -31,9 +31,7 @@ jobs:
         run: pixi run integration-test
 
       - name: Combine coverage reports
-        run: |
-          pixi run combine-coverage
-          coverage xml
+        run: pixi run combine-coverage
 
       - name: Upload coverage to codecov
         uses: codecov/codecov-action@v5

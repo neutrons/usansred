@@ -82,6 +82,7 @@ disable = ["too-many-locals",
 ###################
 
 [tool.pixi.workspace]
+name = "usansred"
 preview = ["pixi-build"]
 channels = [
   "conda-forge",
