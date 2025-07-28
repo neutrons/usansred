@@ -9,17 +9,32 @@ Developer Documentation
 
 Local Environment
 -----------------
-For purposes of development, create conda environment `usansred` with file `environment.yml`, and then
-install the package in development mode with `pip`:
+This project uses [Pixi](https://pixi.sh/) as the single tool for managing environments, dependencies, packaging, and task execution.
+Follow the installation instructions from the [Pixi website](https://pixi.sh/), or use:
 
 .. code-block:: bash
 
-   $> cd cd /path/to/usansred/
-   $> conda create env --solver libmamba --file ./environment.yml
-   $> conda activate usansred
-   (usansred)$> pip install -e ./
+   curl -fsSL https://pixi.sh/install.sh | bash
 
-By installing the package in development mode, one doesn't need to re-install package `usanred` in conda
+
+Run the following command to create and activate the project environment with all dependencies:
+
+.. code-block:: bash
+
+   pixi install
+
+Activate the Pixi environment:
+
+.. code-block:: bash
+
+   pixi shell
+
+
+Then, for development:
+
+- Perform editable install: `pip install --no-deps -e .`
+
+By installing the package in development mode, one doesn't need to re-install package `usanred` in pixi
 environment `usansred` after every change to the source code.
 
 pre-commit Hooks
@@ -29,9 +44,9 @@ Activate the hooks by typing in the terminal:
 
 .. code-block:: bash
 
-   $> cd cd /path/to/mr_reduction/
-   $> conda activate mr_reduction
-   (mr_reduction)$> pre-commit install
+   $> pixi install
+   $> pixi shell
+   (usansred)$> pre-commit install
 
 Development procedure
 ---------------------
@@ -50,7 +65,6 @@ The mantid version and the mantid conda channel (`mantid/label/main` or `mantid/
 synchronized across these files:
 
 - environment.yml
-- conda.recipe/meta.yml
 - .github/workflows/package.yml
 
 Using the Data Repository usansred-data
@@ -153,9 +167,9 @@ To manually build the documentation:
 
 .. code-block:: bash
 
-   $> conda activate usansred
-   (usansred)$> cd /path/to/usansred/docs
-   (usansred)$> make docs
+   $> pixi install
+   $> pixi shell
+   (usansred)$> pixi run docs-build
 
 After this, point your browser to
 `file:///path/to/usansred/docs/build/html/index.html`
