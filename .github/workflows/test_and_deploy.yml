@@ -61,7 +61,6 @@ jobs:
         uses: neutrons/conda-verify@main
         with:
           python-version: "3.10"
-          local-channel: /tmp/local-channel
           package-name: ${{ env.PKG_NAME }}
           extra-channels: mantid-ornl mantid neutrons
           extra-commands: |
