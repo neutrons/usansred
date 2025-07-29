@@ -44,9 +44,8 @@ Activate the hooks by typing in the terminal:
 
 .. code-block:: bash
 
-   $> pixi install
    $> pixi shell
-   (usansred)$> pre-commit install
+   $> pre-commit install
 
 Development procedure
 ---------------------
@@ -167,9 +166,7 @@ To manually build the documentation:
 
 .. code-block:: bash
 
-   $> pixi install
-   $> pixi shell
-   (usansred)$> pixi run docs-build
+   $> pixi run docs-build
 
 After this, point your browser to
 `file:///path/to/usansred/docs/build/html/index.html`
