@@ -13,7 +13,6 @@ dependencies:
   # Development dependencies
   - libmamba
   - libarchive
-  - setuptools
   - pre-commit
   - anaconda-client
   - boa

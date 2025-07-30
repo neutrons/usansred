@@ -65,6 +65,7 @@ jobs:
           extra-channels: mantid-ornl mantid neutrons
           extra-commands: |
             pixi run python -c "import mantid"
+            pixi run python -c "import finddata"
 
       - name: Upload conda package as artifact
         uses: actions/upload-artifact@v4
