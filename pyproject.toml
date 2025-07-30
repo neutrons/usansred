@@ -23,9 +23,6 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
-[tool.black]
-line-length = 119
-
 [tool.ruff]
 line-length = 120
 # https://beta.ruff.rs/docs/rules/
@@ -101,20 +98,20 @@ usansred = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 python = "=3.10"
-versioningit = "*"
 mantidworkbench = "=6.12"
 pandas = "*"
 xlsxwriter = "*"
 finddata = {version = "=0.10.1", channel="neutrons"}
-pip = "*"
-pre-commit = "*"
-anaconda-client = "*"
 python-build = "*"
-pytest = "*"
-pytest-cov = "*"
-pytest-xdist = "*"
-sphinx = "*"
-sphinx-rtd-theme = "*"
+
+# Conda packages (no PyPi) to be enumerated within the conda package to be built.
+[tool.pixi.package.run-dependencies]
+python = "=3.10"
+mantidworkbench = "=6.12"
+pandas = "*"
+xlsxwriter = "*"
+finddata = {version = "=0.10.1", channel="neutrons"}
+
 
 [tool.pixi.package]
 name = "usansred"
