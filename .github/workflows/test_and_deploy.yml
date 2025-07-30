@@ -78,7 +78,7 @@ jobs:
   # shows it as a separate step in the CI workflow
   publish:
     name: Upload package to anaconda
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [tests, build]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
