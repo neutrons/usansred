@@ -126,7 +126,7 @@ finddata = {version = "=0.10.1", channel="neutrons"}
 
 [tool.pixi.package]
 name = "usansred"
-version = "0.0.0"  # placeholder, overwritten by sync-version
+version = "1.2.0.dev16"  # placeholder, overwritten by sync-version
 
 [tool.pixi.package.build]
 backend = { name = "pixi-build-python", version = "0.1.*" }
@@ -203,5 +203,9 @@ versioningit = "*"
 [tool.pixi.feature.docs.dependencies]
 sphinx = "*"
 sphinx_rtd_theme = "*"
+
+[tool.pixi.package.host-dependencies]
+hatchling = "*"
+versioningit = "*"
 
 # Add additional 3rd party tool configuration here as needed

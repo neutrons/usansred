@@ -6090,8 +6090,8 @@ packages:
   timestamp: 1750271478254
 - pypi: ./
   name: usansred
-  version: 1.2.0.dev15+d202507301406
-  sha256: 2e84ef63ce12964e68282e18ca83bb544c06e2ca63a61ec5d7b4284f0c77bdc4
+  version: 1.2.0.dev16+d202507301416
+  sha256: 788c0fd53a45aa16aae8d0a4519de42f1a259ef8e1f44e9d0fbebdcb4f781970
   requires_python: '>=3.10'
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/userpath-1.9.2-pyhd8ed1ab_0.conda
