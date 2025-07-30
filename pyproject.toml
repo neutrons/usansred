@@ -53,8 +53,8 @@ method = "minor"
 
 [tool.versioningit.format]
 distance = "{next_version}.dev{distance}"
-dirty = "{version}+d{build_date:%Y%m%d}"
-distance-dirty = "{next_version}.dev{distance}+d{build_date:%Y%m%d%H%M}"
+dirty = "{version}"
+distance-dirty = "{next_version}.dev{distance}"
 
 [tool.versioningit.write]
 file = "src/usansred/_version.py"
@@ -76,15 +76,6 @@ line-length = 120
 # https://beta.ruff.rs/docs/rules/
 lint.select = ["A", "ARG", "BLE", "E", "F", "I", "PT"]
 lint.ignore = ["F403", "F405", "F401", # wild imports and  unknown names
-]
-
-[tool.pylint]
-max-line-length = 120
-disable = ["too-many-locals",
-           "too-many-statements",
-           "too-many-instance-attributes",
-           "too-many-arguments",
-           "duplicate-code"
 ]
 
 ###################
@@ -114,7 +105,6 @@ mantidworkbench = "=6.12"
 pandas = "*"
 xlsxwriter = "*"
 finddata = {version = "=0.10.1", channel="neutrons"}
-python-build = "*"
 
 # Conda packages (no PyPi) to be enumerated within the conda package to be built.
 [tool.pixi.package.run-dependencies]
@@ -145,12 +135,6 @@ unit-test = {description = "Run the unit tests", cmd = "python -m pytest -vv -m 
 integration-test = {description = "Run the integration tests", cmd = "git submodule update --init && python -m pytest -vv -m \"datarepo\" --cov=src --cov-report=xml  --cov-report=term-missing tests/ && mv .coverage .coverage.integration"}
 # Packaging
 pypi-build = { cmd = "hatch build", description = "Build the package for PyPI" }
-pypi-publish = { cmd = "twine upload dist/*", description = "Publish the package to PyPI", depends-on = [
-  "pypi-build",
-] }
-pypi-publish-test = { cmd = "twine upload --repository testpypi dist/*", description = "Publish the package to TestPyPI", depends-on = [
-  "pypi-build",
-] }
 conda-build-command = { cmd = "pixi build", description = "Build the conda package command" }
 conda-build = { description = "Build the conda package", depends-on = [
   "backup-toml",
@@ -189,6 +173,7 @@ anaconda-client = "*"
 twine = ">=6.1.0,<7"
 versioningit = "*"
 hatch = "*"
+python-build = "*"
 
 [tool.pixi.feature.package.pypi-dependencies]
 toml-cli = "*"

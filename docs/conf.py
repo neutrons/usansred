@@ -67,8 +67,8 @@ pygments_style = "sphinx"
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "sphinx_rtd_theme"  # pylint: disable=C0103
+html_theme = "sphinx_rtd_theme"
 
 html_theme_options = {"style_nav_header_background": "#472375"}
 
-epub_show_urls = "footnote"  # pylint: disable=C0103
+epub_show_urls = "footnote"
