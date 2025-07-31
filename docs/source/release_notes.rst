@@ -3,16 +3,6 @@
 Release Notes
 =============
 
-..
-   1.1.0
-   -----
-   (date of release, YYY-MM-DD)
-
-   **Of interest to the User**:
-
-   **Of interest to the Developer:**
-..
-
 1.1.0
 -----
 (2025-04-01)

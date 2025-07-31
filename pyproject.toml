@@ -14,24 +14,35 @@ homepage = "https://github.com/neutrons/usansred/"
 [project.scripts]
 reduceUSANS = "usansred.reduce:main"
 
+#####################################
+#  BUILDING FROM SOURCES WITH HATCH
+#####################################
+
 [build-system]
-requires = [
-  "setuptools >= 40.6.0",
-  "wheel",
-  "toml",
-  "versioningit"
-]
-build-backend = "setuptools.build_meta"
+build-backend = "hatchling.build"
+requires = ["hatchling", "versioningit"]
 
-[tool.black]
-line-length = 119
+[tool.hatch.version]
+source = "versioningit"
 
-[tool.ruff]
-line-length = 120
-# https://beta.ruff.rs/docs/rules/
-lint.select = ["A", "ARG", "BLE", "E", "F", "I", "PT"]
-lint.ignore = ["F403", "F405", "F401", # wild imports and  unknown names
+[tool.hatch.build.hooks.versioningit-onbuild]
+source-file = "src/usansred/_version.py"
+build-file = "usansred/_version.py"
+
+[tool.hatch.build]
+artifacts = [
+  "reduction/usansred/_version.py",
+  "reduction/usansred/**/*.yml",
+  "reduction/usansred/**/*.yaml",
+  "reduction/usansred/**/*.ini"
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/usansred"]
+
+#################
+#  VERSIONINGIT
+#################
 
 [tool.versioningit.vcs]
 method = "git"
@@ -42,19 +53,11 @@ method = "minor"
 
 [tool.versioningit.format]
 distance = "{next_version}.dev{distance}"
-dirty = "{version}+d{build_date:%Y%m%d}"
-distance-dirty = "{next_version}.dev{distance}+d{build_date:%Y%m%d%H%M}"
+dirty = "{version}"
+distance-dirty = "{next_version}.dev{distance}"
 
 [tool.versioningit.write]
 file = "src/usansred/_version.py"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-exclude = ["tests*", "scripts*", "docs*", "notebooks*"]
-
-[tool.setuptools.package-data]
-"*" = ["*.yml","*.yaml","*.ini"]
-
 
 [tool.pytest.ini_options]
 pythonpath = [
@@ -68,13 +71,126 @@ markers = [
     "sns_mounted: requires the /SNS filesystem"
 ]
 
-[tool.pylint]
-max-line-length = 120
-disable = ["too-many-locals",
-           "too-many-statements",
-           "too-many-instance-attributes",
-           "too-many-arguments",
-           "duplicate-code"
+[tool.ruff]
+line-length = 120
+# https://beta.ruff.rs/docs/rules/
+lint.select = ["A", "ARG", "BLE", "E", "F", "I", "PT"]
+lint.ignore = ["F403", "F405", "F401", # wild imports and  unknown names
 ]
+
+###################
+### Pixi config ###
+###################
+
+[tool.pixi.workspace]
+name = "usansred"
+preview = ["pixi-build"]
+channels = [
+  "conda-forge",
+  "mantid/label/main",
+  "neutrons"
+]
+platforms = ["linux-64"]
+
+[tool.pixi.environments]
+default = {features = ["test", "package", "docs", "developer"], solve-group = "default"}
+docs = {features = ["docs"], solve-group = "docs"}
+
+[tool.pixi.pypi-dependencies]
+usansred = { path = ".", editable = true }
+
+[tool.pixi.dependencies]
+python = "=3.10"
+mantidworkbench = "=6.12"
+pandas = "*"
+xlsxwriter = "*"
+finddata = {version = "=0.10.1", channel="neutrons"}
+
+# Conda packages (no PyPi) to be enumerated within the conda package to be built.
+[tool.pixi.package.run-dependencies]
+python = "=3.10"
+mantidworkbench = "=6.12"
+pandas = "*"
+xlsxwriter = "*"
+finddata = {version = "=0.10.1", channel="neutrons"}
+
+[tool.pixi.package]
+name = "usansred"
+version = "1.2.0.dev16"  # placeholder, overwritten by sync-version
+
+[tool.pixi.package.build]
+backend = { name = "pixi-build-python", version = "0.1.*" }
+channels = [
+  "https://prefix.dev/pixi-build-backends",
+  "https://prefix.dev/conda-forge",
+]
+
+[tool.pixi.tasks]
+# Documentation
+build-docs = { cmd = 'sphinx-build -b html docs docs/_build', description = "Build documentation" }
+test-docs = { cmd = "sphinx-build -M doctest docs docs/_build", description = "Test building the documentation" }
+# Testing
+test = { description = "Run the test suite", cmd = "pytest" }
+unit-test = {description = "Run the unit tests", cmd = "python -m pytest -vv -m \"not datarepo and not sns_mounted\" --cov=src --cov-report=xml --cov-report=term-missing tests/ && mv .coverage .coverage.unit"}
+integration-test = {description = "Run the integration tests", cmd = "git submodule update --init && python -m pytest -vv -m \"datarepo\" --cov=src --cov-report=xml  --cov-report=term-missing tests/ && mv .coverage .coverage.integration"}
+# Packaging
+pypi-build = { cmd = "hatch build", description = "Build the package for PyPI" }
+conda-build-command = { cmd = "pixi build", description = "Build the conda package command" }
+conda-build = { description = "Build the conda package", depends-on = [
+  "backup-toml",
+  "sync-version",
+  "conda-build-command",
+  "reset-toml",
+] }
+conda-publish = { cmd = "anaconda upload *.conda", description = "Publish the .conda package to anaconda.org", depends-on = [
+  "conda-build",
+] }
+# Misc
+audit-deps = { cmd = "pip-audit --local -s osv", description = "Audit the package dependencies for vulnerabilities" }
+clean = { cmd = 'rm -rf .pytest_cache .ruff_cache **/*.egg-info **/dist **/__pycache__', description = "Clean up various caches and build artifacts" }
+clean-conda = { cmd = "rm -f *.conda", description = "Clean the local .conda build artifacts" }
+clean-docs = { cmd = "rm -rf docs/_build", description = "Clean up documentation build artifacts" }
+clean-pypi = { cmd = "rm -rf dist", description = "Clean the PyPI build artifacts" }
+clean-all = { description = "Clean all artifacts", depends-on = [
+  "clean",
+  "clean-conda",
+  "clean-docs",
+  "clean-pypi",
+] }
+combine-coverage = {description = "Combine coverage reports", cmd = "coverage combine"}
+sync-version = { cmd = 'version=$(python -m versioningit); toml set tool.pixi.package.version "$version" --toml-path pyproject.toml', description = "Sync pyproject.toml version with Git version" }
+backup-toml = { cmd = "cp pyproject.toml pyproject.toml.bak", description = "Backup the pyproject.toml file" }
+reset-toml = { cmd = "cp pyproject.toml.bak pyproject.toml; rm pyproject.toml.bak", description = "Reset the pyproject.toml file to the original state" }
+
+[tool.pixi.feature.test.dependencies]
+pytest = "*"
+pytest-cov = "*"
+pytest-repeat = "*"
+pytest-xdist = "*"
+
+[tool.pixi.feature.package.dependencies]
+anaconda-client = "*"
+twine = ">=6.1.0,<7"
+versioningit = "*"
+hatch = "*"
+python-build = "*"
+
+[tool.pixi.feature.package.pypi-dependencies]
+toml-cli = "*"
+
+[tool.pixi.feature.developer.dependencies]
+pip = "*"
+pip-audit = "*"
+pre-commit = "*"
+ruff = "*"
+versioningit = "*"
+
+[tool.pixi.feature.docs.dependencies]
+sphinx = "*"
+sphinx_rtd_theme = "*"
+
+[tool.pixi.package.host-dependencies]
+hatchling = "*"
+versioningit = "*"
 
 # Add additional 3rd party tool configuration here as needed
