@@ -60,23 +60,27 @@ jobs:
       - name: Build conda package
         run: |
           pixi run conda-build
-          ls ${{ env.PKG_NAME }}-*.conda
-
-      - name: Upload conda package as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: artifact-conda-package
-          path: ${{ env.PKG_NAME }}-*.conda
+          # prepare the local channel for verification
+          /bin/rm -rf /tmp/local-channel
+          mkdir -p /tmp/local-channel/linux-64
+          cp ${{ env.PKG_NAME }}-*.conda /tmp/local-channel/linux-64
 
       - name: Verify Conda Package
         uses: neutrons/conda-verify@main
         with:
           python-version: "3.11"
           package-name: ${{ env.PKG_NAME }}
+          local-channel: /tmp/local-channel
           extra-channels: mantid neutrons
           extra-commands: |
             pixi run python -c "import mantid"
             pixi run python -c "import finddata"
+
+      - name: Upload conda package as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-conda-package
+          path: ${{ env.PKG_NAME }}-*.conda
 
 
   # Publish the package as a separate job so that the Github Actions webpage
