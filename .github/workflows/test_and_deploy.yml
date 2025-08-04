@@ -61,7 +61,7 @@ jobs:
         run: |
           pixi run conda-build
           # prepare the local channel for verification
-          /bin/rm -rf /tmp/local-channel
+          rm -rf /tmp/local-channel
           mkdir -p /tmp/local-channel/linux-64
           cp ${{ env.PKG_NAME }}-*.conda /tmp/local-channel/linux-64
 
