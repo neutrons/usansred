@@ -2,7 +2,7 @@
 name = "usansred"
 description = "Reduction backend for USANS"
 dynamic = ["version"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   # list all runtime dependencies here
 ]
@@ -100,23 +100,23 @@ docs = {features = ["docs"], solve-group = "docs"}
 usansred = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
-python = "=3.10"
-mantidworkbench = "=6.12"
+python = "=3.11"
+mantidworkbench = ">=6.13.0,<6.14.0"
 pandas = "*"
 xlsxwriter = "*"
 finddata = {version = "=0.10.1", channel="neutrons"}
 
 # Conda packages (no PyPi) to be enumerated within the conda package to be built.
 [tool.pixi.package.run-dependencies]
-python = "=3.10"
-mantidworkbench = "=6.12"
+python = "=3.11"
+mantidworkbench = ">=6.13.0,<6.14.0"
 pandas = "*"
 xlsxwriter = "*"
 finddata = {version = "=0.10.1", channel="neutrons"}
 
 [tool.pixi.package]
 name = "usansred"
-version = "1.2.0.dev16"  # placeholder, overwritten by sync-version
+version = "1.0.0"  # placeholder, overwritten by sync-version
 
 [tool.pixi.package.build]
 backend = { name = "pixi-build-python", version = "0.1.*" }
@@ -184,6 +184,7 @@ pip-audit = "*"
 pre-commit = "*"
 ruff = "*"
 versioningit = "*"
+argcomplete = "*"
 
 [tool.pixi.feature.docs.dependencies]
 sphinx = "*"
