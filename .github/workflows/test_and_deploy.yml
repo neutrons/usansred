@@ -7,6 +7,7 @@ on:
   push:
     branches: [next, qa, main]
     tags: ['v*']
+
 env:
   PKG_NAME: usansred
 
@@ -57,13 +58,19 @@ jobs:
           pixi-version: v0.49.0
 
       - name: Build conda package
-        run: pixi run conda-build
+        run: |
+          pixi run conda-build
+          # prepare the local channel for verification
+          rm -rf /tmp/local-channel
+          mkdir -p /tmp/local-channel/linux-64
+          cp ${{ env.PKG_NAME }}-*.conda /tmp/local-channel/linux-64
 
       - name: Verify Conda Package
         uses: neutrons/conda-verify@main
         with:
           python-version: "3.11"
           package-name: ${{ env.PKG_NAME }}
+          local-channel: /tmp/local-channel
           extra-channels: mantid neutrons
           extra-commands: |
             pixi run python -c "import mantid"
