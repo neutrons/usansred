@@ -340,11 +340,11 @@ class Sample:
             for scan in self.scans:
                 it = list(
                     zip(
-                    scan.monitorData["IQData"]["Q"],
-                    scan.monitorData["IQData"]["I"],
-                    scan.monitorData["IQData"]["E"],
-                    scan.detectorData[bank]["IQData"]["I"],
-                    scan.detectorData[bank]["IQData"]["E"],
+                        scan.monitorData["IQData"]["Q"],
+                        scan.monitorData["IQData"]["I"],
+                        scan.monitorData["IQData"]["E"],
+                        scan.detectorData[bank]["IQData"]["I"],
+                        scan.detectorData[bank]["IQData"]["E"],
                     )
                 )
 
@@ -445,33 +445,33 @@ class Sample:
             return result.x
 
         def clean_iq(qScaled, iScaled, eScaled):
-            '''
+            """
             Remove duplicate values in q by:
             Taking average of all i values with same q
             Taking standard deviation of error values of e with same q
-            return - 
+            return -
                 cleaned q, i, and error values
-            '''
-            from collections import defaultdict
+            """
             import math
-        
+            from collections import defaultdict
+
             # Dictionary to store sums for averaging I and propagating errors for E
-            sum_dict = defaultdict(lambda: {'I_sum': 0, 'I_count': 0, 'E_sum_squares': 0})
-            
+            sum_dict = defaultdict(lambda: {"I_sum": 0, "I_count": 0, "E_sum_squares": 0})
+
             for q, i, e in zip(qScaled, iScaled, eScaled):
-                sum_dict[q]['I_sum'] += i
-                sum_dict[q]['I_count'] += 1
-                sum_dict[q]['E_sum_squares'] += e ** 2
-        
+                sum_dict[q]["I_sum"] += i
+                sum_dict[q]["I_count"] += 1
+                sum_dict[q]["E_sum_squares"] += e**2
+
             q_cleaned = []
             i_cleaned = []
             e_cleaned = []
-        
+
             for q, values in sum_dict.items():
                 q_cleaned.append(q)
-                i_cleaned.append(values['I_sum'] / values['I_count'])
-                e_cleaned.append(math.sqrt(values['E_sum_squares']))
-        
+                i_cleaned.append(values["I_sum"] / values["I_count"])
+                e_cleaned.append(math.sqrt(values["E_sum_squares"]))
+
             return q_cleaned, i_cleaned, e_cleaned
 
         for bb in range(self.numOfBanks):
@@ -519,12 +519,7 @@ class Sample:
 
             qcleaned, icleaned, ecleaned = clean_iq(qScaled, iScaled, eScaled)
 
-            dataScaled = {
-                'Q': qcleaned.copy(),
-                'I': icleaned.copy(),
-                'E': ecleaned.copy(),
-                'T':[]
-            }
+            dataScaled = {"Q": qcleaned.copy(), "I": icleaned.copy(), "E": ecleaned.copy(), "T": []}
 
             self.dataScaled.append(dataScaled)
         q_range = f"{min(self.dataScaled[0]['Q'])} - {max(self.dataScaled[0]['Q'])}"
@@ -678,10 +673,10 @@ class Sample:
 
     def _match_or_interpolate(self, q_data, q_bg, i_bg, e_bg, tolerance=1e-5):
         """Match q_bg values to q_data directly if close enough, otherwise interpolate"""
-        
+
         i_bg_matched = numpy.zeros_like(q_data)
         e_bg_matched = numpy.zeros_like(q_data)
-        
+
         for i, q in enumerate(q_data):
             # Find the index in q_bg that is closest to the current q_data value
             idx = numpy.argmin(numpy.abs(q_bg - q))
@@ -693,9 +688,9 @@ class Sample:
                 # Otherwise, interpolate
                 i_bg_matched[i] = numpy.interp(q, q_bg, i_bg)
                 e_bg_matched[i] = numpy.interp(q, q_bg, e_bg)
-        
+
         return i_bg_matched, e_bg_matched
-    
+
     def subtractBg(self, background, vScale=1.0):
         """
         Subtract the background
@@ -703,7 +698,7 @@ class Sample:
 
         return
         """
-        
+
         if self.experiment.logbin:
             assert self.isLogBinned
             msg = (
@@ -739,21 +734,21 @@ class Sample:
             bgScaled = self.experiment.background.dataScaled[0]
 
             # Convert things to numpy arrays
-            q_data = numpy.array(dataScaled['Q'])
-            i_data = numpy.array(dataScaled['I'])
-            e_data = numpy.array(dataScaled['E'])
-        
-            q_bg = numpy.array(bgScaled['Q'])
-            i_bg = numpy.array(bgScaled['I'])
-            e_bg = numpy.array(bgScaled['E'])
-        
+            q_data = numpy.array(dataScaled["Q"])
+            i_data = numpy.array(dataScaled["I"])
+            e_data = numpy.array(dataScaled["E"])
+
+            q_bg = numpy.array(bgScaled["Q"])
+            i_bg = numpy.array(bgScaled["I"])
+            e_bg = numpy.array(bgScaled["E"])
+
             # Interpolate bg I and E values at data Q points
             i_bg_interp, e_bg_interp = self._match_or_interpolate(q_data, q_bg, i_bg, e_bg)
-        
+
             # Subtract background
             i_subtracted = i_data - i_bg_interp
             e_subtracted = numpy.sqrt(e_data**2 + e_bg_interp**2)
-            
+
             self.dataBgSubtracted["Q"] = q_data
             self.dataBgSubtracted["I"] = i_subtracted
             self.dataBgSubtracted["E"] = e_subtracted
@@ -940,7 +935,7 @@ class Experiment:
 
         self.folder = os.path.dirname(csvFilePath)
 
-        with open(csvFilePath, newline="", encoding='utf-8-sig') as csvFile:
+        with open(csvFilePath, newline="", encoding="utf-8-sig") as csvFile:
             csvReader = csv.reader(csvFile, delimiter=",")
 
             for row in csvReader:
