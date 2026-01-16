@@ -4,8 +4,9 @@
 import csv
 import logging
 import os
-import pandas
 import sys
+
+import pandas
 
 __author__ = "Yingrui Shang"
 __copyright__ = "Copyright 2021, NSD, ORNL"
@@ -47,36 +48,26 @@ def reportFromCSV(csvFilePath, outputFolder=None):
     if outputFolder is None:
         outputFolder = os.path.join(dataFolderName, "reduced")
 
-    xlsxWriter = pandas.ExcelWriter(
-        os.path.join(outputFolder, "summary.xlsx"), engine="xlsxwriter"
-    )
+    xlsxWriter = pandas.ExcelWriter(os.path.join(outputFolder, "summary.xlsx"), engine="xlsxwriter")
 
     workbook = xlsxWriter.book
     # nbFormat = workbook.add_format({"bold": False})
 
     # Create a chart sheet for unscaled data
     chartsheetUnscaled = workbook.add_chartsheet("Unscaled")
-    mainChartUnscaled = workbook.add_chart(
-        {"type": "scatter", "subtype": "smooth_with_markers"}
-    )
+    mainChartUnscaled = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
     # Create a chart sheet for original data
     chartsheetOrig = workbook.add_chartsheet("Original")
-    mainChartOrig = workbook.add_chart(
-        {"type": "scatter", "subtype": "smooth_with_markers"}
-    )
+    mainChartOrig = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
     # log binned data
     chartsheetLogBinned = workbook.add_chartsheet("Log Binned")
-    mainChartLogBinned = workbook.add_chart(
-        {"type": "scatter", "subtype": "smooth_with_markers"}
-    )
+    mainChartLogBinned = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
     # log binned data with background removed
     chartsheetSubtracted = workbook.add_chartsheet("BG Subtracted")
-    mainChartSubtracted = workbook.add_chart(
-        {"type": "scatter", "subtype": "smooth_with_markers"}
-    )
+    mainChartSubtracted = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
     mainChartUnscaled.set_x_axis({"name": "Q (1/A)", "log_base": 10})
 
@@ -129,11 +120,7 @@ def reportFromCSV(csvFilePath, outputFolder=None):
                         df = pandas.concat(
                             [
                                 df,
-                                df[
-                                    (df["Q(1/A)"] > 0)
-                                    & (df["I(1/cm)"] > 0)
-                                    & (df["dI(1/cm)"] > 0)
-                                ],
+                                df[(df["Q(1/A)"] > 0) & (df["I(1/cm)"] > 0) & (df["dI(1/cm)"] > 0)],
                             ],
                             ignore_index=False,
                             axis=1,
@@ -156,9 +143,7 @@ def reportFromCSV(csvFilePath, outputFolder=None):
                         worksheet = xlsxWriter.sheets[wn]
                         # worksheet.set_column('A:A', 12, nbFormat)
 
-                        chart = workbook.add_chart(
-                            {"type": "scatter", "subtype": "smooth_with_markers"}
-                        )
+                        chart = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
                         chart.add_series(
                             {

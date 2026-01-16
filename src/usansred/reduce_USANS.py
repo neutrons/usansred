@@ -8,20 +8,21 @@ import sys
 import traceback
 import warnings
 
+import numpy as np
+
 # third-party imports
 # from debugpy.common.log import newline
 from mantid.simpleapi import (
-    mtd,
     ConvertTableToMatrixWorkspace,
     CropWorkspace,
     LoadEventNexus,
+    Rebin,
     SaveAscii,
     StepScan,
     SumSpectra,
-    Rebin,
+    mtd,
 )
 from matplotlib import use
-import numpy as np
 
 # usansred imports
 from usansred import reduce
@@ -93,26 +94,14 @@ def main():
 
     # Get ROI from logs
     wavelength = [3.6, 1.8, 1.2, 0.9, 0.72, 0.6]
-    roi_min = (
-        mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Min").value[-1]
-    )
+    roi_min = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Min").value[-1]
     # roi_step = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Size").value[-1]
 
     # Reference to the item in the wavelength array
     main_index = 1
     for i in range(1, 8):
-        lower_bound = (
-            mtd["USANS"]
-            .getRun()
-            .getProperty("BL1A:Det:N1:Det1:TOF:ROI:%s:Min" % i)
-            .value[-1]
-        )
-        tof_step = (
-            mtd["USANS"]
-            .getRun()
-            .getProperty("BL1A:Det:N1:Det1:TOF:ROI:%s:Size" % i)
-            .value[-1]
-        )
+        lower_bound = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:%s:Min" % i).value[-1]
+        tof_step = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:%s:Size" % i).value[-1]
         if i > 1 and lower_bound == roi_min:
             main_index = i - 2
         peaks.append([lower_bound * 1000.0, (lower_bound + tof_step) * 1000.0])
@@ -151,9 +140,7 @@ def main():
             OutputWorkspace="USANS_monitors",
         )
         file_path = os.path.join(outdir, "%s_monitor.txt" % file_prefix)
-        SaveAscii(
-            InputWorkspace="USANS_monitors", Filename=file_path, WriteSpectrumID=False
-        )
+        SaveAscii(InputWorkspace="USANS_monitors", Filename=file_path, WriteSpectrumID=False)
 
     # Find whether we have a motor turning
     short_name = ""
@@ -182,9 +169,7 @@ def main():
                         ColumnE="Error",
                         OutputWorkspace="USANS_scan_monitor",
                     )
-                    file_path = os.path.join(
-                        outdir, "%s_monitor_scan_%s.txt" % (file_prefix, short_name)
-                    )
+                    file_path = os.path.join(outdir, "%s_monitor_scan_%s.txt" % (file_prefix, short_name))
                     SaveAscii(
                         InputWorkspace="USANS_scan_monitor",
                         Filename=file_path,
@@ -192,40 +177,19 @@ def main():
                     )
                     y_monitor = mtd["USANS_scan_monitor"].readY(0)
 
-                iq_file_path_simple = os.path.join(
-                    outdir, "%s_iq_%s_%s.txt" % (file_prefix, short_name, main_wl)
-                )
+                iq_file_path_simple = os.path.join(outdir, "%s_iq_%s_%s.txt" % (file_prefix, short_name, main_wl))
                 iq_fd_simple = open(iq_file_path_simple, "w")
 
-                iq_file_path = os.path.join(
-                    outdir, "%s_iq_%s.txt" % (file_prefix, short_name)
-                )
+                iq_file_path = os.path.join(outdir, "%s_iq_%s.txt" % (file_prefix, short_name))
                 iq_fd = open(iq_file_path, "w")
 
                 start_time = mtd["USANS"].getRun().getProperty("start_time").value
-                experiment = (
-                    mtd["USANS"].getRun().getProperty("experiment_identifier").value
-                )
+                experiment = mtd["USANS"].getRun().getProperty("experiment_identifier").value
                 run_number = mtd["USANS"].getRun().getProperty("run_number").value
                 run_title = mtd["USANS"].getRun().getProperty("run_title").value
-                sequence_first_run = (
-                    mtd["USANS"]
-                    .getRun()
-                    .getProperty("BL1A:CS:Scan:USANS:FirstRun")
-                    .value[-1]
-                )
-                sequence_index = (
-                    mtd["USANS"]
-                    .getRun()
-                    .getProperty("BL1A:CS:Scan:USANS:Index")
-                    .value[-1]
-                )
-                meta_wavelength = (
-                    mtd["USANS"]
-                    .getRun()
-                    .getProperty("BL1A:CS:Scan:USANS:Wavelength")
-                    .value[-1]
-                )
+                sequence_first_run = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:FirstRun").value[-1]
+                sequence_index = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Index").value[-1]
+                meta_wavelength = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Wavelength").value[-1]
                 print("Wavelength: %s [%s]" % (wavelength[main_index], meta_wavelength))
 
                 iq_fd.write("# Experiment %s Run %s\n" % (experiment, run_number))
@@ -238,16 +202,12 @@ def main():
                     "# %-8s %-10s %-10s %-10s %-10s %-10s %-10s %-5s\n"
                     % ("Q", "I(Q)", "dI(Q)", "dQ", "N(Q)", "dN(Q)", "Mon(Q)", "Lambda")
                 )
-                iq_fd_simple.write(
-                    "# Experiment %s Run %s\n" % (experiment, run_number)
-                )
+                iq_fd_simple.write("# Experiment %s Run %s\n" % (experiment, run_number))
                 iq_fd_simple.write("# Run start time: %s\n" % start_time)
                 iq_fd_simple.write("# Title: %s\n" % run_title)
                 iq_fd_simple.write("# Sequence ID: %s\n" % sequence_first_run)
                 iq_fd_simple.write("# Sequence index: %s\n" % sequence_index)
-                iq_fd_simple.write(
-                    "# Selected wavelength: %s\n" % wavelength[main_index]
-                )
+                iq_fd_simple.write("# Selected wavelength: %s\n" % wavelength[main_index])
                 iq_fd_simple.write("# %-8s %-10s %-10s\n" % ("Q", "I(Q)", "dI(Q)"))
 
                 for i in range(len(peaks)):
@@ -258,9 +218,7 @@ def main():
                         XMin=peak[0],
                         XMax=peak[1],
                     )
-                    StepScan(
-                        InputWorkspace="peak_detector", OutputWorkspace="scan_table"
-                    )
+                    StepScan(InputWorkspace="peak_detector", OutputWorkspace="scan_table")
                     ConvertTableToMatrixWorkspace(
                         InputWorkspace="scan_table",
                         ColumnX=scan_var,
@@ -268,24 +226,22 @@ def main():
                         ColumnE="Error",
                         OutputWorkspace="USANS_scan_detector",
                     )
-                    mtd["USANS_scan_detector"].getAxis(1).getUnit().setLabel(
-                        "Counts", "Counts"
-                    )
+                    mtd["USANS_scan_detector"].getAxis(1).getUnit().setLabel("Counts", "Counts")
                     x_data = mtd["USANS_scan_detector"].readX(0)
                     y_data = mtd["USANS_scan_detector"].readY(0)
                     e_data = mtd["USANS_scan_detector"].readE(0)
 
                     if i == 0:
-                        file_path = os.path.join(
-                            outdir, "%s_detector_%s.txt" % (file_prefix, main_wl)
-                        )
+                        file_path = os.path.join(outdir, "%s_detector_%s.txt" % (file_prefix, main_wl))
                         SaveAscii(
                             InputWorkspace="USANS_scan_detector",
                             Filename=file_path,
                             WriteSpectrumID=False,
                         )
                         # json_file_path = os.path.join(outdir, "%s_plot_data.json" % file_prefix)
-                        # SavePlot1DAsJson(InputWorkspace="USANS_scan_detector", JsonFilename=json_file_path, PlotName="main_output")
+                        # SavePlot1DAsJson(
+                        #     InputWorkspace="USANS_scan_detector", JsonFilename=json_file_path, PlotName="main_output"
+                        # )
 
                         try:
                             from postprocessing.publish_plot import plot1d
@@ -293,9 +249,7 @@ def main():
                             try:
                                 from finddata.publish_plot import plot1d
                             except:  # noqa E722
-                                logging.error(
-                                    "Cannot import postprocessing or finddata."
-                                )
+                                logging.error("Cannot import postprocessing or finddata.")
 
                         try:
                             plot1d(
@@ -336,15 +290,12 @@ def main():
                                 (e_data[i_theta] / y_monitor[i_theta]) ** 2
                                 + y_data[i_theta] ** 2 / y_monitor[i_theta] ** 3
                             )
-                            iq_fd_simple.write(
-                                "%-10.6g %-10.6g %-10.6g\n" % (q, i_q, di_q)
-                            )
+                            iq_fd_simple.write("%-10.6g %-10.6g %-10.6g\n" % (q, i_q, di_q))
 
                     else:
                         file_path = os.path.join(
                             outdir,
-                            "%s_detector_scan_%s_peak_%s.txt"
-                            % (file_prefix, short_name, i),
+                            "%s_detector_scan_%s_peak_%s.txt" % (file_prefix, short_name, i),
                         )
                         SaveAscii(
                             InputWorkspace="USANS_scan_detector",
@@ -352,12 +303,7 @@ def main():
                             WriteSpectrumID=False,
                         )
                         for i_theta in range(len(x_data)):
-                            q = (
-                                2.0
-                                * math.pi
-                                * math.sin(x_data[i_theta] * math.pi / 180.0 / 3600.0)
-                                / wavelength[i - 1]
-                            )
+                            q = 2.0 * math.pi * math.sin(x_data[i_theta] * math.pi / 180.0 / 3600.0) / wavelength[i - 1]
                             # if q<=0:
                             #    continue
 
@@ -397,9 +343,7 @@ def main():
                     )
 
                     if i == 0:
-                        file_path = os.path.join(
-                            outdir, "%s_trans_%s.txt" % (file_prefix, main_wl)
-                        )
+                        file_path = os.path.join(outdir, "%s_trans_%s.txt" % (file_prefix, main_wl))
                         SaveAscii(
                             InputWorkspace="USANS_scan_trans",
                             Filename=file_path,
@@ -408,8 +352,7 @@ def main():
                     else:
                         file_path = os.path.join(
                             outdir,
-                            "%s_trans_scan_%s_peak_%s.txt"
-                            % (file_prefix, short_name, i),
+                            "%s_trans_scan_%s_peak_%s.txt" % (file_prefix, short_name, i),
                         )
                         SaveAscii(
                             InputWorkspace="USANS_scan_trans",
@@ -422,17 +365,13 @@ def main():
 
     # list all the sequence files
     json_files = [
-        pos_json
-        for pos_json in os.listdir(outdir)
-        if pos_json.endswith(".json") and pos_json.startswith("scan")
+        pos_json for pos_json in os.listdir(outdir) if pos_json.endswith(".json") and pos_json.startswith("scan")
     ]
     json_files.sort()
     json_files = [os.path.join(outdir, ff) for ff in json_files]
 
     sample_json_files = [
-        pos_json
-        for pos_json in os.listdir(outdir)
-        if pos_json.endswith(".json") and pos_json.startswith("sample")
+        pos_json for pos_json in os.listdir(outdir) if pos_json.endswith(".json") and pos_json.startswith("sample")
     ]
     sample_json_files.sort()
     sample_json_files = [os.path.join(outdir, ff) for ff in json_files]
