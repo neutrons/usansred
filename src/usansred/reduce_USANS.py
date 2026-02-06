@@ -1,4 +1,3 @@
-# standard imports
 import csv
 import json
 import logging
@@ -9,9 +8,6 @@ import traceback
 import warnings
 
 import numpy as np
-
-# third-party imports
-# from debugpy.common.log import newline
 from mantid.simpleapi import (
     ConvertTableToMatrixWorkspace,
     CropWorkspace,
@@ -24,7 +20,6 @@ from mantid.simpleapi import (
 )
 from matplotlib import use
 
-# usansred imports
 from usansred import reduce
 from usansred.summary import reportFromCSV
 

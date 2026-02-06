@@ -1,6 +1,5 @@
 """summary.py: summary of the reduced data."""
 
-# standard imports
 import csv
 import logging
 import os
@@ -10,17 +9,18 @@ import pandas
 
 __author__ = "Yingrui Shang"
 __copyright__ = "Copyright 2021, NSD, ORNL"
+__all__ = ["report_from_csv"]
 
 # separate logging in file and console
 logging.basicConfig(filename="file.log", filemode="w", level=logging.INFO)
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logging.getLogger("").addHandler(console)
-__all__ = ["reportFromCSV"]
+
 suffix = 0
 
 
-def formatSheetName(fn):
+def format_sheet_name(fn):
     """
     Reformat the file name to a valid sheetname in excel worksheet
     """
@@ -35,67 +35,88 @@ def formatSheetName(fn):
     return wn
 
 
-def reportFromCSV(csvFilePath, outputFolder=None):
+def get_filenames_from_samples(sample_name):
+    """
+    Get the reduced file names from sample name
+    sample_name - sample name
+    return - a list of reduced file names associated with this sample
+
+    """
+    if sample_name:
+        return (
+            "UN_" + sample_name + "_det_1.txt",
+            "UN_" + sample_name + "_det_1_lb.txt",
+            "UN_" + sample_name + "_det_1_lbs.txt",
+            "UN_" + sample_name + "_det_1_unscaled.txt",
+        )
+    else:
+        logging.info("Sample name is empty or not valid")
+        raise
+
+    return
+
+
+def report_from_csv(csv_file_path, output_folder=None):
     """generate report from csv file with a list
     csvFile - file location of csv file
     """
-    if not os.path.exists(csvFilePath):
-        logging.info(f"The file path: {csvFilePath} does not exist")
+    if not os.path.exists(csv_file_path):
+        logging.info(f"The file path: {csv_file_path} does not exist")
         raise
 
-    dataFolderName = os.path.dirname(csvFilePath)
+    data_folder_name = os.path.dirname(csv_file_path)
 
-    if outputFolder is None:
-        outputFolder = os.path.join(dataFolderName, "reduced")
+    if output_folder is None:
+        output_folder = os.path.join(data_folder_name, "reduced")
 
-    xlsxWriter = pandas.ExcelWriter(os.path.join(outputFolder, "summary.xlsx"), engine="xlsxwriter")
+    xlsx_writer = pandas.ExcelWriter(os.path.join(output_folder, "summary.xlsx"), engine="xlsxwriter")
 
-    workbook = xlsxWriter.book
+    workbook = xlsx_writer.book
     # nbFormat = workbook.add_format({"bold": False})
 
     # Create a chart sheet for unscaled data
-    chartsheetUnscaled = workbook.add_chartsheet("Unscaled")
-    mainChartUnscaled = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
+    chartsheet_unscaled = workbook.add_chartsheet("Unscaled")
+    main_chart_unscaled = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
     # Create a chart sheet for original data
-    chartsheetOrig = workbook.add_chartsheet("Original")
-    mainChartOrig = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
+    chartsheet_orig = workbook.add_chartsheet("Original")
+    main_chart_orig = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
     # log binned data
-    chartsheetLogBinned = workbook.add_chartsheet("Log Binned")
-    mainChartLogBinned = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
+    chartsheet_log_binned = workbook.add_chartsheet("Log Binned")
+    main_chart_log_binned = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
     # log binned data with background removed
-    chartsheetSubtracted = workbook.add_chartsheet("BG Subtracted")
-    mainChartSubtracted = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
+    chartsheet_subtracted = workbook.add_chartsheet("BG Subtracted")
+    main_chart_subtracted = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
-    mainChartUnscaled.set_x_axis({"name": "Q (1/A)", "log_base": 10})
+    main_chart_unscaled.set_x_axis({"name": "Q (1/A)", "log_base": 10})
 
-    mainChartUnscaled.set_y_axis({"name": "I (1/cn)", "log_base": 10})
-    mainChartUnscaled.set_title({"name": "Unscaled Data"})
+    main_chart_unscaled.set_y_axis({"name": "I (1/cn)", "log_base": 10})
+    main_chart_unscaled.set_title({"name": "Unscaled Data"})
 
-    mainChartOrig.set_x_axis({"name": "Q (1/A)", "log_base": 10})
+    main_chart_orig.set_x_axis({"name": "Q (1/A)", "log_base": 10})
 
-    mainChartOrig.set_y_axis({"name": "I (1/cn)", "log_base": 10})
-    mainChartOrig.set_title({"name": "Original Data"})
+    main_chart_orig.set_y_axis({"name": "I (1/cn)", "log_base": 10})
+    main_chart_orig.set_title({"name": "Original Data"})
 
-    mainChartLogBinned.set_x_axis({"name": "Q (1/A)", "log_base": 10})
+    main_chart_log_binned.set_x_axis({"name": "Q (1/A)", "log_base": 10})
 
-    mainChartLogBinned.set_y_axis({"name": "I (1/cn)", "log_base": 10})
+    main_chart_log_binned.set_y_axis({"name": "I (1/cn)", "log_base": 10})
 
-    mainChartLogBinned.set_title({"name": "Log Binned"})
+    main_chart_log_binned.set_title({"name": "Log Binned"})
 
-    mainChartSubtracted.set_x_axis({"name": "Q (1/A)", "log_base": 10})
+    main_chart_subtracted.set_x_axis({"name": "Q (1/A)", "log_base": 10})
 
-    mainChartSubtracted.set_y_axis({"name": "I (1/cn)", "log_base": 10})
-    mainChartSubtracted.set_title({"name": "Background Subtracted"})
+    main_chart_subtracted.set_y_axis({"name": "I (1/cn)", "log_base": 10})
+    main_chart_subtracted.set_title({"name": "Background Subtracted"})
 
-    with open(csvFilePath, newline="") as csvFile:
-        csvReader = csv.reader(csvFile, delimiter=",")
+    with open(csv_file_path, newline="") as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=",")
 
-        for row in csvReader:
-            for fn in getFileNamesFromSamples(row[1]):
-                ffp = os.path.join(outputFolder, fn)
+        for row in csv_reader:
+            for fn in get_filenames_from_samples(row[1]):
+                ffp = os.path.join(output_folder, fn)
                 if os.path.exists(ffp):
                     # detect the separator
                     # dialect = csv.Sniffer().sniff(ffp)
@@ -137,10 +158,10 @@ def reportFromCSV(csvFilePath, outputFolder=None):
                         ]
                         df.columns = cnames
 
-                        wn = formatSheetName(fn)
-                        df.to_excel(xlsxWriter, sheet_name=wn, index=False)
+                        wn = format_sheet_name(fn)
+                        df.to_excel(xlsx_writer, sheet_name=wn, index=False)
 
-                        worksheet = xlsxWriter.sheets[wn]
+                        worksheet = xlsx_writer.sheets[wn]
                         # worksheet.set_column('A:A', 12, nbFormat)
 
                         chart = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
@@ -155,7 +176,7 @@ def reportFromCSV(csvFilePath, outputFolder=None):
 
                         # Add data series to the main chartsheets
                         if fn.endswith("lbs.txt"):
-                            mainChartSubtracted.add_series(
+                            main_chart_subtracted.add_series(
                                 {
                                     "name": f"{wn}",
                                     "categories": f"={wn}!$D$2:$D$100",
@@ -163,7 +184,7 @@ def reportFromCSV(csvFilePath, outputFolder=None):
                                 }
                             )
                         elif fn.endswith("lb.txt"):
-                            mainChartLogBinned.add_series(
+                            main_chart_log_binned.add_series(
                                 {
                                     "name": f"{wn}",
                                     "categories": f"={wn}!$D$2:$D$100",
@@ -171,7 +192,7 @@ def reportFromCSV(csvFilePath, outputFolder=None):
                                 }
                             )
                         elif fn.endswith("unscaled.txt"):
-                            mainChartUnscaled.add_series(
+                            main_chart_unscaled.add_series(
                                 {
                                     "name": f"{wn}",
                                     "categories": f"={wn}!$D$2:$D$100",
@@ -179,7 +200,7 @@ def reportFromCSV(csvFilePath, outputFolder=None):
                                 }
                             )
                         else:
-                            mainChartOrig.add_series(
+                            main_chart_orig.add_series(
                                 {
                                     "name": f"{wn}",
                                     "categories": f"={wn}!$D$2:$D$100",
@@ -196,46 +217,25 @@ def reportFromCSV(csvFilePath, outputFolder=None):
 
                 else:
                     logging.info(f"{fn} file path does not exist!")
-    if mainChartUnscaled.series:
-        chartsheetUnscaled.set_chart(mainChartUnscaled)
+    if main_chart_unscaled.series:
+        chartsheet_unscaled.set_chart(main_chart_unscaled)
 
-    if mainChartOrig.series:
-        chartsheetOrig.set_chart(mainChartOrig)
+    if main_chart_orig.series:
+        chartsheet_orig.set_chart(main_chart_orig)
 
-    if mainChartLogBinned.series:
-        chartsheetLogBinned.set_chart(mainChartLogBinned)
+    if main_chart_log_binned.series:
+        chartsheet_log_binned.set_chart(main_chart_log_binned)
 
-    if mainChartSubtracted.series:
-        chartsheetSubtracted.set_chart(mainChartSubtracted)
+    if main_chart_subtracted.series:
+        chartsheet_subtracted.set_chart(main_chart_subtracted)
 
-        chartsheetSubtracted.activate()
+        chartsheet_subtracted.activate()
     # workbook.close()
-    xlsxWriter.close()
+    xlsx_writer.close()
 
-    logging.info(f"complete processing {csvFilePath}")
-    return
-
-
-def getFileNamesFromSamples(sampleName):
-    """
-    Get the reduced file names from sample name
-    sampleName - sample name
-    return - a list of reduced file names associated with this sample
-
-    """
-    if sampleName:
-        return (
-            "UN_" + sampleName + "_det_1.txt",
-            "UN_" + sampleName + "_det_1_lb.txt",
-            "UN_" + sampleName + "_det_1_lbs.txt",
-            "UN_" + sampleName + "_det_1_unscaled.txt",
-        )
-    else:
-        logging.info("Sample name is empty or not valid")
-        raise
-
+    logging.info(f"complete processing {csv_file_path}")
     return
 
 
 if __name__ == "__main__":
-    reportFromCSV(sys.argv[1])
+    report_from_csv(sys.argv[1])
