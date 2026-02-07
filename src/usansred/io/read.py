@@ -73,6 +73,9 @@ def config_from_json(json_path: str) -> tuple[dict | None, list[dict]]:
             logging.info(f"Error parsing background {bg}: {e}")
             background = None
             traceback.print_exc()
+    else:
+        logging.info("No background sample found in the configuration.")
+        background = None
 
     _samples: list[dict] = data.get("samples")
     if not _samples:
@@ -84,10 +87,10 @@ def config_from_json(json_path: str) -> tuple[dict | None, list[dict]]:
         try:
             sample = {
                 "name": s["name"],
-                "start_scan_num": s["start_scan_num"],
+                "start_scan_num": int(s["start_scan_num"]),
                 "num_of_scans": int(s["num_of_scans"]),
                 "thickness": float(s["thickness"]),
-                "exclude": s.get("exclude", []),
+                "exclude": [int(x) for x in s.get("exclude", [])],
             }
             samples.append(sample)
         except Exception as e:  # noqa E722

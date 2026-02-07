@@ -21,7 +21,7 @@ from mantid.simpleapi import (
 from matplotlib import use
 
 from usansred import reduce
-from usansred.summary import reportFromCSV
+from usansred.summary import report_from_csv
 
 use("agg")
 np.seterr(all="ignore")
@@ -428,7 +428,7 @@ def main():
     exp = reduce.Experiment(autocsvfile)
     exp.reduce(outputFolder=autodir)
 
-    reportFromCSV(autocsvfile, exp.outputFolder)
+    report_from_csv(autocsvfile, exp.outputFolder)
 
     # seq_dict = get_sequence_info(os.path.join(outdir, "scan_%s.json" % sequence_first_run))
 

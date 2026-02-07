@@ -759,7 +759,11 @@ class Experiment(BaseModel):
 
         self.folder = os.path.dirname(self.config)
         background, samples = read_config(self.config)
-        self.background = Sample(**background, experiment=self)
+        if background is None:
+            logging.warning("No background sample defined in the configuration file.")
+            self.background = None
+        else:
+            self.background = Sample(**background, experiment=self)
         self.samples = [Sample(**s, experiment=self) for s in samples]
 
     def reduce(self, output_dir: str | None = None):
@@ -795,7 +799,8 @@ class Experiment(BaseModel):
         for sample in self.samples:
             sample.dump_reduced_data_to_csv()
 
-        self.background.dump_reduced_data_to_csv()
+        if self.background is not None:
+            self.background.dump_reduced_data_to_csv()
 
 
 def parse_args():

@@ -20,49 +20,36 @@ logging.getLogger("").addHandler(console)
 suffix = 0
 
 
-def format_sheet_name(fn):
-    """
-    Reformat the file name to a valid sheetname in excel worksheet
-    """
+def format_sheet_name(filename: str) -> str:
+    """Reformat the file name to a valid sheetname in excel worksheet."""
     global suffix
     invalid = ["[", "]", ":", "*", "?", "/", "\\"]
-    wn = fn
+    new_filename = filename
     for cc in invalid:
-        wn = wn.replace(cc, "_")
-    if len(wn) > 20:
+        new_filename = new_filename.replace(cc, "_")
+    if len(new_filename) > 20:
         suffix += 1
-        wn = wn[:20] + str(suffix)
-    return wn
+        new_filename = new_filename[:20] + str(suffix)
+    return new_filename
 
 
-def get_filenames_from_samples(sample_name):
-    """
-    Get the reduced file names from sample name
-    sample_name - sample name
-    return - a list of reduced file names associated with this sample
-
-    """
+def get_filenames_from_samples(sample_name: str) -> list[str]:
+    """Get a list of reduced file names based on a sample name."""
     if sample_name:
-        return (
+        return [
             "UN_" + sample_name + "_det_1.txt",
             "UN_" + sample_name + "_det_1_lb.txt",
             "UN_" + sample_name + "_det_1_lbs.txt",
             "UN_" + sample_name + "_det_1_unscaled.txt",
-        )
+        ]
     else:
-        logging.info("Sample name is empty or not valid")
-        raise
-
-    return
+        raise ValueError(f"Sample name is empty or not valid: {sample_name}")
 
 
-def report_from_csv(csv_file_path, output_folder=None):
-    """generate report from csv file with a list
-    csvFile - file location of csv file
-    """
+def report_from_csv(csv_file_path: str, output_folder: str | None = None):
+    """Generate report from csv file with a list."""
     if not os.path.exists(csv_file_path):
-        logging.info(f"The file path: {csv_file_path} does not exist")
-        raise
+        raise FileNotFoundError(f"The file path: {csv_file_path} does not exist")
 
     data_folder_name = os.path.dirname(csv_file_path)
 

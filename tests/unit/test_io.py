@@ -52,3 +52,23 @@ def test_read_config_json():
     assert samples[0].name == "sample1"
     assert samples[1].name == "sample2"
     assert samples[1].exclude == [45307, 45308]
+
+
+def test_read_config_json_no_background():
+    """Test reading configuration from a JSON file with no background sample."""
+
+    json_file = DATA_DIR / "example-config-no-bg.json"
+    background, samples = read_config(json_file)
+
+    with patch.object(Experiment, "model_post_init", return_value=None):
+        experiment = Experiment(config="dummy.json")
+
+    with patch.object(Sample, "model_post_init", return_value=None):
+        background = Sample(**background, experiment=experiment) if background else None
+        samples = [Sample(**s, experiment=experiment) for s in samples]
+
+    assert background is None
+    assert len(samples) == 2
+    assert samples[0].name == "sample1"
+    assert samples[1].name == "sample2"
+    assert samples[1].exclude == [45307, 45308]
