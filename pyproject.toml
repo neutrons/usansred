@@ -1,6 +1,11 @@
 [project]
 name = "usansred"
 description = "Reduction backend for USANS"
+authors = [
+  { name = "Yingrui Shang" },
+  { name = "Jose Borreguerro" },
+  { name = "Glass Elsarboukh" },
+]
 dynamic = ["version"]
 requires-python = ">=3.11"
 dependencies = [

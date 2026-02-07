@@ -2,16 +2,10 @@
 
 import logging
 import traceback
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from usansred.reduce import Experiment
 
 
 def config_from_csv(csv_path: str) -> tuple[dict | None, list[dict]]:
     import csv
-
-    from usansred.reduce import Sample
 
     background = None
     samples = []
@@ -53,8 +47,6 @@ def config_from_csv(csv_path: str) -> tuple[dict | None, list[dict]]:
 
 def config_from_json(json_path: str) -> tuple[dict | None, list[dict]]:
     import json
-
-    from usansred.reduce import Sample
 
     with open(json_path, "r") as f:
         data = json.load(f)
