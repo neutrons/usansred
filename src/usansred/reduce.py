@@ -244,17 +244,6 @@ class Sample(BaseModel):
 
         return
 
-    def get_filenames_from_sample(self, sample_name: str) -> list[str]:
-        """Get reduced file names from sample name."""
-        if not sample_name:
-            logging.info("Sample name is empty or not valid.")
-            raise ValueError("Sample name is empty or not valid.")
-        return [
-            f"UN_{sample_name}_det_1.txt",
-            f"UN_{sample_name}_det_1_lb.txt",
-            f"UN_{sample_name}_det_1_lbs.txt",
-        ]
-
     def reduce(self):
         """Reduce this sample's scans"""
         self.stitch_data()

@@ -32,10 +32,10 @@ Activate the Pixi environment:
 
 Then, for development:
 
-- Perform editable install: `pip install --no-deps -e .`
+- Perform editable install: ``pip install --no-deps -e .``
 
-By installing the package in development mode, one doesn't need to re-install package `usanred` in pixi
-environment `usansred` after every change to the source code.
+By installing the package in development mode, one doesn't need to re-install package ``usanred`` in pixi
+environment ``usansred`` after every change to the source code.
 
 pre-commit Hooks
 ----------------
@@ -44,15 +44,15 @@ Activate the hooks by typing in the terminal:
 
 .. code-block:: bash
 
-   $> pixi shell
-   $> pre-commit install
+   $ pixi shell
+   $ pre-commit install
 
 Development procedure
 ---------------------
 
 1. A developer is assigned with a task during neutron status meeting and changes the task's status to **In Progress**.
-2. The developer creates a branch off *next* and completes the task in this branch.
-3. The developer creates a pull request (PR) off *next*.
+2. The developer creates a branch off ``next`` and completes the task in this branch.
+3. The developer creates a pull request (PR) off ``next``.
 4. Any new features or bugfixes must be covered by new and/or refactored automated tests.
 5. The developer asks for another developer as a reviewer to review the PR.
    A PR can only be approved and merged by the reviewer.
@@ -60,7 +60,7 @@ Development procedure
 
 Updating mantid dependency
 --------------------------
-The mantid version and the mantid conda channel (`mantid/label/main` or `mantid/label/nightly`) **must** be
+The mantid version and the mantid conda channel (``mantid/label/main`` or ``mantid/label/nightly``) **must** be
 synchronized across these files:
 
 - environment.yml
@@ -76,29 +76,29 @@ To run the integration tests in your local environment, it is necessary first to
 Because of their size, the files are stored in the Git LFS repository
 `usansred-data <https://code.ornl.gov/sns-hfir-scse/infrastructure/test-data/usansred-data>`_.
 
-It is necessary to have package `git-lfs` installed in your machine.
+It is necessary to have package ``git-lfs`` installed in your machine.
 
 .. code-block:: bash
 
-   $> sudo apt install git-lfs
+   $ sudo apt install git-lfs
 
 After this step, initialize or update the data repository:
 
 .. code-block:: bash
 
-   $> cd /path/to/usanred
-   $> git submodule update --init
+   $ cd /path/to/usanred
+   $ git submodule update --init
 
-This will either clone `usansred-data` into `/path/to/usanred/tests/usansred-data` or
-bring the `usansred-data`'s refspec in sync with the refspec listed within file `/path/to/usanred/.gitmodules`.
+This will either clone ``usansred-data`` into ``/path/to/usanred/tests/usansred-data`` or
+bring the ``usansred-data``'s refspec in sync with the refspec listed within file ``/path/to/usanred/.gitmodules``.
 
 You can make sure all the large files are downloaded by issuing a pull command:
 
 .. code-block:: bash
 
-   $> cd tests/usansred-data
-   $> git checkout main
-   $> git lfs pull
+   $ cd tests/usansred-data
+   $ git checkout main
+   $ git lfs pull
 
 Replacing or adding a file in the data repository
 +++++++++++++++++++++++++++++++++++++++++++++++++
@@ -117,33 +117,33 @@ As an example, consider the data files used in
 
 If we wish to replace any of those files with new versions, we simple overwrite the file(s) in the data repository
 with the new versions. For the particular case of `test_reduce.py::test_main()`, the new files would be
-located inside the temporary directory `tmp_path` that is automatically created when the test runs.
+located inside the temporary directory ``tmp_path`` that is automatically created when the test runs.
 
 .. code-block:: bash
 
-   $> cp /path/to/new/UN_EmptyPCell_det_1.txt tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
-   $> cp /path/to/new/UN_EmptyPCell_det_1_lb.txt tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_lb.txt
+   $ cp /path/to/new/UN_EmptyPCell_det_1.txt tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
+   $ cp /path/to/new/UN_EmptyPCell_det_1_lb.txt tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_lb.txt
 
 Assuming we only wish to modify these two files, the next step is to commit these changes in our local repository
 *usansred-data* and then push the changes to the remote repository.
 
 .. code-block:: bash
 
-   $> cd /path/to/usansred/tests/usansred-data
-   $> git add IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
-   $> git add IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_lb.txt
-   $> git commit -m "Updated data files for test_reduce.py::test_main()"
-   $> git push origin
+   $ cd /path/to/usansred/tests/usansred-data
+   $ git add IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
+   $ git add IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_lb.txt
+   $ git commit -m "Updated data files for test_reduce.py::test_main()"
+   $ git push origin
 
 We're not done yet! The next step is to update the submodule reference in our local *usansred* repository
 and then push the changes to the remote repository.
 
 .. code-block:: bash
 
-   $> cd /path/to/usansred
-   $> git add tests/usansred-data
-   $> git commit -m "Updated usansred-data submodule"
-   $> git push origin
+   $ cd /path/to/usansred
+   $ git add tests/usansred-data
+   $ git commit -m "Updated usansred-data submodule"
+   $ git push origin
 
 That's it.
 The new data files are now available to all developers who pull the latest changes from the remote repository.
@@ -166,7 +166,7 @@ To manually build the documentation:
 
 .. code-block:: bash
 
-   $> pixi run docs-build
+   $ pixi run docs-build
 
 After this, point your browser to
 `file:///path/to/usansred/docs/build/html/index.html`

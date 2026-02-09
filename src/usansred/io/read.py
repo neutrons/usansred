@@ -10,11 +10,11 @@ def config_from_csv(csv_path: str) -> tuple[dict | None, list[dict]]:
     background = None
     samples = []
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
-        csvReader = csv.reader(f, delimiter=",")
+        reader = csv.reader(f, delimiter=",")
 
-        for row in csvReader:
-            # skip comment rows
-            if row[0].startswith("#"):
+        for row in reader:
+            # skip comments and empty rows
+            if not row or row[0].startswith("#"):
                 continue
 
             exclude_runs = []
