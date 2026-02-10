@@ -808,7 +808,7 @@ def main():
     args = parse_args()
     experiment = Experiment(config=args.path, logbin=args.logbin, output_dir=args.output)
     experiment.reduce()
-    generate_report(args.path, experiment.output_dir)
+    generate_report(config_file_path=args.path, output_dir=experiment.output_dir)
 
     logging.info("USANS data reduction completed.")
 
