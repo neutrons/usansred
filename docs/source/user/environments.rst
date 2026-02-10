@@ -10,7 +10,9 @@ To activate an environment, in a terminal run the command:
 
 .. code-block:: bash
 
-   $ pixi shell --manifest-path pixi shell --manifest-path /usr/local/pixi/<environment>
+   $ nsd-pixi-shell.sh <environment>
+   # which is a wrapper around the command:
+   $ pixi shell --manifest-path /usr/local/pixi/<environment>
 
 where ``<environment>`` is one of ``usansred``, ``usansred_qa``, and ``usansred_dev``
 

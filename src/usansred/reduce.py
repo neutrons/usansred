@@ -11,7 +11,7 @@ from scipy.optimize import curve_fit, differential_evolution
 
 from usansred.io.read import read_config
 from usansred.model import IQData, MonitorData, XYData
-from usansred.summary import report_from_csv
+from usansred.summary import generate_report
 
 # separate logging in file and console
 logging.basicConfig(filename="file.log", filemode="w", level=logging.INFO)
@@ -796,9 +796,9 @@ def parse_args():
     import argparse
 
     parser = argparse.ArgumentParser(description="USANS Data Reduction")
+    parser.add_argument("path", help="Path to the configuration file")
     parser.add_argument("-l", "--logbin", action="store_true", help="Enable log-binning of data during reduction")
     parser.add_argument("-o", "--output", default="", help="Output folder for reduced data (default: current folder)")
-    parser.add_argument("path", help="Path to the configuration file")
     args = parser.parse_args()
     return args
 
@@ -808,7 +808,7 @@ def main():
     args = parse_args()
     experiment = Experiment(config=args.path, logbin=args.logbin, output_dir=args.output)
     experiment.reduce()
-    report_from_csv(args.path, experiment.output_dir)
+    generate_report(args.path, experiment.output_dir)
 
     logging.info("USANS data reduction completed.")
 
