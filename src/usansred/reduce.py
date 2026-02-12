@@ -98,7 +98,13 @@ class Scan(BaseModel):
         return XYData(x=x, y=y, e=e, t=t)
 
     def convert_xy_to_iq(self, xy_data: XYData) -> IQData:
-        """Convert XY data to IQ data"""
+        """Convert XY data to IQ data
+
+        Directly copies x to q, y to i, and t.
+        For error, calculates based on a Poisson-like statistical model:
+            err = sqrt(|y - 0.5| + 0.5)
+        which ensures a minimum value to avoid zero error for low counts.
+        """
         iq_data = IQData(
             q=xy_data.x.copy(),
             i=xy_data.y.copy(),
@@ -267,18 +273,18 @@ class Sample(BaseModel):
 
     # TODO: This function should be re-written from scratch
     def log_bin_data(
-        self, momentum_transfer: list[float], intensity: list[float], energy: list[float]
+        self, momentum_transfer: list[float], intensity: list[float], error: list[float]
     ) -> tuple[list[float], list[float], list[float]]:
         """Log-bin the I(Q) data."""
-        assert len(momentum_transfer) == len(intensity) == len(energy)
+        assert len(momentum_transfer) == len(intensity) == len(error)
 
         # Sort by momentum transfer
         sorted_indices = np.argsort(momentum_transfer)
         momentum_transfer = np.array(momentum_transfer)[sorted_indices]
         intensity = np.array(intensity)[sorted_indices]
-        energy = np.array(energy)[sorted_indices]
+        error = np.array(error)[sorted_indices]
 
-        data = {"I": list(intensity), "Q": list(momentum_transfer), "E": list(energy)}
+        data = {"I": list(intensity), "Q": list(momentum_transfer), "E": list(error)}
 
         # The fundamental Q width of the measurement
         harNo = 1.0  # Only the first harmonic peak is used
@@ -538,7 +544,7 @@ class Sample(BaseModel):
         for bank in range(self.num_of_banks):
             momentum_transfer = []
             intensity = []
-            energy = []
+            error = []
             # transmission = []  # omitted for now
 
             for scan in self.scans:
@@ -555,25 +561,25 @@ class Sample(BaseModel):
                 for mq, mi, me, di, de in it:
                     if mq in momentum_transfer:
                         idx = momentum_transfer.index(mq)
-                        var = energy[idx] ** 2 + (de / mi) ** 2
-                        intensity[idx] = (intensity[idx] * (energy[idx] ** 2) + (di / mi) * (de / mi) ** 2) / var
-                        energy[idx] = var**0.5
+                        var = error[idx] ** 2 + (de / mi) ** 2
+                        intensity[idx] = (intensity[idx] * (error[idx] ** 2) + (di / mi) * (de / mi) ** 2) / var
+                        error[idx] = var**0.5
                     else:
                         momentum_transfer.append(mq)
                         intensity.append(di / mi)
-                        energy.append(de / mi)
+                        error.append(de / mi)
 
             # Sort by momentum transfer (outside the scan loop, inside the bank loop)
             sorted_indices = np.argsort(momentum_transfer)
             momentum_transfer = np.array(momentum_transfer)[sorted_indices]
             intensity = np.array(intensity)[sorted_indices]
-            energy = np.array(energy)[sorted_indices]
+            error = np.array(error)[sorted_indices]
 
             self.detector_data.append(
                 IQData(
                     q=momentum_transfer.tolist(),
                     i=intensity.tolist(),
-                    e=energy.tolist(),
+                    e=error.tolist(),
                 )
             )
         logging.info(f"Scans stitched together for sample {self.name}.\n")
@@ -658,11 +664,11 @@ class Sample(BaseModel):
                 momentum_transfer = bg_data.q.copy()
 
             intensity = [data.i[i] - (scale_f * bg_data.i[i]) for i in range(num_of_bins)]
-            energy = [math.sqrt(data.e[i] ** 2.0 + (scale_f * bg_data.e[i]) ** 2.0) for i in range(num_of_bins)]
+            error = [math.sqrt(data.e[i] ** 2.0 + (scale_f * bg_data.e[i]) ** 2.0) for i in range(num_of_bins)]
 
             self.data_bg_subtracted.q = momentum_transfer
             self.data_bg_subtracted.i = intensity
-            self.data_bg_subtracted.e = energy
+            self.data_bg_subtracted.e = error
 
         # Use interpolation if log-binning is not applied
         else:
