@@ -187,11 +187,11 @@ class Sample(BaseModel):
         """Size of the log-binned data"""
         return len(self.data_log_binned.q)
 
-    def __eq__(self, other: "Sample") -> bool:
+    def __eq__(self, other: object) -> bool:
         """Equality comparison based on sample name and start number."""
-        if other.name == self.name and other.start_scan_num == self.start_scan_num:
-            return True
-        return False
+        if not isinstance(other, type(self)):
+            return NotImplemented
+        return other.name == self.name and other.start_scan_num == self.start_scan_num
 
     def dump_data_to_csv(self, filepath: str, data: IQData | XYData, title: str | None = None):
         """Dump IQ or XY data to a CSV file."""
@@ -720,7 +720,7 @@ class Experiment(BaseModel):
     config: str = Field(..., description="Path to the configuration file")
     output_dir: str = Field("", description="Output folder for reduced data")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
-    darwin_width: float = Field(5.1, description="Darwin width")
+    darwin_width: float = Field(DARWIN_WIDTH, description="Darwin width")
     v_angle: float = Field(0.042, description="Vertical angle")
     min_q: float = Field(1e-6, description="Minimum Q value for binning output")
     step_per_dec: int = Field(33, description="Steps per decade in binning")

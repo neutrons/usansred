@@ -1,10 +1,16 @@
 # TODO: Modify to allow multiple backgrounds
 
 import logging
-import traceback
 
 
 def config_from_csv(csv_path: str) -> tuple[dict | None, list[dict]]:
+    """Reads the reduction configuration from a CSV file.
+
+    Returns
+    -------
+    tuple[dict | None, list[dict]]
+        A tuple containing the background configuration (or None) and a list of sample configurations.
+    """
     import csv
 
     background = None
@@ -46,6 +52,14 @@ def config_from_csv(csv_path: str) -> tuple[dict | None, list[dict]]:
 
 
 def config_from_json(json_path: str) -> tuple[dict | None, list[dict]]:
+    """Reads the reduction configuration from a JSON file.
+
+    Returns
+    -------
+    tuple[dict | None, list[dict]]
+        A tuple containing the background configuration (or None) and a list of sample configurations.
+    """
+
     import json
 
     with open(json_path, "r") as f:
@@ -61,10 +75,12 @@ def config_from_json(json_path: str) -> tuple[dict | None, list[dict]]:
                 "thickness": float(bg["thickness"]),
                 "is_background": True,
             }
-        except Exception as e:  # noqa E722
-            logging.info(f"Error parsing background {bg}: {e}")
+        except KeyError as e:
+            logging.info(f"Missing key in background configuration: {e}")
             background = None
-            traceback.print_exc()
+        except (TypeError, ValueError) as e:
+            logging.info(f"Error parsing background configuration: {e}")
+            background = None
     else:
         logging.info("No background sample found in the configuration.")
         background = None

@@ -428,7 +428,7 @@ def main():
     exp = reduce.Experiment(autocsvfile)
     exp.reduce(outputFolder=autodir)
 
-    generate_report(autocsvfile, exp.outputFolder)
+    generate_report(config_file_path=autocsvfile, output_dir=exp.outputFolder)
 
     # seq_dict = get_sequence_info(os.path.join(outdir, "scan_%s.json" % sequence_first_run))
 
