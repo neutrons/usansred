@@ -9,7 +9,7 @@ User Guide
 .. toctree::
    :titlesonly:
 
-   /source/user/conda_environments
+   /source/user/environments
    /source/user/reduce
    /source/release_notes
 

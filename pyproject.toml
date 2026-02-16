@@ -1,6 +1,11 @@
 [project]
 name = "usansred"
 description = "Reduction backend for USANS"
+authors = [
+  { name = "Yingrui Shang" },
+  { name = "Jose Borreguerro" },
+  { name = "Glass Elsarboukh" },
+]
 dynamic = ["version"]
 requires-python = ">=3.11"
 dependencies = [
@@ -112,6 +117,7 @@ usansred = { path = ".", editable = true }
 python = "=3.11"
 mantidworkbench = ">=6.13.0,<6.14.0"
 pandas = "*"
+pydantic = "*"
 xlsxwriter = "*"
 finddata = { version = "=0.10.1", channel = "neutrons" }
 
@@ -120,6 +126,7 @@ finddata = { version = "=0.10.1", channel = "neutrons" }
 python = "=3.11"
 mantidworkbench = ">=6.13.0,<6.14.0"
 pandas = "*"
+pydantic = "*"
 xlsxwriter = "*"
 finddata = { version = "=0.10.1", channel = "neutrons" }
 

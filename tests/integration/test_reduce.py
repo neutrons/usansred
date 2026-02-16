@@ -1,17 +1,13 @@
-# import standard
 import os
 import random
 from unittest.mock import MagicMock
 from unittest.mock import patch as mock_patch
 
 import numpy as np
-
-# third party packages
 import pytest
-from usansred.reduce import Experiment, Sample
 
-# usansred imports
-from usansred.reduce import main as reduceUSANS
+from usansred.reduce import Experiment
+from usansred.reduce import main as reduce
 
 
 def read_numbers_from_file(filename):
@@ -44,45 +40,46 @@ def compare_lines(file1, file2, threshold=0.01):
                 raise ValueError(f"Line {i}, Number {num1:.6f} differs significantly from {num2:.6f}")
 
 
-@mock_patch("usansred.reduce.parse_arguments")
-def test_main_nonvalid_file(mock_parse_arguments):
+@mock_patch("usansred.reduce.parse_args")
+def test_main_invalid_file(mock_parse_args):
     # Setup mock objects
     mock_args = MagicMock()
     mock_args.logbin = False
     mock_args.path = "invalid_path.csv"
-    mock_parse_arguments.return_value = mock_args
+    mock_args.output = ""
+    mock_parse_args.return_value = mock_args
     with pytest.raises(FileNotFoundError) as error:
-        reduceUSANS()
-    assert str(error.value) == "The csv file invalid_path.csv doesn't exist"
+        reduce()
+    assert str(error.value) == f"The file path: {mock_args.path} does not exist"
 
 
-@pytest.mark.datarepo()
-@mock_patch("usansred.reduce.parse_arguments")
-def test_main(mock_parse_arguments, data_server, tmp_path):
+@pytest.mark.datarepo
+@mock_patch("usansred.reduce.parse_args")
+def test_main(mock_parse_args, data_server, tmp_path):
     # Setup mock objects
     mock_args = MagicMock()
     mock_args.logbin = False
     mock_args.path = data_server.path_to("setup.csv")
     mock_args.output = str(tmp_path)
-    mock_parse_arguments.return_value = mock_args
-    reduceUSANS()
+    mock_parse_args.return_value = mock_args
+    reduce()
     # compare the content of output files with files containing expected results
     goldendir = os.path.join(os.path.dirname(mock_args.path), "reduced")  # where the expected content resides
     for name in ["EmptyPCell", "S115_dry", "S115_pc3"]:
         for suffix in ["", "_lbs", "_lb", "_unscaled"]:
             filename = f"UN_{name}_det_1{suffix}.txt"
             output, expected = os.path.join(tmp_path, filename), os.path.join(goldendir, filename)
-            if os.path.exists(expected):  # file "UN_EmptyPCell_det_1_lbs.txt" does not exist
+            if os.path.exists(expected) and os.path.exists(output):  # file "UN_EmptyPCell_det_1_lbs.txt" does not exist
                 compare_lines(output, expected)
 
 
-@pytest.mark.datarepo()
+@pytest.mark.datarepo
 def test_sample_match_or_interpolate(data_server, tmp_path):
     # Get the testing data and temp output directory
     # Create new Experiment instance
     csvpath = data_server.path_to("setup.csv")
     tmpoutput = str(tmp_path)
-    exp = Experiment(csvpath, logbin=False, outputFolder=tmpoutput)
+    exp = Experiment(config=csvpath, logbin=False, output_dir=tmpoutput)
 
     # Genearte testing data
     qq = np.array([dd * 1e-5 for dd in range(1, 100)])

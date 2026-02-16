@@ -1,4 +1,3 @@
-# standard imports
 import csv
 import json
 import logging
@@ -9,9 +8,6 @@ import traceback
 import warnings
 
 import numpy as np
-
-# third-party imports
-# from debugpy.common.log import newline
 from mantid.simpleapi import (
     ConvertTableToMatrixWorkspace,
     CropWorkspace,
@@ -24,9 +20,8 @@ from mantid.simpleapi import (
 )
 from matplotlib import use
 
-# usansred imports
 from usansred import reduce
-from usansred.summary import reportFromCSV
+from usansred.summary import generate_report
 
 use("agg")
 np.seterr(all="ignore")
@@ -433,7 +428,7 @@ def main():
     exp = reduce.Experiment(autocsvfile)
     exp.reduce(outputFolder=autodir)
 
-    reportFromCSV(autocsvfile, exp.outputFolder)
+    generate_report(config_file_path=autocsvfile, output_dir=exp.outputFolder)
 
     # seq_dict = get_sequence_info(os.path.join(outdir, "scan_%s.json" % sequence_first_run))
 

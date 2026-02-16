@@ -1,14 +1,8 @@
-# standard imports
 import os
 import sys
 
 import pytest
-
-# third party imports
 from mantid.simpleapi import config
-
-# usansred imports
-
 
 this_module_path = sys.modules[__name__].__file__
 

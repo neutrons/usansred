@@ -1,0 +1,23 @@
+{
+  "background": {
+    "name": "example_background",
+    "start_scan_num": "45335",
+    "num_of_scans": 6,
+    "thickness": 0.1
+  },
+  "samples": [
+    {
+      "name": "sample1",
+      "start_scan_num": "45306",
+      "num_of_scans": 6,
+      "thickness": 0.1
+    },
+    {
+      "name": "sample2",
+      "start_scan_num": "45305",
+      "num_of_scans": 6,
+      "thickness": 0.1,
+      "exclude": [45307, 45308]
+    }
+  ]
+}
