@@ -98,8 +98,13 @@ lint.ignore = [
 [tool.pixi.workspace]
 name = "usansred"
 preview = ["pixi-build"]
-channels = ["conda-forge", "mantid/label/main", "neutrons"]
 platforms = ["linux-64"]
+channels = [
+  "conda-forge",
+  "mantid/label/main",
+  "neutrons",
+  "https://prefix.dev/pixi-build-backends"
+]
 
 [tool.pixi.environments]
 default = { features = [
@@ -135,11 +140,7 @@ name = "usansred"
 version = "1.0.0" # placeholder, overwritten by sync-version
 
 [tool.pixi.package.build]
-backend = { name = "pixi-build-python", version = "0.4.*", channels = [
-  "https://prefix.dev/pixi-build-backends",
-  "https://prefix.dev/conda-forge",
-
-] }
+backend = { name = "pixi-build-python", version = "0.4.*"}
 
 [tool.pixi.tasks]
 # Documentation
