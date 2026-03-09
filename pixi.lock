@@ -84,7 +84,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/execnet-2.1.2-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/executing-2.2.1-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/filelock-3.24.2-pyhd8ed1ab_0.conda
-      - conda: https://conda.anaconda.org/neutrons/noarch/finddata-0.13.0-pyhbf21a9e_0.conda
+      - conda: https://conda.anaconda.org/neutrons/noarch/finddata-0.10.1-py311.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/flexcache-0.3-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/flexparser-0.4-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/fmt-12.1.0-hff5e90c_0.conda
@@ -309,7 +309,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pixman-0.46.4-h54a6638_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pkce-1.0.3-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.9.2-pyhcf101f3_0.conda
-      - conda: https://conda.anaconda.org/neutrons/noarch/plot-publisher-1.3.1-pyhbf21a9e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/plotly-5.24.1-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/ply-3.11-pyhd8ed1ab_3.conda
@@ -543,7 +542,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/epoxy-1.5.10-hb03c661_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/euphonic-1.5.1-py311h0372a8f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/executing-2.2.1-pyhd8ed1ab_0.conda
-      - conda: https://conda.anaconda.org/neutrons/noarch/finddata-0.13.0-pyhbf21a9e_0.conda
+      - conda: https://conda.anaconda.org/neutrons/noarch/finddata-0.10.1-py311.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/flexcache-0.3-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/flexparser-0.4-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/fmt-12.1.0-hff5e90c_0.conda
@@ -738,7 +737,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/pint-0.25.2-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pixman-0.46.4-h54a6638_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.9.2-pyhcf101f3_0.conda
-      - conda: https://conda.anaconda.org/neutrons/noarch/plot-publisher-1.3.1-pyhbf21a9e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/plotly-5.24.1-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/ply-3.11-pyhd8ed1ab_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/poco-1.14.2-h0a6e815_0.conda
@@ -1875,15 +1873,18 @@ packages:
   - pkg:pypi/filelock?source=compressed-mapping
   size: 24639
   timestamp: 1771219337187
-- conda: https://conda.anaconda.org/neutrons/noarch/finddata-0.13.0-pyhbf21a9e_0.conda
-  sha256: d3959460a6ecf7e2feee0c52cc3e62bdf08c55dbecc59fc4e0d578a8c7d116e0
-  md5: 57f9feb7d3370eba4a03c9a646328e41
+- conda: https://conda.anaconda.org/neutrons/noarch/finddata-0.10.1-py311.tar.bz2
+  build_number: 0
+  sha256: 7cd1477a724cc1c00d2160ee6ed2078fed787d891c135f6cdf01ebc448e681ba
+  md5: 3b64e67695266fc822ef624a411f637e
   depends:
-  - plot-publisher >=1.3.1,<2.0
-  - urllib3 >=2.6.3,<2.7
+  - plotly <6
   - python
-  size: 6625
-  timestamp: 1768319231080
+  - urllib3
+  license: MIT
+  license_family: MIT
+  size: 16277
+  timestamp: 1738870200288
 - conda: https://conda.anaconda.org/conda-forge/noarch/flexcache-0.3-pyhd8ed1ab_1.conda
   sha256: acdb7b73d84268773fcc8192965994554411edc488ec3447925a62154e9d3baa
   md5: f1e618f2f783427019071b14a111b30d
@@ -5205,17 +5206,6 @@ packages:
   - pkg:pypi/platformdirs?source=compressed-mapping
   size: 25643
   timestamp: 1771233827084
-- conda: https://conda.anaconda.org/neutrons/noarch/plot-publisher-1.3.1-pyhbf21a9e_0.conda
-  sha256: 872bb94fd1174707c70883afd69c78f31ca102721481291d503ad17f7bfac32c
-  md5: 25b283b7c39697e8c242e064046a58bf
-  depends:
-  - python >=3.9
-  - numpy
-  - requests
-  - plotly
-  - python
-  size: 9047
-  timestamp: 1767641336485
 - conda: https://conda.anaconda.org/conda-forge/noarch/plotly-5.24.1-pyhd8ed1ab_1.conda
   sha256: d1bbf2d80105bfc8a7ed9817888f4a1686ed393d6435572921add09cc9347c1c
   md5: 71ac632876630091c81c50a05ec5e030
@@ -7141,8 +7131,8 @@ packages:
   timestamp: 1767817860341
 - pypi: ./
   name: usansred
-  version: 1.3.0
-  sha256: e86615ff532c571c26bdc7525fb59cd1e1f0a95759f1d01464b0cc123816974f
+  version: 1.4.0.dev1
+  sha256: 5e6a2bdf4ca4169b3c180eda8e4d473bd49391b905eee60ea99c498cd39d6158
   requires_python: '>=3.11'
 - conda: https://conda.anaconda.org/conda-forge/noarch/userpath-1.9.2-pyhd8ed1ab_0.conda
   sha256: 26e53b42f7fa1127e6115a35b91c20e15f75984648b88f115136f27715d4a440
