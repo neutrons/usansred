@@ -8,9 +8,6 @@ authors = [
 ]
 dynamic = ["version"]
 requires-python = ">=3.11"
-dependencies = [
-  # list all runtime dependencies here
-]
 license = { text = "MIT" }
 
 [project.urls]
@@ -120,16 +117,16 @@ usansred = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 python = "=3.11"
-mantidworkbench = ">=6.13.0,<6.14.0"
-pandas = "*"
-pydantic = "*"
-xlsxwriter = "*"
-finddata = { version = "=0.10.1", channel = "neutrons" }
+mantidworkbench = ">=6.15.0,<7"
+pandas = ">=3.0.1,<4"
+pydantic = ">=2.12.5,<3"
+xlsxwriter = ">=3.2.9,<4"
+finddata = { version = ">=0.13.0,<0.14", channel = "neutrons" }
 
 # Conda packages (no PyPi) to be enumerated within the conda package to be built.
 [tool.pixi.package.run-dependencies]
 python = "=3.11"
-mantidworkbench = ">=6.13.0,<6.14.0"
+mantidworkbench = ">=6.15.0,<6.16.0"
 pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
@@ -180,32 +177,32 @@ backup-toml = { cmd = "cp pyproject.toml pyproject.toml.bak", description = "Bac
 reset-toml = { cmd = "cp pyproject.toml.bak pyproject.toml; rm pyproject.toml.bak", description = "Reset the pyproject.toml file to the original state" }
 
 [tool.pixi.feature.test.dependencies]
-pytest = "*"
-pytest-cov = "*"
-pytest-repeat = "*"
-pytest-xdist = "*"
+pytest = ">=9.0.2,<10"
+pytest-cov = ">=7.0.0,<8"
+pytest-repeat = ">=0.9.4,<0.10"
+pytest-xdist = ">=3.8.0,<4"
 
 [tool.pixi.feature.package.dependencies]
-anaconda-client = "*"
-twine = ">=6.1.0,<7"
-versioningit = "*"
-hatch = "*"
-python-build = "*"
+anaconda-client = ">=1.14.1,<2"
+twine = ">=6.2.0,<7"
+versioningit = ">=3.3.0,<4"
+hatch = ">=1.16.5,<2"
+python-build = ">=1.4.0,<2"
 
 [tool.pixi.feature.package.pypi-dependencies]
-toml-cli = "*"
+toml-cli = ">=0.8.2, <0.9"
 
 [tool.pixi.feature.developer.dependencies]
-pip = "*"
-pip-audit = "*"
-pre-commit = "*"
-ruff = "*"
-versioningit = "*"
-argcomplete = "*"
+pip = ">=26.0.1,<27"
+pip-audit = ">=2.10.0,<3"
+pre-commit = ">=4.5.1,<5"
+ruff = ">=0.15.5,<0.16"
+versioningit = ">=3.3.0,<4"
+argcomplete = ">=3.6.3,<4"
 
 [tool.pixi.feature.docs.dependencies]
-sphinx = "*"
-sphinx_rtd_theme = "*"
+sphinx = ">=8.2.3,<9"
+sphinx_rtd_theme = ">=3.1.0,<4"
 
 [tool.pixi.package.host-dependencies]
 hatchling = "*"
