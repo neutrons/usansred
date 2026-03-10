@@ -747,6 +747,9 @@ class CombinedSample(BaseModel):
         """
         assert len(self.combined_samples) > 0, "No samples to combine."
 
+        # Reset combined scans in case this method is called multiple times
+        self.combined_scans: list[Scan] = []
+
         max_scans = max((len(sample.scans) for sample in self.combined_samples), default=0)
         assert max_scans > 0, "No scans in any sample to combine."
 
