@@ -1,5 +1,6 @@
 """Unit tests for the CombinedSample, Scan, Sample, and model classes in usansred."""
 
+import logging
 import math
 from unittest.mock import patch
 
@@ -103,6 +104,29 @@ class TestCombineXYDataPair:
         np.testing.assert_allclose(x_sorted, [1.0, 2.0, 3.0, 4.0], atol=1e-7)
         np.testing.assert_allclose(y_sorted, [10.0, 45.0, 65.0, 45.0])
 
+    def test_t_length_mismatch_falls_back_to_zeros(self):
+        """When t has values but not same length as x, it should fall back to zeros."""
+        xy1 = XYData(x=[1.0, 2.0], y=[10.0, 20.0], e=[1.0, 2.0], t=[100.0])  # len(t) != len(x)
+        xy2 = XYData(x=[1.0, 2.0], y=[10.0, 20.0], e=[1.0, 2.0], t=[50.0, 60.0])
+
+        result = CombinedSample._combine_xy_data_pair(xy1, xy2)
+
+        assert len(result.x) == 2
+        # xy1 t falls back to [0.0, 0.0], xy2 t is [50.0, 60.0]
+        # average: [25.0, 30.0]
+        np.testing.assert_allclose(result.t, [25.0, 30.0])
+
+    def test_output_sorted_by_x_key(self):
+        """Output should be sorted by discretized x key, regardless of input order."""
+        xy1 = XYData(x=[3.0, 1.0], y=[30.0, 10.0], e=[3.0, 1.0], t=[])
+        xy2 = XYData(x=[2.0, 4.0], y=[20.0, 40.0], e=[2.0, 4.0], t=[])
+
+        result = CombinedSample._combine_xy_data_pair(xy1, xy2)
+
+        assert len(result.x) == 4
+        # Should be sorted by x
+        np.testing.assert_allclose(result.x, sorted(result.x))
+
 
 # ===========================================================================
 # Tests for CombinedSample.combine
@@ -166,6 +190,29 @@ class TestCombinedSampleCombine:
         # Errors should be propagated in quadrature
         expected_mon_e = [math.sqrt(10.0**2 + 11.0**2), math.sqrt(14.0**2 + 15.0**2)]
         np.testing.assert_allclose(cs.combined_scans[0].monitor_data.xy_data.e, expected_mon_e)
+        # Detector errors should be propagated in quadrature
+        expected_det_e = [math.sqrt(7.0**2 + 8.0**2), math.sqrt(9.0**2 + 10.0**2)]
+        np.testing.assert_allclose(cs.combined_scans[0].detector_data[0].xy_data.e, expected_det_e)
+
+    def test_combine_two_samples_iq_generated(self, mock_experiment):
+        """After combining two samples, IQ data should be generated for both monitor and detector."""
+        xy = XYData(x=[1.0, 2.0], y=[10.0, 20.0], e=[1.0, 2.0], t=[])
+        scan1 = _make_scan(mock_experiment, xy, xy)
+        scan2 = _make_scan(mock_experiment, xy, xy)
+        sample1 = _make_sample(mock_experiment, "s1", [scan1])
+        sample2 = _make_sample(mock_experiment, "s2", [scan2])
+
+        cs = CombinedSample(name="combined", experiment=mock_experiment, combined_samples=[sample1, sample2])
+        cs.combine()
+
+        # IQ data should be generated for monitor
+        assert len(cs.combined_scans[0].monitor_data.iq_data.q) == 2
+        assert len(cs.combined_scans[0].monitor_data.iq_data.i) == 2
+        assert len(cs.combined_scans[0].monitor_data.iq_data.e) == 2
+        # IQ data should be generated for detector bank 0
+        assert len(cs.combined_scans[0].detector_data[0].iq_data.q) == 2
+        assert len(cs.combined_scans[0].detector_data[0].iq_data.i) == 2
+        assert len(cs.combined_scans[0].detector_data[0].iq_data.e) == 2
 
     def test_combine_three_samples(self, mock_experiment):
         """Combining three samples should sum all Y values correctly."""
@@ -208,6 +255,23 @@ class TestCombinedSampleCombine:
         # Second scan: only sample1 contributed → Y unchanged
         np.testing.assert_allclose(cs.combined_scans[1].monitor_data.xy_data.y, [10.0])
 
+    def test_combine_mismatched_scan_counts_logs_warning(self, mock_experiment, caplog):
+        """Mismatched scan counts should produce a warning log."""
+        xy1 = XYData(x=[1.0], y=[10.0], e=[1.0], t=[])
+        scan1a = _make_scan(mock_experiment, xy1, xy1)
+        scan1b = _make_scan(mock_experiment, xy1, xy1)
+        sample1 = _make_sample(mock_experiment, "s1", [scan1a, scan1b])
+
+        scan2a = _make_scan(mock_experiment, xy1, xy1)
+        sample2 = _make_sample(mock_experiment, "s2", [scan2a])
+
+        cs = CombinedSample(name="combined", experiment=mock_experiment, combined_samples=[sample1, sample2])
+
+        with caplog.at_level(logging.WARNING):
+            cs.combine()
+
+        assert any("contains fewer scans" in msg for msg in caplog.messages)
+
     def test_combine_called_twice_resets(self, mock_experiment):
         """Calling combine() twice should reset combined_scans properly."""
         xy = XYData(x=[1.0], y=[10.0], e=[1.0], t=[])
@@ -217,10 +281,13 @@ class TestCombinedSampleCombine:
         cs = CombinedSample(name="combined", experiment=mock_experiment, combined_samples=[sample])
         cs.combine()
         assert len(cs.combined_scans) == 1
+        first_y = cs.combined_scans[0].monitor_data.xy_data.y[0]
 
         # Call combine again
         cs.combine()
         assert len(cs.combined_scans) == 1  # Should still be 1, not 2
+        # Values should be the same (not doubled from re-accumulation)
+        np.testing.assert_allclose(cs.combined_scans[0].monitor_data.xy_data.y, [first_y])
 
     def test_combine_multiple_banks(self, mock_experiment_2banks):
         """Combining with multiple detector banks should process all banks."""
@@ -252,3 +319,98 @@ class TestCombinedSampleCombine:
         # IQ data should have been generated for both banks
         assert len(cs.combined_scans[0].detector_data[0].iq_data.q) == 1
         assert len(cs.combined_scans[0].detector_data[1].iq_data.q) == 1
+
+    def test_combine_multiple_scans_multiple_samples(self, mock_experiment):
+        """Combining two samples each with 2 scans should produce 2 combined scans."""
+        xy_a = XYData(x=[1.0], y=[10.0], e=[1.0], t=[])
+        xy_b = XYData(x=[1.0], y=[20.0], e=[2.0], t=[])
+        xy_c = XYData(x=[1.0], y=[30.0], e=[3.0], t=[])
+        xy_d = XYData(x=[1.0], y=[40.0], e=[4.0], t=[])
+
+        scan1a = _make_scan(mock_experiment, xy_a, xy_a)
+        scan1b = _make_scan(mock_experiment, xy_b, xy_b)
+        sample1 = _make_sample(mock_experiment, "s1", [scan1a, scan1b])
+
+        scan2a = _make_scan(mock_experiment, xy_c, xy_c)
+        scan2b = _make_scan(mock_experiment, xy_d, xy_d)
+        sample2 = _make_sample(mock_experiment, "s2", [scan2a, scan2b])
+
+        cs = CombinedSample(name="combined", experiment=mock_experiment, combined_samples=[sample1, sample2])
+        cs.combine()
+
+        assert len(cs.combined_scans) == 2
+        # Scan 0: 10 + 30 = 40
+        np.testing.assert_allclose(cs.combined_scans[0].monitor_data.xy_data.y, [40.0])
+        # Scan 1: 20 + 40 = 60
+        np.testing.assert_allclose(cs.combined_scans[1].monitor_data.xy_data.y, [60.0])
+        # IQ data should be generated for both scans
+        assert len(cs.combined_scans[0].monitor_data.iq_data.q) == 1
+        assert len(cs.combined_scans[1].monitor_data.iq_data.q) == 1
+
+    def test_combine_logs_info_message(self, mock_experiment, caplog):
+        """combine() should log an info message upon completion."""
+        xy = XYData(x=[1.0], y=[10.0], e=[1.0], t=[])
+        scan = _make_scan(mock_experiment, xy, xy)
+        sample = _make_sample(mock_experiment, "s1", [scan])
+
+        cs = CombinedSample(name="my_combined", experiment=mock_experiment, combined_samples=[sample])
+
+        with caplog.at_level(logging.INFO):
+            cs.combine()
+
+        assert any("Combined 1 samples into 'my_combined'" in msg for msg in caplog.messages)
+
+    def test_combine_does_not_mutate_source_scans(self, mock_experiment):
+        """combine() should deep-copy source data so originals are unmodified."""
+        xy_mon = XYData(x=[1.0], y=[100.0], e=[10.0], t=[])
+        xy_det = XYData(x=[1.0], y=[50.0], e=[5.0], t=[])
+        scan = _make_scan(mock_experiment, xy_mon, xy_det)
+        sample = _make_sample(mock_experiment, "s1", [scan])
+
+        original_mon_y = scan.monitor_data.xy_data.y[0]
+        original_det_y = scan.detector_data[0].xy_data.y[0]
+
+        # Combine with a second identical sample
+        xy_mon2 = XYData(x=[1.0], y=[100.0], e=[10.0], t=[])
+        xy_det2 = XYData(x=[1.0], y=[50.0], e=[5.0], t=[])
+        scan2 = _make_scan(mock_experiment, xy_mon2, xy_det2)
+        sample2 = _make_sample(mock_experiment, "s2", [scan2])
+
+        cs = CombinedSample(name="combined", experiment=mock_experiment, combined_samples=[sample, sample2])
+        cs.combine()
+
+        # Source scans should be unchanged
+        assert scan.monitor_data.xy_data.y[0] == original_mon_y
+        assert scan.detector_data[0].xy_data.y[0] == original_det_y
+
+    def test_combine_multiple_banks_mismatched_scans(self, mock_experiment_2banks):
+        """Multi-bank combine with mismatched scan counts should handle all banks correctly."""
+        xy_mon = XYData(x=[1.0], y=[100.0], e=[10.0], t=[])
+        xy_det1 = XYData(x=[1.0], y=[50.0], e=[5.0], t=[])
+        xy_det2 = XYData(x=[1.0], y=[60.0], e=[6.0], t=[])
+
+        scan1a = _make_scan_multi_bank(mock_experiment_2banks, xy_mon, [xy_det1, xy_det2])
+        scan1b = _make_scan_multi_bank(mock_experiment_2banks, xy_mon, [xy_det1, xy_det2])
+        sample1 = _make_sample(mock_experiment_2banks, "s1", [scan1a, scan1b])
+
+        scan2a = _make_scan_multi_bank(mock_experiment_2banks, xy_mon, [xy_det1, xy_det2])
+        sample2 = _make_sample(mock_experiment_2banks, "s2", [scan2a])
+
+        cs = CombinedSample(
+            name="combined_2bank_mismatch",
+            experiment=mock_experiment_2banks,
+            combined_samples=[sample1, sample2],
+        )
+        cs.combine()
+
+        assert len(cs.combined_scans) == 2
+        # Both banks of scan 0 should be summed
+        np.testing.assert_allclose(cs.combined_scans[0].detector_data[0].xy_data.y, [100.0])
+        np.testing.assert_allclose(cs.combined_scans[0].detector_data[1].xy_data.y, [120.0])
+        # Scan 1 only from sample1
+        np.testing.assert_allclose(cs.combined_scans[1].detector_data[0].xy_data.y, [50.0])
+        np.testing.assert_allclose(cs.combined_scans[1].detector_data[1].xy_data.y, [60.0])
+        # IQ data generated for all
+        for scan_idx in range(2):
+            for bank_idx in range(2):
+                assert len(cs.combined_scans[scan_idx].detector_data[bank_idx].iq_data.q) == 1
