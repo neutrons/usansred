@@ -414,3 +414,135 @@ class TestCombinedSampleCombine:
         for scan_idx in range(2):
             for bank_idx in range(2):
                 assert len(cs.combined_scans[scan_idx].detector_data[bank_idx].iq_data.q) == 1
+
+class TestCombinedSampleDefaults:
+    """Cover default field values on CombinedSample."""
+
+    def test_default_thickness(self, mock_experiment):
+        """Default thickness should be 0.1."""
+        cs = CombinedSample(name="test", experiment=mock_experiment)
+        assert cs.thickness == 0.1
+
+    def test_default_is_background(self, mock_experiment):
+        """Default is_background should be False."""
+        cs = CombinedSample(name="test", experiment=mock_experiment)
+        assert cs.is_background is False
+
+    def test_default_combined_samples_empty(self, mock_experiment):
+        """Default combined_samples should be empty list."""
+        cs = CombinedSample(name="test", experiment=mock_experiment)
+        assert cs.combined_samples == []
+
+    def test_default_combined_scans_empty(self, mock_experiment):
+        """Default combined_scans should be empty list."""
+        cs = CombinedSample(name="test", experiment=mock_experiment)
+        assert cs.combined_scans == []
+
+    def test_custom_thickness(self, mock_experiment):
+        """Custom thickness should be stored."""
+        cs = CombinedSample(name="test", experiment=mock_experiment, thickness=0.5)
+        assert cs.thickness == 0.5
+
+    def test_custom_is_background(self, mock_experiment):
+        """Custom is_background should be stored."""
+        cs = CombinedSample(name="test", experiment=mock_experiment, is_background=True)
+        assert cs.is_background is True
+
+
+class TestCombinedSampleCombineResetPath:
+    """Ensure the reset path in combine() is hit."""
+
+    def test_combine_resets_combined_scans_on_second_call(self, mock_experiment):
+        """Calling combine() twice should not accumulate scans from previous run."""
+        xy = XYData(x=[1.0, 2.0], y=[10.0, 20.0], e=[1.0, 2.0], t=[5.0, 10.0])
+        scan = _make_scan(mock_experiment, xy, xy)
+        sample = _make_sample(mock_experiment, "s1", [scan])
+
+        cs = CombinedSample(name="reset_test", experiment=mock_experiment, combined_samples=[sample])
+
+        # First call
+        cs.combine()
+        assert len(cs.combined_scans) == 1
+        y_first = list(cs.combined_scans[0].monitor_data.xy_data.y)
+
+        # Second call — should reset and produce identical result
+        cs.combine()
+        assert len(cs.combined_scans) == 1
+        np.testing.assert_allclose(cs.combined_scans[0].monitor_data.xy_data.y, y_first)
+
+    def test_combine_with_t_data(self, mock_experiment):
+        """Combine should preserve t values through the XY→IQ pipeline."""
+        xy = XYData(x=[1.0], y=[10.0], e=[1.0], t=[300.0])
+        scan = _make_scan(mock_experiment, xy, xy)
+        sample = _make_sample(mock_experiment, "s1", [scan])
+
+        cs = CombinedSample(name="t_test", experiment=mock_experiment, combined_samples=[sample])
+        cs.combine()
+
+        assert len(cs.combined_scans) == 1
+        # t should be preserved in xy_data
+        np.testing.assert_allclose(cs.combined_scans[0].monitor_data.xy_data.t, [300.0])
+        # IQ conversion copies t
+        np.testing.assert_allclose(cs.combined_scans[0].monitor_data.iq_data.t, [300.0])
+
+
+class TestCombineXYDataPairEdgeCases:
+    """Additional edge-case tests for _combine_xy_data_pair."""
+
+    def test_single_point_each(self):
+        """Combining single-point XYData objects at the same X."""
+        xy1 = XYData(x=[5.0], y=[100.0], e=[10.0], t=[50.0])
+        xy2 = XYData(x=[5.0], y=[200.0], e=[20.0], t=[60.0])
+
+        result = CombinedSample._combine_xy_data_pair(xy1, xy2)
+
+        assert len(result.x) == 1
+        np.testing.assert_allclose(result.y, [300.0])
+        np.testing.assert_allclose(result.e, [math.sqrt(100 + 400)])
+        np.testing.assert_allclose(result.t, [55.0])  # average of 50 and 60
+
+    def test_zero_y_values(self):
+        """Combining with zero Y values should work correctly."""
+        xy1 = XYData(x=[1.0], y=[0.0], e=[0.0], t=[])
+        xy2 = XYData(x=[1.0], y=[0.0], e=[0.0], t=[])
+
+        result = CombinedSample._combine_xy_data_pair(xy1, xy2)
+
+        assert len(result.x) == 1
+        np.testing.assert_allclose(result.y, [0.0])
+        np.testing.assert_allclose(result.e, [0.0])
+
+    def test_large_number_of_points(self):
+        """Combining XYData with many points should work."""
+        n = 1000
+        xy1 = XYData(
+            x=list(np.arange(n, dtype=float)),
+            y=list(np.ones(n)),
+            e=list(np.ones(n) * 0.1),
+            t=[],
+        )
+        xy2 = XYData(
+            x=list(np.arange(n, dtype=float)),
+            y=list(np.ones(n) * 2),
+            e=list(np.ones(n) * 0.2),
+            t=[],
+        )
+
+        result = CombinedSample._combine_xy_data_pair(xy1, xy2)
+
+        assert len(result.x) == n
+        np.testing.assert_allclose(result.y, [3.0] * n)
+        expected_e = math.sqrt(0.01 + 0.04)
+        np.testing.assert_allclose(result.e, [expected_e] * n)
+
+    def test_negative_x_values(self):
+        """X values can be negative; binning should still work."""
+        xy1 = XYData(x=[-2.0, -1.0], y=[10.0, 20.0], e=[1.0, 2.0], t=[])
+        xy2 = XYData(x=[-2.0, -1.0], y=[30.0, 40.0], e=[3.0, 4.0], t=[])
+
+        result = CombinedSample._combine_xy_data_pair(xy1, xy2)
+
+        assert len(result.x) == 2
+        sorted_idx = np.argsort(result.x)
+        y_sorted = np.array(result.y)[sorted_idx]
+        np.testing.assert_allclose(y_sorted, [40.0, 60.0])

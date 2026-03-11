@@ -189,7 +189,6 @@ class TestScanReadXYFile:
         finally:
             os.unlink(filepath)
 
-
 class TestScanLoadDataBranch:
     """Tests for the Scan.load_data conditional in model_post_init."""
 
@@ -212,3 +211,30 @@ class TestScanLoadDataBranch:
         with patch.object(Scan, "load") as mock_load:
             Scan(number=1, experiment=mock_experiment)
             mock_load.assert_called_once()
+
+class TestScanLoadDataField:
+    """Cover the Scan.load_data field and model_post_init branching."""
+
+    def test_load_data_field_default_value(self):
+        """Scan.load_data should default to True."""
+        # Check field default without actually creating (which would trigger load)
+        field_info = Scan.model_fields["load_data"]
+        assert field_info.default is True
+
+    def test_scan_with_load_data_false_has_empty_data(self, mock_experiment):
+        """A Scan created with load_data=False should have empty monitor/detector data."""
+        scan = Scan(number=0, experiment=mock_experiment, load_data=False)
+        assert scan.monitor_data.xy_data.x == []
+        assert scan.monitor_data.iq_data.q == []
+        assert scan.detector_data == []
+
+    def test_scan_number_preserved(self, mock_experiment):
+        """Scan number should be stored correctly."""
+        scan = Scan(number=42, experiment=mock_experiment, load_data=False)
+        assert scan.number == 42
+
+    def test_scan_experiment_reference(self, mock_experiment):
+        """Scan should hold a reference to its experiment."""
+        scan = Scan(number=0, experiment=mock_experiment, load_data=False)
+        assert scan.experiment is mock_experiment
+
