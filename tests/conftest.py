@@ -1,8 +1,10 @@
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
 from mantid.simpleapi import config
+from usansred.reduce import Experiment
 
 this_module_path = sys.modules[__name__].__file__
 
@@ -49,3 +51,41 @@ def data_server():
     yield _DataServe()
     for key, val in _backup.items():
         config[key] = val
+
+
+@pytest.fixture()
+def mock_experiment():
+    """Create a minimal Experiment with model_post_init bypassed."""
+    with patch.object(Experiment, "model_post_init", return_value=None):
+        exp = Experiment(config="dummy.json")
+    exp.folder = ""
+    exp.output_dir = ""
+    exp.num_of_banks = 1
+    exp.prim_wave = 3.6
+    exp.darwin_width = 5.1
+    exp.logbin = False
+    exp.v_angle = 0.042
+    exp.min_q = 1e-6
+    exp.step_per_dec = 33
+    exp.background = None
+    exp.samples = []
+    return exp
+
+
+@pytest.fixture()
+def mock_experiment_2banks():
+    """Create a minimal Experiment with 2 detector banks."""
+    with patch.object(Experiment, "model_post_init", return_value=None):
+        exp = Experiment(config="dummy.json")
+    exp.folder = ""
+    exp.output_dir = ""
+    exp.num_of_banks = 2
+    exp.prim_wave = 3.6
+    exp.darwin_width = 5.1
+    exp.logbin = False
+    exp.v_angle = 0.042
+    exp.min_q = 1e-6
+    exp.step_per_dec = 33
+    exp.background = None
+    exp.samples = []
+    return exp

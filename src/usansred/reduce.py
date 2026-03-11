@@ -1,3 +1,4 @@
+import copy
 import csv
 import logging
 import math
@@ -35,6 +36,9 @@ class Scan(BaseModel):
         Monitor data associated with this scan
     detector_data : list[MonitorData]
         Detector data associated with this scan
+    load_data : bool
+        Whether to load data files during initialization. Set to False when
+        creating placeholder scans (e.g. for CombinedSample).
     """
 
     number: int = Field(..., description="Scan (run) number")
@@ -43,12 +47,14 @@ class Scan(BaseModel):
     detector_data: list[MonitorData] = Field(
         default_factory=list, description="Detector data associated with this scan"
     )
+    load_data: bool = Field(True, description="Whether to load data files during initialization")
     # NOTE: Not currently used, but may be useful in the future
     # sample: "Sample" = Field(..., description="The sample associated with this scan")
 
     def model_post_init(self, _context: Any) -> None:  # noqa ANN401
         """Post-validation initializer"""
-        self.load()
+        if self.load_data:
+            self.load()
 
     @property
     def size(self) -> int:
@@ -698,6 +704,163 @@ class Sample(BaseModel):
 
         logging.info(f"Subtracted background {background.name} from sample {self.name}")
         return
+
+
+class CombinedSample(BaseModel):
+    """Combine multiple Sample measurements at the raw (X,Y,E) scan level before converting to (Q,I,E).
+
+    Attributes
+    ----------
+    name : str
+        Combined sample name.
+    experiment : Experiment
+        Experiment this combined sample belongs to.
+    thickness : float
+        Sample thickness in cm.
+    is_background : bool
+        Whether this combined sample represents a background measurement.
+    combined_samples : list[Sample]
+        Individual Sample objects whose scans will be combined.
+    combined_scans : list[Scan]
+        Scans produced by the combination.
+    """
+
+    name: str = Field(..., description="Combined sample name")
+    experiment: "Experiment" = Field(..., description="Experiment associated with this combined sample")
+    thickness: float = Field(0.1, description="Sample thickness in cm")
+    is_background: bool = Field(False, description="Whether this is a background sample")
+    combined_samples: list[Sample] = Field(default_factory=list, description="Individual samples to combine")
+    combined_scans: list[Scan] = Field(default_factory=list, description="Combined scans (populated by combine)")
+
+    def combine(self) -> None:
+        """Sum raw XY data from all combined samples scan-by-scan, then generate IQ data.
+
+        For each scan index, the monitor and detector XY data from every sample are
+        accumulated.  If a sample has fewer scans than others a warning is logged and
+        it is skipped for that index.  After accumulation the XY to IQ conversion is
+        performed on the combined data and ready for reduction.
+
+        Raises
+        ------
+        AssertionError
+            If ``combined_samples`` is empty or none of them contain scans.
+        """
+        assert len(self.combined_samples) > 0, "No samples to combine."
+
+        # Reset combined scans in case this method is called multiple times
+        self.combined_scans: list[Scan] = []
+
+        max_scans = max((len(sample.scans) for sample in self.combined_samples), default=0)
+        assert max_scans > 0, "No scans in any sample to combine."
+
+        for scan_idx in range(max_scans):
+            for sample in self.combined_samples:
+                if scan_idx >= len(sample.scans):
+                    logging.warning(
+                        f"Sample '{sample.name}' contains fewer scans than others "
+                        f"(has {len(sample.scans)}, expected at least {scan_idx + 1}). Skipping."
+                    )
+                    continue
+
+                source_scan = sample.scans[scan_idx]
+
+                if scan_idx >= len(self.combined_scans):
+                    # First contribution for this scan index – create a new placeholder scan
+                    new_scan = Scan(number=0, experiment=self.experiment, load_data=False)
+
+                    # Seed monitor data from first contributor
+                    new_scan.monitor_data = MonitorData(
+                        xy_data=copy.deepcopy(source_scan.monitor_data.xy_data),
+                        iq_data=IQData(),
+                    )
+
+                    # Seed detector data from first contributor
+                    for bank_id in range(self.experiment.num_of_banks):
+                        new_scan.detector_data.append(
+                            MonitorData(
+                                xy_data=copy.deepcopy(source_scan.detector_data[bank_id].xy_data),
+                                iq_data=IQData(),
+                            )
+                        )
+                    self.combined_scans.append(new_scan)
+                else:
+                    # Subsequent contributions – accumulate into existing scan
+                    self.combined_scans[scan_idx].monitor_data.xy_data = self._combine_xy_data_pair(
+                        self.combined_scans[scan_idx].monitor_data.xy_data,
+                        source_scan.monitor_data.xy_data,
+                    )
+                    for bank_id in range(self.experiment.num_of_banks):
+                        self.combined_scans[scan_idx].detector_data[bank_id].xy_data = self._combine_xy_data_pair(
+                            self.combined_scans[scan_idx].detector_data[bank_id].xy_data,
+                            source_scan.detector_data[bank_id].xy_data,
+                        )
+
+            # After all samples have contributed, convert XY → IQ for this scan
+            scan = self.combined_scans[scan_idx]
+            scan.monitor_data.iq_data = scan.convert_xy_to_iq(scan.monitor_data.xy_data)
+            for bank_id in range(self.experiment.num_of_banks):
+                scan.detector_data[bank_id].iq_data = scan.convert_xy_to_iq(
+                    scan.detector_data[bank_id].xy_data,
+                )
+
+        logging.info(f"Combined {len(self.combined_samples)} samples into '{self.name}' ({len(self.combined_scans)} scans).")
+
+    # ------------------------------------------------------------------
+    # Static helper – combines two XYData objects by binning close X values
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _combine_xy_data_pair(base: XYData, other: XYData, tolerance: float = 1e-8) -> XYData:
+        """Combine two :class:`XYData` objects by summing Y values at matching X bins.
+
+        X values are discretised to integer bins of width ``tolerance`` so that
+        floating-point rounding does not prevent matching.  Y values are summed,
+        errors are propagated in quadrature, and T values are averaged.
+
+        Parameters
+        ----------
+        base : XYData
+            Accumulated data so far.
+        other : XYData
+            New data to add.
+        tolerance : float
+            Bin width used to discretise X values (default ``1e-8``).
+
+        Returns
+        -------
+        XYData
+            Merged result.
+        """
+        combined: dict[int, dict] = defaultdict(
+            lambda: {"y_sum": 0.0, "e_sq_sum": 0.0, "t_list": [], "count": 0}
+        )
+
+        for xy_data in (base, other):
+            x_arr = np.array(xy_data.x)
+            y_arr = np.array(xy_data.y)
+            e_arr = np.array(xy_data.e)
+            t_vals = xy_data.t if xy_data.t and len(xy_data.t) == len(xy_data.x) else [0.0] * len(xy_data.x)
+
+            for x, y, e, t in zip(x_arr, y_arr, e_arr, t_vals):
+                x_key = int(np.round(x / tolerance))
+                combined[x_key]["y_sum"] += y
+                combined[x_key]["e_sq_sum"] += e**2
+                combined[x_key]["t_list"].append(t)
+                combined[x_key]["count"] += 1
+
+        out_x: list[float] = []
+        out_y: list[float] = []
+        out_e: list[float] = []
+        out_t: list[float] = []
+
+        for x_key in sorted(combined.keys()):
+            entry = combined[x_key]
+            out_x.append(x_key * tolerance)
+            out_y.append(entry["y_sum"])
+            out_e.append(np.sqrt(entry["e_sq_sum"]))
+            out_t.append(float(np.mean(entry["t_list"])) if entry["t_list"] else 0.0)
+
+        return XYData(x=out_x, y=out_y, e=out_e, t=out_t)
 
 
 class Experiment(BaseModel):
