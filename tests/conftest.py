@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from mantid.simpleapi import config
+
 from usansred.reduce import Experiment
 
 this_module_path = sys.modules[__name__].__file__
@@ -53,7 +54,7 @@ def data_server():
         config[key] = val
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_experiment():
     """Create a minimal Experiment with model_post_init bypassed."""
     with patch.object(Experiment, "model_post_init", return_value=None):
@@ -72,7 +73,7 @@ def mock_experiment():
     return exp
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_experiment_2banks():
     """Create a minimal Experiment with 2 detector banks."""
     with patch.object(Experiment, "model_post_init", return_value=None):

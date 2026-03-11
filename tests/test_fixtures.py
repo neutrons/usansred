@@ -4,18 +4,19 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+
 from usansred.model import IQData, MonitorData, XYData
 from usansred.reduce import CombinedSample, Experiment, Sample, Scan
 
 
-@pytest.mark.datarepo()
+@pytest.mark.datarepo
 def test_data_server(data_server):
     r"""find one file within the data-directory"""
     expected = os.path.join(data_server.directory, "testdataserver", "empty.txt")
     assert data_server.path_to("empty.txt") == expected
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_experiment():
     """Create a minimal Experiment with model_post_init bypassed."""
     with patch.object(Experiment, "model_post_init", return_value=None):
@@ -34,7 +35,7 @@ def mock_experiment():
     return exp
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_experiment_2banks():
     """Create a minimal Experiment with 2 detector banks."""
     with patch.object(Experiment, "model_post_init", return_value=None):

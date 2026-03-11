@@ -646,9 +646,9 @@ class Sample(BaseModel):
 
         if self.experiment.logbin:
             assert self.is_log_binned, f"Sample {self.name} must be log-binned before background subtraction."
-            assert (
-                background.is_log_binned
-            ), f"Background {background.name} must be log-binned before background subtraction."
+            assert background.is_log_binned, (
+                f"Background {background.name} must be log-binned before background subtraction."
+            )
             logging.info(
                 f"Logbinned data are used for background subtraction. Sample {self.name}, background {background.name}"
             )

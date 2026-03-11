@@ -8,10 +8,10 @@ import tempfile
 from unittest.mock import patch
 
 import numpy as np
-from usansred.model import IQData, XYData
-from usansred.reduce import Experiment, Sample, Scan
 
 from tests.test_fixtures import _make_sample
+from usansred.model import IQData, XYData
+from usansred.reduce import Experiment, Sample, Scan
 
 
 class TestSampleProperties:
