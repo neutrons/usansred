@@ -1,53 +1,18 @@
-"""Unit tests for the CombinedSample class in usansred.reduce."""
+"""Unit tests for the CombinedSample, Scan, Sample, and model classes in usansred."""
 
 import math
 from unittest.mock import patch
 
 import numpy as np
 import pytest
-
 from usansred.model import IQData, MonitorData, XYData
 from usansred.reduce import CombinedSample, Experiment, Sample, Scan
 
+from tests.test_fixtures import _make_sample, _make_scan, _make_scan_multi_bank
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def mock_experiment():
-    """Create a minimal Experiment with model_post_init bypassed."""
-    with patch.object(Experiment, "model_post_init", return_value=None):
-        exp = Experiment(config="dummy.json")
-    exp.folder = ""
-    exp.output_dir = ""
-    exp.num_of_banks = 1
-    exp.prim_wave = 3.6
-    exp.darwin_width = 5.1
-    exp.logbin = False
-    return exp
-
-
-def _make_scan(experiment: Experiment, xy_monitor: XYData, xy_detector: XYData) -> Scan:
-    """Create a Scan with pre-populated monitor and detector data (no file I/O)."""
-    scan = Scan(number=0, experiment=experiment, load_data=False)
-    scan.monitor_data = MonitorData(xy_data=xy_monitor, iq_data=IQData())
-    scan.detector_data = [MonitorData(xy_data=xy_detector, iq_data=IQData())]
-    return scan
-
-
-def _make_sample(experiment: Experiment, name: str, scans: list[Scan]) -> Sample:
-    """Create a Sample with model_post_init bypassed and scans injected."""
-    with patch.object(Sample, "model_post_init", return_value=None):
-        sample = Sample(name=name, experiment=experiment, start_scan_num=0, num_of_scans=0)
-    sample.scans = scans
-    return sample
-
-
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Tests for _combine_xy_data_pair (static helper)
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 
 class TestCombineXYDataPair:
@@ -96,10 +61,52 @@ class TestCombineXYDataPair:
         np.testing.assert_allclose(result.y, [5.0])
         np.testing.assert_allclose(result.e, [0.5])
 
+    def test_custom_tolerance(self):
+        """Using a custom tolerance should bin X values accordingly."""
+        # With tolerance=0.1, x=1.0 and x=1.05 should fall in the same bin (both round to 10)
+        xy1 = XYData(x=[1.0], y=[10.0], e=[1.0], t=[100.0])
+        xy2 = XYData(x=[1.05], y=[20.0], e=[2.0], t=[200.0])
 
-# ---------------------------------------------------------------------------
+        result = CombinedSample._combine_xy_data_pair(xy1, xy2, tolerance=0.1)
+
+        # Both should be binned together since int(round(1.0/0.1)) == int(round(1.05/0.1)) == 10
+        assert len(result.x) == 1
+        np.testing.assert_allclose(result.y, [30.0])
+        np.testing.assert_allclose(result.e, [math.sqrt(1.0 + 4.0)])
+        np.testing.assert_allclose(result.t, [150.0])  # average of 100 and 200
+
+    def test_mixed_t_values(self):
+        """One input has t values, the other has empty t."""
+        xy1 = XYData(x=[1.0, 2.0], y=[10.0, 20.0], e=[1.0, 2.0], t=[100.0, 200.0])
+        xy2 = XYData(x=[1.0, 2.0], y=[10.0, 20.0], e=[1.0, 2.0], t=[])
+
+        result = CombinedSample._combine_xy_data_pair(xy1, xy2)
+
+        assert len(result.x) == 2
+        # t for xy2 defaults to [0.0, 0.0], so average of [100, 0] = 50 and [200, 0] = 100
+        np.testing.assert_allclose(result.t, [50.0, 100.0])
+
+    def test_partially_overlapping_x_values(self):
+        """Some X values overlap, some don't."""
+        xy1 = XYData(x=[1.0, 2.0, 3.0], y=[10.0, 20.0, 30.0], e=[1.0, 2.0, 3.0], t=[])
+        xy2 = XYData(x=[2.0, 3.0, 4.0], y=[25.0, 35.0, 45.0], e=[2.5, 3.5, 4.5], t=[])
+
+        result = CombinedSample._combine_xy_data_pair(xy1, xy2)
+
+        # x=1.0 only from xy1, x=2.0 and x=3.0 overlap, x=4.0 only from xy2
+        assert len(result.x) == 4
+        # Sorted output
+        sorted_idx = np.argsort(result.x)
+        x_sorted = np.array(result.x)[sorted_idx]
+        y_sorted = np.array(result.y)[sorted_idx]
+
+        np.testing.assert_allclose(x_sorted, [1.0, 2.0, 3.0, 4.0], atol=1e-7)
+        np.testing.assert_allclose(y_sorted, [10.0, 45.0, 65.0, 45.0])
+
+
+# ===========================================================================
 # Tests for CombinedSample.combine
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 
 class TestCombinedSampleCombine:
@@ -109,6 +116,13 @@ class TestCombinedSampleCombine:
         """combine() should raise if combined_samples is empty."""
         cs = CombinedSample(name="empty", experiment=mock_experiment)
         with pytest.raises(AssertionError, match="No samples to combine"):
+            cs.combine()
+
+    def test_combine_no_scans_raises(self, mock_experiment):
+        """combine() should raise if all samples have empty scan lists."""
+        sample = _make_sample(mock_experiment, "empty_scans", [])
+        cs = CombinedSample(name="no_scans", experiment=mock_experiment, combined_samples=[sample])
+        with pytest.raises(AssertionError, match="No scans in any sample to combine"):
             cs.combine()
 
     def test_combine_single_sample(self, mock_experiment):
@@ -141,9 +155,7 @@ class TestCombinedSampleCombine:
         scan2 = _make_scan(mock_experiment, xy_mon2, xy_det2)
         sample2 = _make_sample(mock_experiment, "s2", [scan2])
 
-        cs = CombinedSample(
-            name="combined", experiment=mock_experiment, combined_samples=[sample1, sample2]
-        )
+        cs = CombinedSample(name="combined", experiment=mock_experiment, combined_samples=[sample1, sample2])
         cs.combine()
 
         assert len(cs.combined_scans) == 1
@@ -155,6 +167,27 @@ class TestCombinedSampleCombine:
         expected_mon_e = [math.sqrt(10.0**2 + 11.0**2), math.sqrt(14.0**2 + 15.0**2)]
         np.testing.assert_allclose(cs.combined_scans[0].monitor_data.xy_data.e, expected_mon_e)
 
+    def test_combine_three_samples(self, mock_experiment):
+        """Combining three samples should sum all Y values correctly."""
+        xy = XYData(x=[1.0], y=[10.0], e=[1.0], t=[])
+        scan1 = _make_scan(mock_experiment, xy, xy)
+        scan2 = _make_scan(mock_experiment, xy, xy)
+        scan3 = _make_scan(mock_experiment, xy, xy)
+        sample1 = _make_sample(mock_experiment, "s1", [scan1])
+        sample2 = _make_sample(mock_experiment, "s2", [scan2])
+        sample3 = _make_sample(mock_experiment, "s3", [scan3])
+
+        cs = CombinedSample(
+            name="combined_3",
+            experiment=mock_experiment,
+            combined_samples=[sample1, sample2, sample3],
+        )
+        cs.combine()
+
+        assert len(cs.combined_scans) == 1
+        np.testing.assert_allclose(cs.combined_scans[0].monitor_data.xy_data.y, [30.0])
+        np.testing.assert_allclose(cs.combined_scans[0].monitor_data.xy_data.e, [math.sqrt(3.0)])
+
     def test_combine_mismatched_scan_counts(self, mock_experiment):
         """Samples with different scan counts should still combine, skipping missing scans."""
         xy1 = XYData(x=[1.0], y=[10.0], e=[1.0], t=[])
@@ -165,9 +198,7 @@ class TestCombinedSampleCombine:
         scan2a = _make_scan(mock_experiment, xy1, xy1)
         sample2 = _make_sample(mock_experiment, "s2", [scan2a])
 
-        cs = CombinedSample(
-            name="combined", experiment=mock_experiment, combined_samples=[sample1, sample2]
-        )
+        cs = CombinedSample(name="combined", experiment=mock_experiment, combined_samples=[sample1, sample2])
         cs.combine()
 
         # Should have 2 scans (max of the two samples)
@@ -177,19 +208,47 @@ class TestCombinedSampleCombine:
         # Second scan: only sample1 contributed → Y unchanged
         np.testing.assert_allclose(cs.combined_scans[1].monitor_data.xy_data.y, [10.0])
 
+    def test_combine_called_twice_resets(self, mock_experiment):
+        """Calling combine() twice should reset combined_scans properly."""
+        xy = XYData(x=[1.0], y=[10.0], e=[1.0], t=[])
+        scan = _make_scan(mock_experiment, xy, xy)
+        sample = _make_sample(mock_experiment, "s1", [scan])
 
-# ---------------------------------------------------------------------------
-# Tests for Scan.load_data flag
-# ---------------------------------------------------------------------------
+        cs = CombinedSample(name="combined", experiment=mock_experiment, combined_samples=[sample])
+        cs.combine()
+        assert len(cs.combined_scans) == 1
 
+        # Call combine again
+        cs.combine()
+        assert len(cs.combined_scans) == 1  # Should still be 1, not 2
 
-class TestScanLoadData:
-    """Tests for the Scan.load_data field."""
+    def test_combine_multiple_banks(self, mock_experiment_2banks):
+        """Combining with multiple detector banks should process all banks."""
+        xy_mon = XYData(x=[1.0], y=[100.0], e=[10.0], t=[])
+        xy_det1 = XYData(x=[1.0], y=[50.0], e=[5.0], t=[])
+        xy_det2 = XYData(x=[1.0], y=[60.0], e=[6.0], t=[])
 
-    def test_scan_load_data_false_skips_io(self, mock_experiment):
-        """Creating a Scan with load_data=False should not attempt to read files."""
-        # This should NOT raise a FileNotFoundError
-        scan = Scan(number=99999, experiment=mock_experiment, load_data=False)
-        assert scan.number == 99999
-        # Monitor data should be default (empty)
-        assert scan.monitor_data.xy_data.x == []
+        scan1 = _make_scan_multi_bank(mock_experiment_2banks, xy_mon, [xy_det1, xy_det2])
+        sample1 = _make_sample(mock_experiment_2banks, "s1", [scan1])
+
+        xy_det1b = XYData(x=[1.0], y=[55.0], e=[5.5], t=[])
+        xy_det2b = XYData(x=[1.0], y=[65.0], e=[6.5], t=[])
+        scan2 = _make_scan_multi_bank(mock_experiment_2banks, xy_mon, [xy_det1b, xy_det2b])
+        sample2 = _make_sample(mock_experiment_2banks, "s2", [scan2])
+
+        cs = CombinedSample(
+            name="combined_2bank",
+            experiment=mock_experiment_2banks,
+            combined_samples=[sample1, sample2],
+        )
+        cs.combine()
+
+        assert len(cs.combined_scans) == 1
+        assert len(cs.combined_scans[0].detector_data) == 2
+        # Bank 1: 50 + 55 = 105
+        np.testing.assert_allclose(cs.combined_scans[0].detector_data[0].xy_data.y, [105.0])
+        # Bank 2: 60 + 65 = 125
+        np.testing.assert_allclose(cs.combined_scans[0].detector_data[1].xy_data.y, [125.0])
+        # IQ data should have been generated for both banks
+        assert len(cs.combined_scans[0].detector_data[0].iq_data.q) == 1
+        assert len(cs.combined_scans[0].detector_data[1].iq_data.q) == 1
