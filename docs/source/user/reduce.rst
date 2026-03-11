@@ -15,7 +15,7 @@ Activating the Environment
 --------------------------
 
 | In order to reduce the data, you need to activate the ``usansred`` pixi environment first.
-| Instructions for activating the environment can be found in :doc:`Environments <environments>`. 
+| Instructions for activating the environment can be found in :doc:`Environments <environments>`.
 | This will allow you to run the ``reduceUSANS`` command in the terminal, which is the main script for reducing USANS data.
 
 | Alternatively, if you want to open a Python interpreter with the ``usansred`` environment activated,
@@ -30,7 +30,7 @@ Defining the Setup File
 First, create the setup file **in the same folder as the raw data**.
 
 | The setup file is a file that contains the information about the samples to be reduced.
-| Two formats are supported: CSV (comma separated values) and JSON. 
+| Two formats are supported: CSV (comma separated values) and JSON.
 
 The columns for the CSV format are as follows:
 
@@ -54,7 +54,7 @@ An example ``setup.csv`` might look like:
    s,A2_56C_3hr,36330,5,0.1,36331;36332
 
 The JSON format provides the same information in a different layout. A JSON setup file contains a background entry, and a samples entry,which is a list of sample objects.
-Each background and sample object contains the same information as the columns in the CSV format, but with descriptive keys: 
+Each background and sample object contains the same information as the columns in the CSV format, but with descriptive keys:
 
 - ``name`` (string)
 - ``start_scan_num`` (integer)
@@ -62,9 +62,9 @@ Each background and sample object contains the same information as the columns i
 - ``thickness`` (float)
 - ``exclude`` (list of integers, optional)
 
-Note that the main difference is how excluded scans are represented: 
+Note that the main difference is how excluded scans are represented:
 - in CSV, they are represented as a semicolon-separated string of scan numbers in the last (6th) column,
-- in JSON, they are represented as a list of integers under the key ``exclude``. 
+- in JSON, they are represented as a list of integers under the key ``exclude``.
 
 For example, create a file named ``setup.json`` with the following content:
 

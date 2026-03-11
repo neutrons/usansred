@@ -189,6 +189,7 @@ class TestScanReadXYFile:
         finally:
             os.unlink(filepath)
 
+
 class TestScanLoadDataBranch:
     """Tests for the Scan.load_data conditional in model_post_init."""
 
@@ -211,6 +212,7 @@ class TestScanLoadDataBranch:
         with patch.object(Scan, "load") as mock_load:
             Scan(number=1, experiment=mock_experiment)
             mock_load.assert_called_once()
+
 
 class TestScanLoadDataField:
     """Cover the Scan.load_data field and model_post_init branching."""
@@ -237,4 +239,3 @@ class TestScanLoadDataField:
         """Scan should hold a reference to its experiment."""
         scan = Scan(number=0, experiment=mock_experiment, load_data=False)
         assert scan.experiment is mock_experiment
-

@@ -646,9 +646,9 @@ class Sample(BaseModel):
 
         if self.experiment.logbin:
             assert self.is_log_binned, f"Sample {self.name} must be log-binned before background subtraction."
-            assert background.is_log_binned, (
-                f"Background {background.name} must be log-binned before background subtraction."
-            )
+            assert (
+                background.is_log_binned
+            ), f"Background {background.name} must be log-binned before background subtraction."
             logging.info(
                 f"Logbinned data are used for background subtraction. Sample {self.name}, background {background.name}"
             )
@@ -803,7 +803,9 @@ class CombinedSample(BaseModel):
                     scan.detector_data[bank_id].xy_data,
                 )
 
-        logging.info(f"Combined {len(self.combined_samples)} samples into '{self.name}' ({len(self.combined_scans)} scans).")
+        logging.info(
+            f"Combined {len(self.combined_samples)} samples into '{self.name}' ({len(self.combined_scans)} scans)."
+        )
 
     # ------------------------------------------------------------------
     # Static helper – combines two XYData objects by binning close X values
@@ -831,9 +833,7 @@ class CombinedSample(BaseModel):
         XYData
             Merged result.
         """
-        combined: dict[int, dict] = defaultdict(
-            lambda: {"y_sum": 0.0, "e_sq_sum": 0.0, "t_list": [], "count": 0}
-        )
+        combined: dict[int, dict] = defaultdict(lambda: {"y_sum": 0.0, "e_sq_sum": 0.0, "t_list": [], "count": 0})
 
         for xy_data in (base, other):
             x_arr = np.array(xy_data.x)

@@ -415,6 +415,7 @@ class TestCombinedSampleCombine:
             for bank_idx in range(2):
                 assert len(cs.combined_scans[scan_idx].detector_data[bank_idx].iq_data.q) == 1
 
+
 class TestCombinedSampleDefaults:
     """Cover default field values on CombinedSample."""
 

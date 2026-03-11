@@ -5,7 +5,6 @@ from unittest.mock import patch as mock_patch
 
 import numpy as np
 import pytest
-
 from usansred.reduce import Experiment
 from usansred.reduce import main as reduce
 
@@ -53,7 +52,7 @@ def test_main_invalid_file(mock_parse_args):
     assert str(error.value) == f"The file path: {mock_args.path} does not exist"
 
 
-@pytest.mark.datarepo
+@pytest.mark.datarepo()
 @mock_patch("usansred.reduce.parse_args")
 def test_main(mock_parse_args, data_server, tmp_path):
     # Setup mock objects
@@ -73,7 +72,7 @@ def test_main(mock_parse_args, data_server, tmp_path):
                 compare_lines(output, expected)
 
 
-@pytest.mark.datarepo
+@pytest.mark.datarepo()
 def test_sample_match_or_interpolate(data_server, tmp_path):
     # Get the testing data and temp output directory
     # Create new Experiment instance
