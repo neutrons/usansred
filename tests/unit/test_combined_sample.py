@@ -6,10 +6,10 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
-from usansred.model import IQData, MonitorData, XYData
-from usansred.reduce import CombinedSample, Experiment, Sample, Scan
 
 from tests.test_fixtures import _make_sample, _make_scan, _make_scan_multi_bank
+from usansred.model import IQData, MonitorData, XYData
+from usansred.reduce import CombinedSample, Experiment, Sample, Scan
 
 # ===========================================================================
 # Tests for _combine_xy_data_pair (static helper)
@@ -414,6 +414,7 @@ class TestCombinedSampleCombine:
         for scan_idx in range(2):
             for bank_idx in range(2):
                 assert len(cs.combined_scans[scan_idx].detector_data[bank_idx].iq_data.q) == 1
+
 
 class TestCombinedSampleDefaults:
     """Cover default field values on CombinedSample."""
