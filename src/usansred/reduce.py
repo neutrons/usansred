@@ -139,7 +139,7 @@ class Sample(BaseModel):
 
     def model_post_init(self, _context: Any) -> None:  # noqa ANN401
         """Post-validation initializer"""
-        for i in range(self.num_of_scans + len(self.exclude)):
+        for i in range(self.num_of_scans):
             if i + self.start_scan_num in self.exclude:
                 continue
             scan = Scan(
