@@ -30,7 +30,7 @@ jobs:
           fetch-tags: true
 
       - name: Setup pixi
-        uses: prefix-dev/setup-pixi@v0.9.4
+        uses: prefix-dev/setup-pixi@v0.9.5
         with:
           manifest-path: pyproject.toml
 
@@ -44,7 +44,7 @@ jobs:
         run: pixi run combine-coverage
 
       - name: Upload coverage to codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         if: github.actor != 'dependabot[bot]'
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -64,7 +64,7 @@ jobs:
           ref: ${{ github.ref }}
 
       - name: Setup Pixi
-        uses: prefix-dev/setup-pixi@v0.9.4
+        uses: prefix-dev/setup-pixi@v0.9.5
 
       - name: Build conda package
         run: |
@@ -103,7 +103,7 @@ jobs:
           ref: ${{ github.ref }}
 
       - name: Setup Pixi
-        uses: prefix-dev/setup-pixi@v0.9.4
+        uses: prefix-dev/setup-pixi@v0.9.5
 
       - name: Download conda package artifact
         uses: actions/download-artifact@v8
