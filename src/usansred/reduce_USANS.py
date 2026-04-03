@@ -13,7 +13,6 @@ from mantid.simpleapi import (
     CropWorkspace,
     LoadEventNexus,
     Rebin,
-    SaveAscii,
     StepScan,
     SumSpectra,
     mtd,
@@ -21,6 +20,7 @@ from mantid.simpleapi import (
 from matplotlib import use
 
 from usansred import reduce
+from usansred.io.save import save_ascii, save_summed_spectra
 from usansred.summary import generate_report
 
 use("agg")
@@ -104,9 +104,8 @@ def main():
 
     # Produce ASCII data
     Rebin(InputWorkspace="USANS", Params="0,10,17000", OutputWorkspace="USANS")
-    SumSpectra(InputWorkspace="USANS", OutputWorkspace="summed")
     file_path = os.path.join(outdir, "%s_detector_trans.txt" % file_prefix)
-    SaveAscii(InputWorkspace="summed", Filename=file_path, WriteSpectrumID=False)
+    save_summed_spectra("USANS", file_path, header="TOF, COUNTS, ERROR")
 
     CropWorkspace(
         InputWorkspace="USANS",
@@ -114,9 +113,8 @@ def main():
         EndWorkspaceIndex=1023,
         OutputWorkspace="USANS_detector",
     )
-    SumSpectra(InputWorkspace="USANS_detector", OutputWorkspace="summed")
     file_path = os.path.join(outdir, "%s_detector.txt" % file_prefix)
-    SaveAscii(InputWorkspace="summed", Filename=file_path, WriteSpectrumID=False)
+    save_summed_spectra("USANS_detector", file_path, header="TOF, COUNTS, ERROR")
 
     CropWorkspace(
         InputWorkspace="USANS",
@@ -124,9 +122,8 @@ def main():
         EndWorkspaceIndex=2047,
         OutputWorkspace="USANS_trans",
     )
-    SumSpectra(InputWorkspace="USANS_trans", OutputWorkspace="summed")
     file_path = os.path.join(outdir, "%s_trans.txt" % file_prefix)
-    SaveAscii(InputWorkspace="summed", Filename=file_path, WriteSpectrumID=False)
+    save_summed_spectra("USANS_trans", file_path, header="TOF, COUNTS, ERROR")
 
     if load_monitors:
         Rebin(
@@ -135,7 +132,7 @@ def main():
             OutputWorkspace="USANS_monitors",
         )
         file_path = os.path.join(outdir, "%s_monitor.txt" % file_prefix)
-        SaveAscii(InputWorkspace="USANS_monitors", Filename=file_path, WriteSpectrumID=False)
+        save_ascii("USANS_monitors", file_path, header="TOF, COUNTS, ERROR")
 
     # Find whether we have a motor turning
     short_name = ""
@@ -165,11 +162,7 @@ def main():
                         OutputWorkspace="USANS_scan_monitor",
                     )
                     file_path = os.path.join(outdir, "%s_monitor_scan_%s.txt" % (file_prefix, short_name))
-                    SaveAscii(
-                        InputWorkspace="USANS_scan_monitor",
-                        Filename=file_path,
-                        WriteSpectrumID=False,
-                    )
+                    save_ascii("USANS_scan_monitor", file_path, header=f"{scan_var}, COUNTS, ERROR")
                     y_monitor = mtd["USANS_scan_monitor"].readY(0)
 
                 iq_file_path_simple = os.path.join(outdir, "%s_iq_%s_%s.txt" % (file_prefix, short_name, main_wl))
@@ -228,11 +221,7 @@ def main():
 
                     if i == 0:
                         file_path = os.path.join(outdir, "%s_detector_%s.txt" % (file_prefix, main_wl))
-                        SaveAscii(
-                            InputWorkspace="USANS_scan_detector",
-                            Filename=file_path,
-                            WriteSpectrumID=False,
-                        )
+                        save_ascii("USANS_scan_detector", file_path, header=f"{scan_var}, COUNTS, ERROR")
                         # json_file_path = os.path.join(outdir, "%s_plot_data.json" % file_prefix)
                         # SavePlot1DAsJson(
                         #     InputWorkspace="USANS_scan_detector", JsonFilename=json_file_path, PlotName="main_output"
@@ -292,11 +281,7 @@ def main():
                             outdir,
                             "%s_detector_scan_%s_peak_%s.txt" % (file_prefix, short_name, i),
                         )
-                        SaveAscii(
-                            InputWorkspace="USANS_scan_detector",
-                            Filename=file_path,
-                            WriteSpectrumID=False,
-                        )
+                        save_ascii("USANS_scan_detector", file_path, header=f"{scan_var}, COUNTS, ERROR")
                         for i_theta in range(len(x_data)):
                             q = 2.0 * math.pi * math.sin(x_data[i_theta] * math.pi / 180.0 / 3600.0) / wavelength[i - 1]
                             # if q<=0:
@@ -339,21 +324,12 @@ def main():
 
                     if i == 0:
                         file_path = os.path.join(outdir, "%s_trans_%s.txt" % (file_prefix, main_wl))
-                        SaveAscii(
-                            InputWorkspace="USANS_scan_trans",
-                            Filename=file_path,
-                            WriteSpectrumID=False,
-                        )
                     else:
                         file_path = os.path.join(
                             outdir,
                             "%s_trans_scan_%s_peak_%s.txt" % (file_prefix, short_name, i),
                         )
-                        SaveAscii(
-                            InputWorkspace="USANS_scan_trans",
-                            Filename=file_path,
-                            WriteSpectrumID=False,
-                        )
+                    save_ascii("USANS_scan_trans", file_path, header=f"{scan_var}, COUNTS, ERROR")
 
                 iq_fd.close()
                 iq_fd_simple.close()
@@ -425,8 +401,8 @@ def main():
     if not os.path.exists(autodir):
         os.makedirs(autodir)
 
-    exp = reduce.Experiment(autocsvfile)
-    exp.reduce(outputFolder=autodir)
+    exp = reduce.Experiment(config=autocsvfile)
+    exp.reduce(output_dir=autodir)
 
     generate_report(config_file_path=autocsvfile, output_dir=exp.outputFolder)
 

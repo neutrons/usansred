@@ -10,7 +10,7 @@ from unittest.mock import patch
 from usansred.io.read import read_config
 from usansred.reduce import Experiment, Sample
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
 
 def test_read_config_csv():
