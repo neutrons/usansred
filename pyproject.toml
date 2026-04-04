@@ -145,8 +145,9 @@ build-docs = { cmd = 'sphinx-build -b html docs docs/_build', description = "Bui
 test-docs = { cmd = "sphinx-build -M doctest docs docs/_build", description = "Test building the documentation" }
 # Testing
 test = { description = "Run the test suite", cmd = "pytest" }
-unit-test = { description = "Run the unit tests", cmd = "python -m pytest -vv -m \"not datarepo and not sns_mounted\" --cov=src --cov-report=xml --cov-report=term-missing tests/ && mv .coverage .coverage.unit" }
-integration-test = { description = "Run the integration tests", cmd = "git submodule update --init && python -m pytest -vv -m \"datarepo\" --cov=src --cov-report=xml  --cov-report=term-missing tests/ && mv .coverage .coverage.integration" }
+test-datalight = { description = "Run tests not using the data repo nor the SNS mount", cmd = "COVERAGE_FILE=.coverage.datalight python -m pytest -vv -m \"not datarepo and not sns_mounted\" --cov=src --cov-report=term-missing tests/" }
+test-datarepo = { description = "Run tests using the data repo", cmd = "git submodule update --init && COVERAGE_FILE=.coverage.datarepo python -m pytest -vv -m \"datarepo and not sns_mounted\" --cov=src --cov-report=term-missing tests/" }
+combine-coverage = { description = "Combine coverage reports", cmd = "coverage combine" }
 # Packaging
 pypi-build = { cmd = "hatch build", description = "Build the package for PyPI" }
 conda-build-command = { cmd = "pixi build", description = "Build the conda package command" }
@@ -171,7 +172,6 @@ clean-all = { description = "Clean all artifacts", depends-on = [
   "clean-docs",
   "clean-pypi",
 ] }
-combine-coverage = { description = "Combine coverage reports", cmd = "coverage combine" }
 sync-version = { cmd = 'version=$(python -m versioningit); toml set tool.pixi.package.version "$version" --toml-path pyproject.toml', description = "Sync pyproject.toml version with Git version" }
 backup-toml = { cmd = "cp pyproject.toml pyproject.toml.bak", description = "Backup the pyproject.toml file" }
 reset-toml = { cmd = "cp pyproject.toml.bak pyproject.toml; rm pyproject.toml.bak", description = "Reset the pyproject.toml file to the original state" }

@@ -7127,8 +7127,8 @@ packages:
   timestamp: 1767817860341
 - pypi: ./
   name: usansred
-  version: 1.4.0rc2
-  sha256: 5e6a2bdf4ca4169b3c180eda8e4d473bd49391b905eee60ea99c498cd39d6158
+  version: 1.5.0.dev4
+  sha256: 15f251d4d432243ae2e7d97cf3cbf195f4c356a471d259d5e039078b0a799865
   requires_python: '>=3.11'
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/userpath-1.9.2-pyhd8ed1ab_0.conda
