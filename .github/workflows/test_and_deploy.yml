@@ -34,11 +34,11 @@ jobs:
         with:
           manifest-path: pyproject.toml
 
-      - name: Run unit tests
-        run: pixi run unit-test
+      - name: Run tests not using the data repo nor the SNS-mount
+        run: pixi run test-datalight
 
-      - name: Run integration tests
-        run: pixi run integration-test
+      - name: Run tests using the data repo but not the SNS-mount
+        run: pixi run test-datarepo
 
       - name: Combine coverage reports
         run: pixi run combine-coverage
