@@ -8,6 +8,8 @@ environments:
     - url: https://prefix.dev/pixi-build-backends/
     indexes:
     - https://pypi.org/simple
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
@@ -491,6 +493,8 @@ environments:
     - url: https://prefix.dev/pixi-build-backends/
     indexes:
     - https://pypi.org/simple
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
@@ -7127,10 +7131,9 @@ packages:
   timestamp: 1767817860341
 - pypi: ./
   name: usansred
-  version: 1.5.0.dev5
-  sha256: eb2ec3df18c4bad6bd3ce2fa0044be00f3befcfd5da3c1c81baa14b314c1f120
+  version: 1.5.0.dev20260407151740
+  sha256: c794ed1c9cbbad3a42bdb42a1e53f6b08d2966d2ed4690fca34ce1c495487be5
   requires_python: '>=3.11'
-  editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/userpath-1.9.2-pyhd8ed1ab_0.conda
   sha256: 26e53b42f7fa1127e6115a35b91c20e15f75984648b88f115136f27715d4a440
   md5: 946e3571aaa55e0870fec0dea13de3bf
