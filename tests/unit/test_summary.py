@@ -6,7 +6,7 @@ import usansred.summary
 from usansred.summary import format_sheet_name, generate_report, get_filenames_from_samples
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(autouse=True)
 def reset_sheet_name_suffix(monkeypatch):
     """Reset the global suffix counter before each test.
 
@@ -22,7 +22,7 @@ def reset_sheet_name_suffix(monkeypatch):
         ("normal_filename.txt", "normal_filename.txt"),
     ],
 )
-def test_format_sheet_name(input_filename, expected_output, reset_sheet_name_suffix):
+def test_format_sheet_name(input_filename, expected_output):
     assert format_sheet_name(input_filename) == expected_output
 
 
