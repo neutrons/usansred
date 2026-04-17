@@ -143,7 +143,7 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
 
     # Process each sample file and add data to the corresponding charts
     for file in sample_files:
-        fp = os.path.join(data_dir, file)
+        fp = os.path.join(output_dir, file)
 
         if not os.path.exists(fp):
             logging.info(f"Sample {file} file path does not exist!")
