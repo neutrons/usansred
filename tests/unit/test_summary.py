@@ -1,4 +1,5 @@
 import logging
+
 import pytest
 
 import usansred.summary
@@ -8,7 +9,7 @@ from usansred.summary import format_sheet_name, generate_report, get_filenames_f
 @pytest.fixture(scope="function")
 def reset_sheet_name_suffix(monkeypatch):
     """Reset the global suffix counter before each test.
-    
+
     This ensures that tests are independent and do not affect each other's results."""
     monkeypatch.setattr(usansred.summary, "suffix", 0)
 
@@ -69,6 +70,5 @@ def test_generate_report_reads_from_output_dir(tmp_path, caplog):
 
     assert (output_dir / "summary.xlsx").exists()
     assert any("Reading sample file UN_mysample_det_1.txt" in m for m in caplog.messages), (
-        "Expected the sample file to be read from output_dir, but it was not found. "
-        f"Log messages: {caplog.messages}"
+        f"Expected the sample file to be read from output_dir, but it was not found. Log messages: {caplog.messages}"
     )
