@@ -11,8 +11,12 @@ from pydantic import BaseModel, Field
 from scipy.optimize import curve_fit, differential_evolution
 
 from usansred.io.read import read_config
-from usansred.model import IQData, MonitorData, XYData
+from usansred.model import IQData, MonitorData, TransmissionData, XYData
 from usansred.summary import generate_report
+from usansred.transmission import (
+    get_bank_transmission,
+    get_raw_transmission_ratio,
+)
 
 # separate logging in file and console
 logging.basicConfig(filename="file.log", filemode="w", level=logging.INFO)
@@ -47,6 +51,9 @@ class Scan(BaseModel):
     detector_data: list[MonitorData] = Field(
         default_factory=list, description="Detector data associated with this scan"
     )
+    transmission_data: list[TransmissionData] = Field(
+        default_factory=list, description="Transmission data associated with this scan"
+    )
     load_data: bool = Field(True, description="Whether to load data files during initialization")
     # NOTE: Not currently used, but may be useful in the future
     # sample: "Sample" = Field(..., description="The sample associated with this scan")
@@ -70,6 +77,7 @@ class Scan(BaseModel):
         """Load experiment data files"""
         self.load_monitor_data()
         self.load_detector_data()
+        self.load_transmission_data()
 
     def load_monitor_data(self):
         filename = f"USANS_{self.number}_monitor_scan_ARN.txt"
@@ -86,6 +94,28 @@ class Scan(BaseModel):
             iq_data = self.convert_xy_to_iq(xy_data)
             monitor_data = MonitorData(xy_data=xy_data, iq_data=iq_data, filepath=filepath)
             self.detector_data.append(monitor_data)
+
+    def load_transmission_data(self):
+        for bank in range(self.num_of_banks):
+            filename = f"USANS_{self.number}_trans_scan_ARN_peak_{bank + 1}.txt"
+            filepath = os.path.join(self.experiment.folder, filename)
+            xy_trans = self.read_xy_file(filepath)
+            xy_mon = self.monitor_data.xy_data
+
+            raw_ratio, raw_ratio_err = get_raw_transmission_ratio(xy_trans, xy_mon)
+
+            self.transmission_data.append(
+                TransmissionData(
+                    xy_data=xy_trans,
+                    iq_data=self.convert_xy_to_iq(xy_trans),
+                    filepath=filepath,
+                    raw_ratio=raw_ratio,
+                    raw_ratio_err=raw_ratio_err,
+                    # placeholders, calculated later by Experiment class
+                    value=raw_ratio,  # raw_ratio / R_ref (relative to background)
+                    value_err=raw_ratio_err,
+                )
+            )
 
     def read_xy_file(self, filepath: str) -> XYData:
         """Read XY data from a file"""
@@ -551,9 +581,12 @@ class Sample(BaseModel):
             momentum_transfer = []
             intensity = []
             error = []
-            # transmission = []  # omitted for now
+            transmission = []
 
             for scan in self.scans:
+                t_value = scan.transmission_data[bank].value
+                t_error = scan.transmission_data[bank].value_err
+
                 it = list(
                     zip(
                         scan.monitor_data.iq_data.q,
@@ -564,28 +597,48 @@ class Sample(BaseModel):
                     )
                 )
 
-                for mq, mi, me, di, de in it:
-                    if mq in momentum_transfer:
-                        idx = momentum_transfer.index(mq)
-                        var = error[idx] ** 2 + (de / mi) ** 2
-                        intensity[idx] = (intensity[idx] * (error[idx] ** 2) + (di / mi) * (de / mi) ** 2) / var
-                        error[idx] = var**0.5
+                for q_mon, i_mon, e_mon, i_det, e_det in it:
+                    if i_det == 0 or i_mon == 0 or t_value == 0:
+                        continue
+
+                    # Normalize to monitor and, if applicable, transmission
+                    if self.experiment.trans_correction:
+                        logging.info(f"Transmission values for {self.name}-{scan.number}: {t_value} ± {t_error}")
+                        norm_i = i_det / (i_mon * t_value)
+                        # error propagation for division by both monitor and transmission
+                        norm_e = (
+                            norm_i * ((e_det / i_det) ** 2 + (e_mon / i_mon) ** 2 + (t_error / t_value) ** 2) ** 0.5
+                        )
                     else:
-                        momentum_transfer.append(mq)
-                        intensity.append(di / mi)
-                        error.append(de / mi)
+                        norm_i = i_det / i_mon
+                        # error propagation for division by monitor only
+                        norm_e = norm_i * ((e_det / i_det) ** 2 + (e_mon / i_mon) ** 2) ** 0.5
+
+                    if q_mon in momentum_transfer:
+                        idx = momentum_transfer.index(q_mon)
+                        var = error[idx] ** 2 + norm_e**2
+                        intensity[idx] = (intensity[idx] * (error[idx] ** 2) + norm_i * (norm_e**2)) / var
+                        error[idx] = var**0.5
+                        transmission[idx] = t_value
+                    else:
+                        momentum_transfer.append(q_mon)
+                        intensity.append(i_det / i_mon)
+                        error.append(norm_e)
+                        transmission.append(t_value)
 
             # Sort by momentum transfer (outside the scan loop, inside the bank loop)
             sorted_indices = np.argsort(momentum_transfer)
             momentum_transfer = np.array(momentum_transfer)[sorted_indices]
             intensity = np.array(intensity)[sorted_indices]
             error = np.array(error)[sorted_indices]
+            transmission = np.array(transmission)[sorted_indices]
 
             self.detector_data.append(
                 IQData(
                     q=momentum_transfer.tolist(),
                     i=intensity.tolist(),
                     e=error.tolist(),
+                    t=transmission.tolist(),
                 )
             )
         logging.info(f"Scans stitched together for sample {self.name}.\n")
@@ -594,6 +647,11 @@ class Sample(BaseModel):
         theta_range_msg = ""
         q_range_msg = ""
 
+        logging.info(
+            "Scans stitched "
+            f"{'and normalized with transmission' if self.experiment.trans_correction else ''} "
+            f"for sample {self.name}.\n"
+        )
         for scan in self.scans:
             q_range = f"{min(scan.detector_data[0].iq_data.q)} - {max(scan.detector_data[0].iq_data.q)}"
             theta_range_msg += f"Theta range for scan {scan.number}: {q_range}\n"
@@ -888,6 +946,7 @@ class Experiment(BaseModel):
 
     config: str = Field(..., description="Path to the configuration file")
     output_dir: str = Field("", description="Output folder for reduced data")
+    trans_correction: bool = Field(False, description="Whether to apply transmission correction during reduction")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
     darwin_width: float = Field(DARWIN_WIDTH, description="Darwin width")
     v_angle: float = Field(0.042, description="Vertical angle")
@@ -900,7 +959,7 @@ class Experiment(BaseModel):
     background: "Sample | None" = Field(default=None, init=False, description="Background sample")
     samples: list["Sample"] = Field(default_factory=list, init=False, description="List of samples")
 
-    def model_post_init(self, _context: Any) -> None:  # noqa ANN401
+    def model_post_init(self, _context: Any) -> None:
         """Post-validation initializer"""
 
         # The working folder for this experiment, default is current folder
@@ -923,6 +982,8 @@ class Experiment(BaseModel):
         else:
             self.background = Sample(**background, experiment=self)
         self.samples = [Sample(**s, experiment=self) for s in samples]
+
+        self._finalize_transmission_reference()
 
     def reduce(self, output_dir: str | None = None):
         """Reduce the USANS data
@@ -960,14 +1021,53 @@ class Experiment(BaseModel):
         if self.background is not None:
             self.background.dump_reduced_data_to_csv()
 
+    def _finalize_transmission_reference(self):
+        if self.background is None:
+            logging.warning("No background sample defined; cannot finalize transmission reference.")
+            return
+
+        self.trans_ref = [1.0] * self.num_of_banks
+        self.trans_ref_err = [0.0] * self.num_of_banks
+
+        # Determine transmission reference values for each bank from background scans
+        for bank in range(self.num_of_banks):
+            vals = [
+                scan.transmission_data[bank]["raw_ratio"]
+                for scan in self.background.scans
+                if "raw_ratio" in scan.transmission_data[bank]
+            ]
+            if not vals:
+                logging.warning(f"No valid transmission data found in background scans for bank {bank + 1}.")
+                continue
+            ref = float(np.median(vals))
+            arr = np.array(vals, dtype=float)
+            err = float(np.median(np.abs(arr - ref))) if arr.size > 1 else 0.0
+            self.trans_ref[bank] = ref if ref > 0 else 1.0  # Avoid zero or negative reference values
+            self.trans_ref_err[bank] = err
+
+        # Assign per-scan, per-bank relative transmissions
+        for sample in [self.background] + self.samples:
+            for scan in sample.scans:
+                for bank in range(self.num_of_banks):
+                    val, err = get_bank_transmission(
+                        scan.transmission_data[bank],
+                        self.trans_ref[bank],
+                        self.trans_ref_err[bank],
+                    )
+                    scan.transmission_data[bank]["value"] = val if val > 0 else 1.0
+                    scan.transmission_data[bank]["error"] = err
+
 
 def parse_args():
     import argparse
 
     parser = argparse.ArgumentParser(description="USANS Data Reduction")
     parser.add_argument("path", help="Path to the configuration file")
-    parser.add_argument("-l", "--logbin", action="store_true", help="Enable log-binning of data during reduction")
     parser.add_argument("-o", "--output", default="", help="Output folder for reduced data (default: current folder)")
+    parser.add_argument("-l", "--logbin", action="store_true", help="Enable log-binning of data during reduction")
+    parser.add_argument(
+        "-t", "--transmission", action="store_true", help="Include transmission correction in reduction"
+    )
     args = parser.parse_args()
     return args
 
@@ -975,7 +1075,9 @@ def parse_args():
 def main():
     """Main function to run USANS data reduction"""
     args = parse_args()
-    experiment = Experiment(config=args.path, logbin=args.logbin, output_dir=args.output)
+    experiment = Experiment(
+        config=args.path, trans_correction=args.transmission, logbin=args.logbin, output_dir=args.output
+    )
     experiment.reduce()
     generate_report(config_file_path=args.path, output_dir=experiment.output_dir)
 

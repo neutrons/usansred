@@ -32,3 +32,14 @@ class MonitorData:
     xy_data: XYData = field(default_factory=XYData)
     iq_data: IQData = field(default_factory=IQData)
     filepath: str = ""
+
+
+@dataclass
+class TransmissionData:
+    xy_data: XYData = field(default_factory=XYData)
+    iq_data: IQData = field(default_factory=IQData)
+    filepath: str = ""
+    raw_ratio: float = 0.0
+    raw_ratio_err: float = 0.0
+    value: float = 0.0
+    value_err: float = 0.0
