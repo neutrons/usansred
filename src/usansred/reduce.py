@@ -1,5 +1,6 @@
 import copy
 import csv
+import json
 import logging
 import math
 import os
@@ -190,6 +191,10 @@ class Sample(BaseModel):
         return len(self.data_reduced.q)
 
     @property
+    def config(self):
+        return self.experiment.config
+
+    @property
     def num_of_banks(self) -> int:
         """Number of detector banks in the Experiment"""
         return self.experiment.num_of_banks
@@ -207,6 +212,11 @@ class Sample(BaseModel):
 
     def dump_data_to_csv(self, filepath: str, data: IQData | XYData, title: str | None = None):
         """Dump IQ or XY data to a CSV file."""
+        output_dir = os.path.dirname(filepath)
+        if output_dir and not os.path.exists(output_dir):
+            logging.info(f"Output directory {output_dir} does not exist; creating it.")
+            os.makedirs(output_dir)
+
         data_dict = data.as_dict()
         keys = list(data_dict.keys())
 
@@ -238,6 +248,15 @@ class Sample(BaseModel):
         if detector_data and self.data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_unscaled.txt")
             self.dump_data_to_csv(filepath, self.data)
+            if self.config.get("save_all_harmonics", False):
+                for i in range(1, self.num_of_banks):
+                    bank = i + 1  # start with the second order
+                    filepath = os.path.join(
+                        self.experiment.output_dir,
+                        f"bank_{bank}",
+                        f"UN_{self.name}_det_unscaled_harmonics.txt",
+                    )
+                    self.dump_data_to_csv(filepath, self.detector_data[i])
 
         if scaled_data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1.txt")
@@ -868,8 +887,11 @@ class Experiment(BaseModel):
 
     Attributes
     ----------
-    config : str
+    config_file : str
         Path to the configuration file
+    config : dict
+        Configuration file loaded into a Python dictionary. Populated only for
+        JSON config files; left as an empty dict for CSV config files.
     output_dir : str | None
         Output folder for reduced data, default is current folder
     prim_wave : float
@@ -886,7 +908,8 @@ class Experiment(BaseModel):
         Flag for log-binning, default is False
     """
 
-    config: str = Field(..., description="Path to the configuration file")
+    config_file: str = Field(..., description="Path to the configuration file")
+    config: dict = Field(default_factory=dict, description="configuration file loaded into a Python dictionary")
     output_dir: str = Field("", description="Output folder for reduced data")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
     darwin_width: float = Field(DARWIN_WIDTH, description="Darwin width")
@@ -904,7 +927,7 @@ class Experiment(BaseModel):
         """Post-validation initializer"""
 
         # The working folder for this experiment, default is current folder
-        _setupfile = os.path.abspath(self.config)
+        _setupfile = os.path.abspath(self.config_file)
         self.folder = os.path.dirname(_setupfile)
 
         if bool(self.output_dir) is False:  # in case `output_dir` is an empty string
@@ -912,11 +935,19 @@ class Experiment(BaseModel):
 
         self.num_of_banks: int = 4
 
-        if not os.path.exists(self.config):
-            raise FileNotFoundError(f"The file path: {self.config} does not exist")
+        if not os.path.exists(self.config_file):
+            raise FileNotFoundError(f"The file path: {self.config_file} does not exist")
 
-        self.folder = os.path.dirname(self.config)
-        background, samples = read_config(self.config)
+        self.folder = os.path.dirname(self.config_file)
+        self.config = {"save_all_harmonics": False}
+
+        _, extension = os.path.splitext(self.config_file)
+        if extension.lower() == ".json":
+            with open(self.config_file, "r") as f:
+                self.config.update(json.load(f))
+        config = read_config(self.config_file)
+        background = config["background"]
+        samples = config["samples"]
         if background is None:
             logging.warning("No background sample defined in the configuration file.")
             self.background = None
@@ -975,7 +1006,7 @@ def parse_args():
 def main():
     """Main function to run USANS data reduction"""
     args = parse_args()
-    experiment = Experiment(config=args.path, logbin=args.logbin, output_dir=args.output)
+    experiment = Experiment(config_file=args.path, logbin=args.logbin, output_dir=args.output)
     experiment.reduce()
     generate_report(config_file_path=args.path, output_dir=experiment.output_dir)
 

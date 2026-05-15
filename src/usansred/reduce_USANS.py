@@ -401,7 +401,7 @@ def main():
     if not os.path.exists(autodir):
         os.makedirs(autodir)
 
-    exp = reduce.Experiment(config=autocsvfile)
+    exp = reduce.Experiment(config_file=autocsvfile)
     exp.reduce(output_dir=autodir)
 
     generate_report(config_file_path=autocsvfile, output_dir=exp.outputFolder)

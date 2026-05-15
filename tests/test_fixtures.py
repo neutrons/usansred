@@ -20,7 +20,7 @@ def test_data_server(data_server):
 def mock_experiment():
     """Create a minimal Experiment with model_post_init bypassed."""
     with patch.object(Experiment, "model_post_init", return_value=None):
-        exp = Experiment(config="dummy.json")
+        exp = Experiment(config_file="dummy.json")
     exp.folder = ""
     exp.output_dir = ""
     exp.num_of_banks = 1
@@ -39,7 +39,7 @@ def mock_experiment():
 def mock_experiment_2banks():
     """Create a minimal Experiment with 2 detector banks."""
     with patch.object(Experiment, "model_post_init", return_value=None):
-        exp = Experiment(config="dummy.json")
+        exp = Experiment(config_file="dummy.json")
     exp.folder = ""
     exp.output_dir = ""
     exp.num_of_banks = 2

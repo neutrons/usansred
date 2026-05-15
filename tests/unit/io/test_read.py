@@ -4,8 +4,11 @@ Note: We need to patch the Experiment and Sample model_post_init methods
 to avoid issues with missing attributes during testing.
 """
 
+import json
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from usansred.io.read import read_config
 from usansred.reduce import Experiment, Sample
@@ -13,14 +16,22 @@ from usansred.reduce import Experiment, Sample
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
 
+def _write_json_config(tmp_path: Path, config: dict) -> Path:
+    config_file = tmp_path / "setup.json"
+    config_file.write_text(json.dumps(config), encoding="utf-8")
+    return config_file
+
+
 def test_read_config_csv():
     """Test reading configuration from a CSV file."""
 
     csv_file = DATA_DIR / "example-config.csv"
-    background, samples = read_config(csv_file)
+    config = read_config(csv_file)
+    background = config["background"]
+    samples = config["samples"]
 
     with patch.object(Experiment, "model_post_init", return_value=None):
-        experiment = Experiment(config="dummy.csv")
+        experiment = Experiment(config_file="dummy.csv")
 
     with patch.object(Sample, "model_post_init", return_value=None):
         background = Sample(**background, experiment=experiment) if background else None
@@ -37,10 +48,12 @@ def test_read_config_json():
     """Test reading configuration from a JSON file."""
 
     json_file = DATA_DIR / "example-config.json"
-    background, samples = read_config(json_file)
+    config = read_config(json_file)
+    background = config["background"]
+    samples = config["samples"]
 
     with patch.object(Experiment, "model_post_init", return_value=None):
-        experiment = Experiment(config="dummy.json")
+        experiment = Experiment(config_file="dummy.json")
 
     with patch.object(Sample, "model_post_init", return_value=None):
         background = Sample(**background, experiment=experiment) if background else None
@@ -54,14 +67,100 @@ def test_read_config_json():
     assert samples[1].exclude == [45307, 45308]
 
 
+def test_read_config_json_applies_schema_defaults(tmp_path):
+    """Test that schema defaults are inserted before JSON configuration parsing."""
+
+    json_file = _write_json_config(
+        tmp_path,
+        {
+            "samples": [
+                {
+                    "name": "sample1",
+                    "start_scan_num": "45306",
+                    "num_of_scans": 6,
+                    "thickness": 0.1,
+                }
+            ]
+        },
+    )
+
+    config = read_config(json_file)
+
+    assert config["save_all_harmonics"] is False
+    assert config["samples"][0]["exclude"] == []
+
+
+def test_read_config_json_missing_samples_raises(tmp_path):
+    """Test that missing required properties without defaults raise an exception."""
+
+    json_file = _write_json_config(
+        tmp_path,
+        {
+            "background": {
+                "name": "example_background",
+                "start_scan_num": "45335",
+                "num_of_scans": 6,
+                "thickness": 0.1,
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match="Required property 'samples' is missing"):
+        read_config(json_file)
+
+
+def test_read_config_json_missing_sample_required_property_raises(tmp_path):
+    """Test that missing required sample properties without defaults raise an exception."""
+
+    json_file = _write_json_config(
+        tmp_path,
+        {
+            "samples": [
+                {
+                    "start_scan_num": "45306",
+                    "num_of_scans": 6,
+                    "thickness": 0.1,
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(ValueError, match="Required property 'name' is missing"):
+        read_config(json_file)
+
+
+def test_read_config_json_unexpected_property_raises(tmp_path):
+    """Test that schema validation rejects unexpected JSON properties."""
+
+    json_file = _write_json_config(
+        tmp_path,
+        {
+            "samples": [
+                {
+                    "name": "sample1",
+                    "start_scan_num": "45306",
+                    "num_of_scans": 6,
+                    "thickness": 0.1,
+                    "unexpected": True,
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(ValueError, match="Additional properties are not allowed: 'unexpected'"):
+        read_config(json_file)
+
+
 def test_read_config_json_no_background():
     """Test reading configuration from a JSON file with no background sample."""
 
     json_file = DATA_DIR / "example-config-no-bg.json"
-    background, samples = read_config(json_file)
+    config = read_config(json_file)
+    background = config["background"]
+    samples = config["samples"]
 
     with patch.object(Experiment, "model_post_init", return_value=None):
-        experiment = Experiment(config="dummy.json")
+        experiment = Experiment(config_file="dummy.json")
 
     with patch.object(Sample, "model_post_init", return_value=None):
         background = Sample(**background, experiment=experiment) if background else None

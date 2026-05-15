@@ -53,14 +53,37 @@ An example ``setup.csv`` might look like:
    s,A2_54C_3hr,36323,5,0.1
    s,A2_56C_3hr,36330,5,0.1,36331;36332
 
-The JSON format provides the same information in a different layout. A JSON setup file contains a background entry, and a samples entry,which is a list of sample objects.
-Each background and sample object contains the same information as the columns in the CSV format, but with descriptive keys:
+The JSON format provides the same information in a different layout.
+A JSON setup file contains a required samples entry, optional background entry, and optional configuration flags.
+Each background and sample object contains the same information as the columns in the CSV format,
+but with descriptive keys.
 
-- ``name`` (string)
-- ``start_scan_num`` (integer)
-- ``num_of_scans`` (integer)
-- ``thickness`` (float)
-- ``exclude`` (list of integers, optional)
+A JSON schema (usansred.json) is provided in the repository to validate the JSON setup file.
+It contains valid input structures and types, default values for optional properties,
+and descriptions for each property.
+
+.. code-block:: javascript
+
+   {
+     "samples": [
+       {
+         "name": "<string>",                    // required; sample name
+         "start_scan_num": "<integer|string>",  // required; run or scan number
+         "num_of_scans": "<integer|string>",    // required; number of scans
+         "thickness": "<number|string>",        // required; thickness in cm
+         "exclude": ["<integer|string>"]        // optional; scan numbers to skip during reduction; default: []
+       }
+     ],
+
+     "background": {
+       "name": "<string>",                    // required if background is present; background name
+       "start_scan_num": "<integer|string>",  // required if background is present; run or scan number
+       "num_of_scans": "<integer|string>",    // required if background is present; number of scans
+       "thickness": "<number|string>"         // required if background is present; thickness in cm
+     },
+
+     "save_all_harmonics": "<boolean>"        // optional; save reduced data for higher harmonics; default: false
+   }
 
 Note that the main difference is how excluded scans are represented:
 - in CSV, they are represented as a semicolon-separated string of scan numbers in the last (6th) column,
@@ -71,12 +94,6 @@ For example, create a file named ``setup.json`` with the following content:
 .. code-block:: json
 
    {
-     "background": {
-       "name": "Empty",
-       "start_scan_num": 36301,
-       "num_of_scans": 5,
-       "thickness": 0.1
-     },
      "samples": [
        {
          "name": "A2_50C_3hr",
@@ -103,7 +120,14 @@ For example, create a file named ``setup.json`` with the following content:
          "thickness": 0.1,
          "exclude": [36331, 36332]
        }
-     ]
+     ],
+     "background": {
+       "name": "Empty",
+       "start_scan_num": 36301,
+       "num_of_scans": 5,
+       "thickness": 0.1
+     },
+     "save_all_harmonics": false
    }
 
 Reducing the Data

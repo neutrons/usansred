@@ -79,7 +79,7 @@ def test_sample_match_or_interpolate(data_server, tmp_path):
     # Create new Experiment instance
     csvpath = data_server.path_to("setup.csv")
     tmpoutput = str(tmp_path)
-    exp = Experiment(config=csvpath, logbin=False, output_dir=tmpoutput)
+    exp = Experiment(config_file=csvpath, logbin=False, output_dir=tmpoutput)
 
     # Genearte testing data
     qq = np.array([dd * 1e-5 for dd in range(1, 100)])
