@@ -254,7 +254,7 @@ class Sample(BaseModel):
                     filepath = os.path.join(
                         self.experiment.output_dir,
                         f"bank_{bank}",
-                        f"UN_{self.name}_det_unscaled_harmonics.txt",
+                        f"UN_{self.name}_unscaled.txt",
                     )
                     self.dump_data_to_csv(filepath, self.detector_data[i])
 

@@ -40,6 +40,12 @@ pixi run test-datalight
 pixi run build-docs
 ```
 
+When the agent runtime is in a read-only filesystem sandbox, Pixi may still need
+to update metadata under `.pixi/envs/default/conda-meta/` before running even
+read-only-looking commands. If a `pixi run ...` command is needed in that
+context, request escalated execution up front rather than first running it in the
+read-only sandbox and retrying after the expected metadata-write failure.
+
 Useful project tasks are defined in `pyproject.toml` under `[tool.pixi.tasks]`.
 There are no `unit-test` or `integration-test` Pixi tasks unless they are added
 later.

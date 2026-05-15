@@ -1,5 +1,7 @@
+import json
 import os
 import random
+from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch as mock_patch
 
@@ -71,6 +73,41 @@ def test_main(mock_parse_args, data_server, tmp_path):
             output, expected = os.path.join(tmp_path, filename), os.path.join(goldendir, filename)
             if os.path.exists(expected) and os.path.exists(output):  # file "UN_EmptyPCell_det_1_lbs.txt" does not exist
                 compare_lines(output, expected)
+
+
+@pytest.mark.datarepo
+@mock_patch("usansred.reduce.parse_args")
+def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
+    source_config = Path(data_server.path_to("setup.json"))
+    source_data_dir = source_config.parent
+    reduction_data_dir = tmp_path / "data"
+    reduction_data_dir.mkdir()
+
+    for source_file in source_data_dir.glob("USANS_*.txt"):
+        (reduction_data_dir / source_file.name).symlink_to(source_file)
+
+    config = json.loads(source_config.read_text(encoding="utf-8"))
+    config["save_all_harmonics"] = True
+    config_file = reduction_data_dir / "setup.json"
+    config_file.write_text(json.dumps(config), encoding="utf-8")
+
+    output_dir = tmp_path / "reduced"
+    mock_args = MagicMock()
+    mock_args.logbin = False
+    mock_args.path = str(config_file)
+    mock_args.output = str(output_dir)
+    mock_parse_args.return_value = mock_args
+
+    reduce()
+
+    for bank in range(2, 5):
+        bank_dir = output_dir / f"bank_{bank}"
+        assert bank_dir.is_dir()
+        for name in ["EmptyPCell", "S115_dry", "S115_pc3"]:
+            harmonic_file = bank_dir / f"UN_{name}_unscaled.txt"
+            assert harmonic_file.is_file()
+            assert harmonic_file.stat().st_size > 0
+            assert len(harmonic_file.read_text(encoding="utf-8").splitlines()) == 65
 
 
 @pytest.mark.datarepo
