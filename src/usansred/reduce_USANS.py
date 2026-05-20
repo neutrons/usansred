@@ -215,8 +215,8 @@ def main():
                         OutputWorkspace="USANS_scan_detector",
                     )
                     mtd["USANS_scan_detector"].getAxis(1).getUnit().setLabel("Counts", "Counts")
-                    x_data = mtd["USANS_scan_detector"].readX(0)
-                    y_data = mtd["USANS_scan_detector"].readY(0)
+                    x_data = mtd["USANS_scan_detector"].readX(0)  # rotation angle (arcsec) of the analyzer
+                    y_data = mtd["USANS_scan_detector"].readY(0)  # total counts at dectector for each analyzer angle
                     e_data = mtd["USANS_scan_detector"].readE(0)
 
                     if i == 0:

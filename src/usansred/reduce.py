@@ -443,11 +443,26 @@ class Sample(BaseModel):
         """Rescale data with thickness.
         Fit the I(Q) data to gaussian and calculate peak area.
 
+        For higher order harmonics, the peak area is estimated from the relative integrated rocking-curve areas
+        (M. Agamalian et al., "Progress on The Time-of-Flight Ultra Small Angle Neutron Scattering Instrument at SNS",
+        J. Phys.: Conf. Ser. 1021 (2018) 012033)
+
         Parameters
         ----------
         guess_init : bool
             Whether to guess initial parameters for fitting with differential_evolution.
         """
+
+        # ratio of integrated rocking-curve areas for higher order harmonics relative to the first harmonic
+        # Si(220), Bragg-angle 69.9 degrees
+        peak_area_ratio = [
+            1.0,  # n = 1, lambda = 3.60 A
+            0.131,  # n = 2, lambda = 1.80 A
+            0.081,  # n = 3, lambda = 1.20 A
+            0.0166,  # n = 4, lambda = 0.90 A
+            0.0093,  # n = 5, lambda = 0.72 A
+            0.00106,  # n = 6, lambda = 0.60 A
+        ]
 
         def _gaussian(x: np.ndarray, k0: float, k1: float, k2: float) -> np.ndarray:
             """The Gaussian equation according to Igor definition of gaussian curvefit.
@@ -512,16 +527,17 @@ class Sample(BaseModel):
         for b in range(self.num_of_banks):
             bank = b + 1
 
-            # 2*(Pi^2)*HarNo/(PrimWavel*3600*180)
+            # (2π / λ_n) * radians_per_arcsecond -- angle-to-Q conversion factor
             h_scale = 2 * (math.pi**2.0) * bank / (self.experiment.prim_wave * 3600.0 * 180.0)
-            # VertScale=VertAngle*(DarWidth/HarNo)*Pi/(3600*180)*Sthick//10
-            v_scale = (
-                self.experiment.v_angle
-                * (self.experiment.darwin_width / bank)
-                * math.pi
-                / (3600.0 * 180.0)
-                * self.thickness
-            )
+
+            # harmonic-dependent horizontal angular width, converted from arcseconds to radians
+            horizontal_rocking_width = self.experiment.darwin_width / bank * math.pi / (3600.0 * 180.0)
+
+            # analyzer solid angle ΔΩ = vertical angular width * horizontal angular width
+            analyzer_solid_angle = self.experiment.v_angle * horizontal_rocking_width
+
+            # analyzer solid angle ΔΩ * sample thickness
+            v_scale = analyzer_solid_angle * self.thickness
 
             if guess_init:
                 initial_vals = _generate_initial_parameters(np.array(self.data.q), np.array(self.data.i))
@@ -542,6 +558,7 @@ class Sample(BaseModel):
                 * initial_vals[1]
                 * math.sqrt(2.0)
                 / math.sqrt(2 * math.pi)
+                / peak_area_ratio[b]
             )
             dar_test = initial_vals[1] * math.sqrt(2.0) * (math.pi) ** 0.5 * bank / self.experiment.darwin_width
 
@@ -564,8 +581,26 @@ class Sample(BaseModel):
         return
 
     def stitch_data(self):
-        """Stitch scans together and store in property `self.data`"""
+        """Stitch scan data from each detector bank into per-bank intensity curves.
 
+        For each detector bank (harmonic), combine all scans in ``self.scans`` onto a single
+        Intensity-versus-Q profile. The Q values are taken from the monitor data
+        and assumed to correspond to thew Q values from the detector data.
+        Detector intensities and errors are normalized by the corresponding monitor intensity
+        before being added to the stitched output.
+
+        If two or more scans contain the same Q value, their normalized intensities
+        are combined into one point using the existing variance-based weighting
+        formula, and the combined uncertainty is stored as the square root of the
+        summed variance.
+
+        After all scans for a bank are processed, the stitched points are sorted by Q
+
+        The method also generates log messages for the raw scan theta ranges
+        and converted Q ranges in ``1/angstrom`` for the first detector bank.
+        Results are stored on ``self.detector_data``; no value is returned.
+        """
+        # Build one stitched Q/I/E curve for each detector bank(harmonic).
         for bank in range(self.num_of_banks):
             momentum_transfer = []
             intensity = []
@@ -573,26 +608,44 @@ class Sample(BaseModel):
             # transmission = []  # omitted for now
 
             for scan in self.scans:
-                it = list(
-                    zip(
-                        scan.monitor_data.iq_data.q,
-                        scan.monitor_data.iq_data.i,
-                        scan.monitor_data.iq_data.e,
-                        scan.detector_data[bank].iq_data.i,
-                        scan.detector_data[bank].iq_data.e,
-                    )
+                # Pair the scan Q axis and monitor counts with this bank's detector counts.
+                scan_data = zip(
+                    scan.monitor_data.iq_data.q,
+                    scan.monitor_data.iq_data.i,
+                    scan.monitor_data.iq_data.e,
+                    scan.detector_data[bank].iq_data.i,
+                    scan.detector_data[bank].iq_data.e,
                 )
 
-                for mq, mi, me, di, de in it:
-                    if mq in momentum_transfer:
-                        idx = momentum_transfer.index(mq)
-                        var = error[idx] ** 2 + (de / mi) ** 2
-                        intensity[idx] = (intensity[idx] * (error[idx] ** 2) + (di / mi) * (de / mi) ** 2) / var
-                        error[idx] = var**0.5
+                for (
+                    scan_q,
+                    monitor_intensity,
+                    monitor_error,
+                    detector_intensity,
+                    detector_error,
+                ) in scan_data:
+                    # Normalize detector counts and uncertainty by monitor counts.
+                    normalized_intensity = detector_intensity / monitor_intensity
+                    # Error propagation for a/b: σ = (a/b)*sqrt((σ_a/a)² + (σ_b/b)²)
+                    # Equivalent form avoids dividing by detector_intensity when it is zero.
+                    normalized_error = (
+                        np.sqrt(detector_error**2 + (normalized_intensity * monitor_error) ** 2) / monitor_intensity
+                    )
+
+                    if scan_q in momentum_transfer:
+                        # Merge repeated Q values from multiple scans into one stitched point.
+                        matched_q_index = momentum_transfer.index(scan_q)
+                        combined_variance = error[matched_q_index] ** 2 + normalized_error**2
+                        intensity[matched_q_index] = (
+                            intensity[matched_q_index] * (error[matched_q_index] ** 2)
+                            + normalized_intensity * normalized_error**2
+                        ) / combined_variance
+                        error[matched_q_index] = combined_variance**0.5
                     else:
-                        momentum_transfer.append(mq)
-                        intensity.append(di / mi)
-                        error.append(de / mi)
+                        # Add Q values that have not appeared in earlier scans.
+                        momentum_transfer.append(scan_q)
+                        intensity.append(normalized_intensity)
+                        error.append(normalized_error)
 
             # Sort by momentum transfer (outside the scan loop, inside the bank loop)
             sorted_indices = np.argsort(momentum_transfer)
@@ -600,6 +653,7 @@ class Sample(BaseModel):
             intensity = np.array(intensity)[sorted_indices]
             error = np.array(error)[sorted_indices]
 
+            # Store the stitched curve for this detector bank.
             self.detector_data.append(
                 IQData(
                     q=momentum_transfer.tolist(),
@@ -613,6 +667,7 @@ class Sample(BaseModel):
         theta_range_msg = ""
         q_range_msg = ""
 
+        # Log raw theta ranges and converted Q ranges for each scan.
         for scan in self.scans:
             q_range = f"{min(scan.detector_data[0].iq_data.q)} - {max(scan.detector_data[0].iq_data.q)}"
             theta_range_msg += f"Theta range for scan {scan.number}: {q_range}\n"
