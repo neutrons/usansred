@@ -10,8 +10,8 @@ from unittest.mock import patch
 import numpy as np
 
 from tests.test_fixtures import _make_sample
-from usansred.model import IQData, XYData
-from usansred.reduce import Experiment, Sample, Scan
+from usansred.model import IQData, MonitorData, XYData
+from usansred.reduce import ARCSEC_TO_RADIANS, Experiment, Sample, Scan, horizontal_rocking_width
 
 
 class TestSampleProperties:
@@ -90,6 +90,145 @@ class TestSampleProperties:
         """num_of_banks should delegate to experiment."""
         sample = _make_sample(mock_experiment, "test", [])
         assert sample.num_of_banks == mock_experiment.num_of_banks
+
+
+class TestSampleNormalizeByMonitor:
+    """Tests for Sample.normalize_by_monitor."""
+
+    def test_normalizes_each_scan(self, mock_experiment):
+        """Sample normalization should delegate to every scan."""
+        scan_1 = Scan(number=1, experiment=mock_experiment, load_data=False)
+        scan_2 = Scan(number=2, experiment=mock_experiment, load_data=False)
+        sample = _make_sample(mock_experiment, "test", [scan_1, scan_2])
+        normalized_scan_numbers = []
+
+        def record_normalized_scan(scan):
+            normalized_scan_numbers.append(scan.number)
+
+        with patch.object(Scan, "normalize_by_monitor", autospec=True, side_effect=record_normalized_scan):
+            sample.normalize_by_monitor()
+
+        assert normalized_scan_numbers == [1, 2]
+
+
+class TestCombineDuplicateQPoints:
+    """Tests for Sample._combine_duplicate_q_points."""
+
+    def test_sorts_q_and_averages_duplicate_points(self):
+        """Duplicate Q points should be averaged and returned in ascending Q order."""
+        q, i, e = Sample._combine_duplicate_q_points(
+            q_scaled=[2.0, 1.0, 0.0, 1.0, 2.0],
+            i_scaled=[20.0, 10.0, 5.0, 14.0, 30.0],
+            e_scaled=[2.0, 1.0, 0.5, 3.0, 4.0],
+        )
+
+        np.testing.assert_allclose(q, [0.0, 1.0, 2.0])
+        np.testing.assert_allclose(i, [5.0, 12.0, 25.0])
+        np.testing.assert_allclose(e, [0.5, np.sqrt(10.0) / 2.0, np.sqrt(20.0) / 2.0])
+
+
+class TestSampleRescaleData:
+    """Tests for Sample.rescale_data."""
+
+    @staticmethod
+    def _make_rescale_sample(experiment: Experiment, detector_data: list[IQData], thickness: float = 0.2) -> Sample:
+        scan = Scan(number=123, experiment=experiment, load_data=False)
+        sample = _make_sample(experiment, "test", [scan])
+        sample.thickness = thickness
+        sample.detector_data = detector_data
+        return sample
+
+    @staticmethod
+    def _expected_rescaled_data(
+        experiment: Experiment, harmonic: int, thickness: float, detector_data: IQData
+    ) -> tuple[list[float], list[float], list[float]]:
+        theta_to_q = ARCSEC_TO_RADIANS * (2 * np.pi / (experiment.prim_wave / harmonic))
+        analyzer_solid_angle = experiment.v_angle * (horizontal_rocking_width(harmonic) * ARCSEC_TO_RADIANS)
+        scaling_factor = 1.0 / (analyzer_solid_angle * thickness)
+
+        q_scaled = [abs(theta) * theta_to_q for theta in detector_data.q]
+        i_scaled = [i * scaling_factor for i in detector_data.i]
+        e_scaled = [e * scaling_factor for e in detector_data.e]
+        return Sample._combine_duplicate_q_points(q_scaled, i_scaled, e_scaled)
+
+    def test_scales_single_bank_by_q_conversion_solid_angle_and_thickness(self, mock_experiment):
+        detector_data = IQData(q=[0.0, 1.0, 3.0], i=[2.0, 4.0, 6.0], e=[0.2, 0.4, 0.6])
+        sample = self._make_rescale_sample(mock_experiment, [detector_data], thickness=0.4)
+
+        sample.rescale_data()
+
+        expected_q, expected_i, expected_e = self._expected_rescaled_data(
+            mock_experiment, harmonic=1, thickness=sample.thickness, detector_data=detector_data
+        )
+        assert len(sample.data_scaled) == 1
+        np.testing.assert_allclose(sample.data_scaled[0].q, expected_q)
+        np.testing.assert_allclose(sample.data_scaled[0].i, expected_i)
+        np.testing.assert_allclose(sample.data_scaled[0].e, expected_e)
+
+    def test_combines_positive_and_negative_angles_into_sorted_q(self, mock_experiment):
+        detector_data = IQData(
+            q=[-2.0, -1.0, 0.0, 1.0, 2.0],
+            i=[20.0, 10.0, 5.0, 14.0, 30.0],
+            e=[2.0, 1.0, 0.5, 3.0, 4.0],
+        )
+        sample = self._make_rescale_sample(mock_experiment, [detector_data], thickness=0.2)
+
+        sample.rescale_data()
+
+        expected_q, expected_i, expected_e = self._expected_rescaled_data(
+            mock_experiment, harmonic=1, thickness=sample.thickness, detector_data=detector_data
+        )
+        np.testing.assert_allclose(sample.data_scaled[0].q, expected_q)
+        np.testing.assert_allclose(sample.data_scaled[0].i, expected_i)
+        np.testing.assert_allclose(sample.data_scaled[0].e, expected_e)
+        assert sample.data_scaled[0].q == sorted(sample.data_scaled[0].q)
+
+    def test_scales_each_harmonic_from_its_detector_bank(self, mock_experiment_2banks):
+        bank_1_data = IQData(q=[0.0, 1.0, 2.0], i=[10.0, 20.0, 30.0], e=[1.0, 2.0, 3.0])
+        bank_2_data = IQData(q=[0.0, 2.0, 4.0], i=[100.0, 200.0, 300.0], e=[10.0, 20.0, 30.0])
+        sample = self._make_rescale_sample(mock_experiment_2banks, [bank_1_data, bank_2_data], thickness=0.3)
+
+        sample.rescale_data()
+
+        expected_bank_1 = self._expected_rescaled_data(
+            mock_experiment_2banks, harmonic=1, thickness=sample.thickness, detector_data=bank_1_data
+        )
+        expected_bank_2 = self._expected_rescaled_data(
+            mock_experiment_2banks, harmonic=2, thickness=sample.thickness, detector_data=bank_2_data
+        )
+        assert len(sample.data_scaled) == 2
+        np.testing.assert_allclose(sample.data_scaled[0].q, expected_bank_1[0])
+        np.testing.assert_allclose(sample.data_scaled[0].i, expected_bank_1[1])
+        np.testing.assert_allclose(sample.data_scaled[0].e, expected_bank_1[2])
+        np.testing.assert_allclose(sample.data_scaled[1].q, expected_bank_2[0])
+        np.testing.assert_allclose(sample.data_scaled[1].i, expected_bank_2[1])
+        np.testing.assert_allclose(sample.data_scaled[1].e, expected_bank_2[2])
+
+
+class TestRockingCurveCentering:
+    """Tests for Sample.rocking_curve_centering."""
+
+    def test_centers_all_harmonics_using_symmetric_first_harmonic_range(self, mock_experiment_2banks):
+        """Only the first harmonic's mostly symmetric range should define the center."""
+        sample = _make_sample(mock_experiment_2banks, "test", [])
+        q_first = np.linspace(-2.0, 4.0, 31)
+        q_second = np.linspace(-4.0, 8.0, 31)
+        expected_center = 0.35
+        width = 0.6
+        baseline = 0.2
+        amplitude = 12.0
+        intensity = baseline + amplitude * np.exp(-0.5 * ((q_first - expected_center) / width) ** 2)
+        intensity[q_first > 2.0] = 50.0
+        sample.detector_data = [
+            IQData(q=q_first.tolist(), i=intensity.tolist(), e=[0.01] * len(q_first)),
+            IQData(q=q_second.tolist(), i=[1.0] * len(q_second), e=[0.01] * len(q_second)),
+        ]
+
+        center = sample.rocking_curve_centering()
+
+        np.testing.assert_allclose(center, expected_center)
+        np.testing.assert_allclose(sample.detector_data[0].q, q_first - expected_center)
+        np.testing.assert_allclose(sample.detector_data[1].q, q_second - expected_center)
 
 
 class TestSampleEquality:

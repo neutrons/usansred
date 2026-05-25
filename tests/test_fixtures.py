@@ -25,7 +25,6 @@ def mock_experiment():
     exp.output_dir = ""
     exp.num_of_banks = 1
     exp.prim_wave = 3.6
-    exp.darwin_width = 5.1
     exp.logbin = False
     exp.v_angle = 0.042
     exp.min_q = 1e-6
@@ -44,7 +43,6 @@ def mock_experiment_2banks():
     exp.output_dir = ""
     exp.num_of_banks = 2
     exp.prim_wave = 3.6
-    exp.darwin_width = 5.1
     exp.logbin = False
     exp.v_angle = 0.042
     exp.min_q = 1e-6

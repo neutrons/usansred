@@ -63,6 +63,7 @@ and descriptions for each property.
      },
 
      "save_all_harmonics": "<boolean>"        // optional; save reduced data for higher harmonics; default: false
+     "log_binning": "<boolean>"               // optional; apply log binning to the reduced data; default: false
    }
 
 For example, create a file named ``setup.json`` with the following content:
@@ -103,10 +104,12 @@ For example, create a file named ``setup.json`` with the following content:
        "num_of_scans": 5,
        "thickness": 0.1
      },
-     "save_all_harmonics": false
+     "save_all_harmonics": false,
+     "log_binning": false
    }
 
-The CSV format provides the same information as flat rows. The columns are as follows:
+The old CSV format provides only part of the information that can be encoded in the JSON file.
+Information is entered in rows, with items in a row separated by `,`:
 
 1. Sample type: either `b` for background (empty sample) or `s` for sample.
 2. Sample name: a name for your own reference.

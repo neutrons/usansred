@@ -30,6 +30,16 @@
       "description": "Save reduced data for higher harmonics",
       "type": "boolean",
       "default": false
+    },
+    "log_binning": {
+      "description": "Enable logarithmic Q-binning of reduced data",
+      "examples": [0, 1, "", false, true],
+      "default": false,
+      "anyOf": [
+        {"type": "boolean"},
+        {"type": "integer"},
+        {"type": "string"}
+      ]
     }
   },
   "$defs": {
