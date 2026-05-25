@@ -87,6 +87,8 @@ def test_read_config_json_applies_schema_defaults(tmp_path):
     config = read_config(json_file)
 
     assert config["save_all_harmonics"] is False
+    assert config["binning"]["log_binning"] is False
+    assert config["binning"]["steps_per_decade"] == 33
     assert config["samples"][0]["exclude"] == []
 
 

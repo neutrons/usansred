@@ -5,6 +5,10 @@
     "num_of_scans": 6,
     "thickness": 0.1
   },
+  "binning": {
+    "log_binning": false,
+    "steps_per_decade": 33
+  },
   "samples": [
     {
       "name": "sample1",

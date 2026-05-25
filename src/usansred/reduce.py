@@ -1,6 +1,5 @@
 import copy
 import csv
-import json
 import logging
 import math
 import os
@@ -355,7 +354,7 @@ class Sample(BaseModel):
         logging.info(f"Only the first bank data is used for sample {self.name}.")
 
         # Log-binning is optional
-        if self.experiment.logbin:
+        if self.experiment.log_binning:
             self.data_log_binned = self.log_bin_data(data_scaled)
 
         if not self.is_background:
@@ -381,7 +380,8 @@ class Sample(BaseModel):
         fundamentalStep = 2 * math.pi * horizontal_rocking_width(1) * ARCSEC_TO_RADIANS / self.experiment.prim_wave
 
         # Step multiplier
-        alpha = math.exp(math.log(10) / self.experiment.step_per_dec)
+        steps_per_decade = self.experiment.config["binning"]["steps_per_decade"]
+        alpha = math.exp(math.log(10) / steps_per_decade)
         # step relative width
         kappa = 2.0 * (alpha - 1) / (alpha + 1)
 
@@ -747,7 +747,7 @@ class Sample(BaseModel):
             Scaling factor for background intensity before subtraction.
         """
 
-        if self.experiment.logbin:
+        if self.experiment.log_binning:
             assert self.is_log_binned, f"Sample {self.name} must be log-binned before background subtraction."
             assert background.is_log_binned, (
                 f"Background {background.name} must be log-binned before background subtraction."
@@ -984,9 +984,7 @@ class Experiment(BaseModel):
         Vertical angle, default is 0.042
     min_q : float
         Minimum Q value for binning output, default is 1e-6
-    step_per_dec : int
-        Steps per decade in binning, default is 33
-    logbin : bool
+    log_binning : bool
         Flag for log-binning, default is False
     """
 
@@ -996,8 +994,7 @@ class Experiment(BaseModel):
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
     v_angle: float = Field(0.042, description="Vertical angle")
     min_q: float = Field(1e-6, description="Minimum Q value for binning output")
-    step_per_dec: int = Field(33, description="Steps per decade in binning")
-    logbin: bool = Field(False, description="Flag for logbinning")
+    log_binning: bool = Field(False, description="Flag for log-binning")
     # Fields that are initialized in model_post_init and not expected from user input
     folder: str = Field(default="", init=False, description="Working folder for this experiment")
     num_of_banks: int = Field(default=4, init=False, description="Number of detector banks")
@@ -1020,19 +1017,23 @@ class Experiment(BaseModel):
             raise FileNotFoundError(f"The file path: {self.config_file} does not exist")
 
         self.folder = os.path.dirname(self.config_file)
-        self.config = {"save_all_harmonics": False}
+        self.config = read_config(self.config_file)
+        self.config.setdefault("save_all_harmonics", False)
+        binning_config = self.config.setdefault("binning", {})
+        binning_config.setdefault("log_binning", self.log_binning)
+        binning_config.setdefault("steps_per_decade", 33)
 
         _, extension = os.path.splitext(self.config_file)
         if extension.lower() == ".json":
-            with open(self.config_file, "r") as f:
-                self.config.update(json.load(f))
-            if self.logbin:  # command line option --logbin overrides the JSON options
-                self.config["log_binning"] = True
+            if self.log_binning:  # command line option --logbin overrides the JSON options
+                binning_config["log_binning"] = True
             else:
-                self.logbin = bool(self.config.get("log_binning", False))
-        config = read_config(self.config_file)
-        background = config["background"]
-        samples = config["samples"]
+                self.log_binning = bool(binning_config.get("log_binning", False))
+        else:
+            binning_config["log_binning"] = self.log_binning
+
+        background = self.config["background"]
+        samples = self.config["samples"]
         if background is None:
             logging.warning("No background sample defined in the configuration file.")
             self.background = None
@@ -1091,7 +1092,7 @@ def parse_args():
 def main():
     """Main function to run USANS data reduction"""
     args = parse_args()
-    experiment = Experiment(config_file=args.path, logbin=args.logbin, output_dir=args.output)
+    experiment = Experiment(config_file=args.path, log_binning=args.logbin, output_dir=args.output)
     experiment.reduce()
     generate_report(config_file_path=args.path, output_dir=experiment.output_dir)
 

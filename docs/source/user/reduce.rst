@@ -51,7 +51,7 @@ and descriptions for each property.
          "start_scan_num": "<integer|string>",  // required; run or scan number
          "num_of_scans": "<integer|string>",    // required; number of scans
          "thickness": "<number|string>",        // required; thickness in cm
-         "exclude": ["<integer|string>"]        // optional; scan numbers to skip during reduction; default: []
+         "exclude": ["<integer|string>"]        // scan numbers to skip during reduction; default: []
        }
      ],
 
@@ -62,8 +62,11 @@ and descriptions for each property.
        "thickness": "<number|string>"         // required if background is present; thickness in cm
      },
 
-     "save_all_harmonics": "<boolean>"        // optional; save reduced data for higher harmonics; default: false
-     "log_binning": "<boolean>"               // optional; apply log binning to the reduced data; default: false
+     "save_all_harmonics": "<boolean>",        // save reduced data for higher harmonics; default: false
+     "binning": {
+       "log_binning": "<boolean>",             // apply log binning to the reduced data; default: false
+       "steps_per_decade": "<integer>"          // step per decade when log binning; default: 33
+     }
    }
 
 For example, create a file named ``setup.json`` with the following content:
@@ -105,7 +108,10 @@ For example, create a file named ``setup.json`` with the following content:
        "thickness": 0.1
      },
      "save_all_harmonics": false,
-     "log_binning": false
+     "binning": {
+       "log_binning": false,
+       "steps_per_decade": 33
+     }
    }
 
 The old CSV format provides only part of the information that can be encoded in the JSON file.

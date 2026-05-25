@@ -31,15 +31,28 @@
       "type": "boolean",
       "default": false
     },
-    "log_binning": {
-      "description": "Enable logarithmic Q-binning of reduced data",
-      "examples": [0, 1, "", false, true],
-      "default": false,
-      "anyOf": [
-        {"type": "boolean"},
-        {"type": "integer"},
-        {"type": "string"}
-      ]
+    "binning": {
+      "description": "Binning configuration for the reduced data.",
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "log_binning": {
+          "description": "Enable logarithmic Q-binning of reduced data",
+          "examples": [0, 1, "", false, true],
+          "default": false,
+          "anyOf": [
+            {"type": "boolean"},
+            {"type": "integer"},
+            {"type": "string"}
+          ]
+        },
+        "steps_per_decade": {
+          "description": "step per decade when log binning",
+          "type": "integer",
+          "default": 33
+        }
+      }
     }
   },
   "$defs": {
