@@ -357,7 +357,7 @@ class Sample(BaseModel):
         if self.experiment.log_binning:
             self.data_log_binned = self.log_bin_data(data_scaled)
 
-        if not self.is_background:
+        if self.experiment.background and not self.is_background:
             self.subtract_background(self.experiment.background)
 
         logging.info(f"Data reduction finished for sample {self.name}.")
@@ -421,12 +421,11 @@ class Sample(BaseModel):
             else:
                 stepmin = lq - testVal / 2.0
                 stepmax = lq + testVal / 2.0
-                origIdx = 0
+                origIdx = 1
                 while origIdx < len(iq_dict["Q"]):
-                    origIdx += 1
-                    # emulate the do-while loop
-                    if not ((iq_dict["Q"][origIdx] + fundamentalStep / 2.0) < stepmin):
+                    if (iq_dict["Q"][origIdx] + fundamentalStep / 2.0) >= stepmin:
                         break
+                    origIdx += 1
 
                 while origIdx < len(iq_dict["Q"]):
                     if (iq_dict["Q"][origIdx] - fundamentalStep / 2.0) <= stepmin:
@@ -491,8 +490,7 @@ class Sample(BaseModel):
                             logE[lIdx] += iq_dict["E"][origIdx] ** 2.0
 
                     origIdx += 1
-                    # emulate the do-while loop
-                    if not ((iq_dict["Q"][origIdx] - fundamentalStep / 2.0) < stepmax):
+                    if origIdx < len(iq_dict["Q"]) and (iq_dict["Q"][origIdx] - fundamentalStep / 2.0) >= stepmax:
                         break
 
         logI = [logI[ii] / logW[ii] for ii in range(numOfBins)]
@@ -1051,10 +1049,11 @@ class Experiment(BaseModel):
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-        try:
-            self.background.reduce()
-        except Exception as e:  # noqa BLE001
-            logging.exception(f"Cannot reduce background {self.background.name}: {e}")
+        if self.background:
+            try:
+                self.background.reduce()
+            except Exception as e:  # noqa BLE001
+                logging.exception(f"Cannot reduce background {self.background.name}: {e}")
 
         for sample in self.samples:
             try:
