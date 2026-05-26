@@ -163,50 +163,24 @@ def config_from_json(json_path: str) -> dict:
 
     _validate_config(config)
 
-    # Parse the background configuration
+    # Background block: coerce to preferred types for easier processing
     bg = config.get("background")
     if bg:
-        try:
-            background = {
-                "name": bg["name"],
-                "start_scan_num": int(bg["start_scan_num"]),
-                "num_of_scans": int(bg["num_of_scans"]),
-                "thickness": float(bg["thickness"]),
-                "is_background": True,
-            }
-        except KeyError as e:
-            logging.info(f"Missing key in background configuration: {e}")
-            background = None
-        except (TypeError, ValueError) as e:
-            logging.info(f"Error parsing background configuration: {e}")
-            background = None
+        bg["start_scan_num"] = int(bg["start_scan_num"])
+        bg["num_of_scans"] = int(bg["num_of_scans"])
+        bg["thickness"] = float(bg["thickness"])
+        bg["exclude"] = [int(x) for x in bg["exclude"]]
+        bg["is_background"] = True
     else:
-        logging.info("No background sample found in the configuration.")
-        background = None
-    config["background"] = background
+        logging.info("No background configuration found.")
 
-    _samples: list[dict] = config.get("samples")
-    if not _samples:
-        logging.info("No samples found in the configuration.")
-        config["samples"] = []
-        return config
-
-    # Parse the sample configurations
-    samples = []
-    for s in _samples:
-        try:
-            sample = {
-                "name": s["name"],
-                "start_scan_num": int(s["start_scan_num"]),
-                "num_of_scans": int(s["num_of_scans"]),
-                "thickness": float(s["thickness"]),
-                "exclude": [int(x) for x in s.get("exclude", [])],
-            }
-            samples.append(sample)
-        except Exception as e:  # noqa E722
-            logging.info(f"Error parsing sample {s}: {e}")
-            # traceback.print_exc()
-    config["samples"] = samples
+    # Samples block: coerce to preferred types for easier processing
+    for sample in config["samples"]:
+        sample["start_scan_num"] = int(sample["start_scan_num"])
+        sample["num_of_scans"] = int(sample["num_of_scans"])
+        sample["thickness"] = float(sample["thickness"])
+        sample["exclude"] = [int(x) for x in sample["exclude"]]
+        sample["is_background"] = False
     return config
 
 

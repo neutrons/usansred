@@ -61,6 +61,7 @@ def test_read_config_json():
 
     assert background is not None
     assert background.name == "example_background"
+    assert background.exclude == [45336]
     assert len(samples) == 2
     assert samples[0].name == "sample1"
     assert samples[1].name == "sample2"

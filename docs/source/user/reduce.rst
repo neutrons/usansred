@@ -59,7 +59,8 @@ and descriptions for each property.
        "name": "<string>",                    // required if background is present; background name
        "start_scan_num": "<integer|string>",  // required if background is present; run or scan number
        "num_of_scans": "<integer|string>",    // required if background is present; number of scans
-       "thickness": "<number|string>"         // required if background is present; thickness in cm
+       "thickness": "<number|string>",        // required if background is present; thickness in cm
+       "exclude": ["<integer|string>"]        // scan numbers to skip during reduction; default: []
      },
 
      "save_all_harmonics": "<boolean>",        // save reduced data for higher harmonics; default: false

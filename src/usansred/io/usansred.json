@@ -72,6 +72,15 @@
         },
         "thickness": {
           "$ref": "#/$defs/thickness"
+        },
+        "exclude": {
+          "description": "Optional list of scan numbers to skip during reduction.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/scanNumber"
+          },
+          "default": []
         }
       }
     },

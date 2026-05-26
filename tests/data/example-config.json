@@ -3,7 +3,8 @@
     "name": "example_background",
     "start_scan_num": "45335",
     "num_of_scans": 6,
-    "thickness": 0.1
+    "thickness": 0.1,
+    "exclude": [45336]
   },
   "binning": {
     "log_binning": false,
