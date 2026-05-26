@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, Field
-from scipy.optimize import curve_fit, differential_evolution
+from scipy.optimize import curve_fit
 
 from usansred.io.read import is_csv, read_config
 from usansred.model import IQData, MonitorData, XYData
@@ -573,8 +573,8 @@ class Sample(BaseModel):
         that is, detector bank ``iq_data.q`` values are analyzer-motor angles (in arcsec units).
 
         If two or more scans contain the same "Q" value, their intensities are combined
-        into one point using the existing variance-based weighting formula, and the
-        combined uncertainty is stored as the square root of the summed variance.
+        into one point using inverse-variance weighting, and the combined uncertainty
+        is stored as the square root of the inverse summed weights.
 
         After all scans for a bank are processed, the stitched points are sorted by Q
 
@@ -598,14 +598,15 @@ class Sample(BaseModel):
 
                 for scan_q, detector_intensity, detector_error in scan_data:
                     if scan_q in momentum_transfer:
-                        # Merge repeated Q values from multiple scans into one stitched point.
+                        # Merge repeated Q values from multiple scans using inverse-variance weights.
                         matched_q_index = momentum_transfer.index(scan_q)
-                        combined_variance = error[matched_q_index] ** 2 + detector_error**2
+                        matched_weight = 1.0 / error[matched_q_index] ** 2
+                        detector_weight = 1.0 / detector_error**2
+                        combined_weight = matched_weight + detector_weight
                         intensity[matched_q_index] = (
-                            intensity[matched_q_index] * (error[matched_q_index] ** 2)
-                            + detector_intensity * detector_error**2
-                        ) / combined_variance
-                        error[matched_q_index] = combined_variance**0.5
+                            intensity[matched_q_index] * matched_weight + detector_intensity * detector_weight
+                        ) / combined_weight
+                        error[matched_q_index] = (1.0 / combined_weight) ** 0.5
                     else:
                         # Add Q values that have not appeared in earlier scans.
                         momentum_transfer.append(scan_q)
@@ -971,8 +972,7 @@ class Experiment(BaseModel):
     config_file : str
         Path to the configuration file
     config : dict
-        Configuration file loaded into a Python dictionary. Populated only for
-        JSON config files; left as an empty dict for CSV config files.
+        Configuration file loaded into a Python dictionary. Populated for both JSON and CSV config files
     output_dir : str | None
         Output folder for reduced data, default is current folder
     prim_wave : float
@@ -1080,7 +1080,12 @@ def parse_args():
 
     parser = argparse.ArgumentParser(description="USANS Data Reduction")
     parser.add_argument("path", help="Path to the configuration file")
-    parser.add_argument("-l", "--logbin", action="store_true", help="Enable log-binning of data during reduction")
+    parser.add_argument(
+        "-l",
+        "--logbin",
+        action="store_true",
+        help="Enable log-binning of data during reduction. Option only valid for CSV files",
+    )
     parser.add_argument("-o", "--output", default="", help="Output folder for reduced data (default: current folder)")
     args = parser.parse_args()
     return args

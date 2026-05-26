@@ -111,6 +111,41 @@ class TestSampleNormalizeByMonitor:
         assert normalized_scan_numbers == [1, 2]
 
 
+class TestSampleStitchScans:
+    """Tests for Sample.stitch_scans."""
+
+    @staticmethod
+    def _make_scan_with_detector_iq(experiment: Experiment, q: list[float], i: list[float], e: list[float]) -> Scan:
+        scan = Scan(number=123, experiment=experiment, load_data=False)
+        scan.detector_data = [MonitorData(iq_data=IQData(q=q, i=i, e=e))]
+        return scan
+
+    def test_combines_duplicate_q_points_with_inverse_variance_weights(self, mock_experiment):
+        """Duplicate Q points should weight lower-variance intensities more strongly."""
+        scan_1 = self._make_scan_with_detector_iq(
+            mock_experiment,
+            q=[1.0, 2.0],
+            i=[100.0, 20.0],
+            e=[1.0, 2.0],
+        )
+        scan_2 = self._make_scan_with_detector_iq(
+            mock_experiment,
+            q=[1.0, 3.0],
+            i=[200.0, 30.0],
+            e=[3.0, 3.0],
+        )
+        sample = _make_sample(mock_experiment, "test", [scan_1, scan_2])
+
+        sample.stitch_scans()
+
+        expected_weight_sum = 1.0 / 1.0**2 + 1.0 / 3.0**2
+        expected_intensity = (100.0 / 1.0**2 + 200.0 / 3.0**2) / expected_weight_sum
+        expected_error = np.sqrt(1.0 / expected_weight_sum)
+        np.testing.assert_allclose(sample.detector_data[0].q, [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(sample.detector_data[0].i, [expected_intensity, 20.0, 30.0])
+        np.testing.assert_allclose(sample.detector_data[0].e, [expected_error, 2.0, 3.0])
+
+
 class TestCombineDuplicateQPoints:
     """Tests for Sample._combine_duplicate_q_points."""
 

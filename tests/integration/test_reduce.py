@@ -39,9 +39,7 @@ def compare_lines(file1, file2, threshold=0.01):
             except ZeroDivisionError:
                 pass
             if relative_diff > threshold:
-                # DEBUG:
-                pass
-                # raise ValueError(f"Line {i}, Number {num1:.6f} differs significantly from {num2:.6f}")
+                raise ValueError(f"Line {i}, Number {num1:.6f} differs significantly from {num2:.6f}")
 
 
 @mock_patch("usansred.reduce.parse_args")

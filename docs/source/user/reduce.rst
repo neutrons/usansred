@@ -32,7 +32,7 @@ First, create the setup file **in the same folder as the raw data**.
 The setup file is a file that contains the information about the samples to be reduced.
 Two formats are supported: JSON and CSV (comma separated values).
 The CSV is supported for backward compatibility and it only supports the background and sample information,
-while the JSON format also supports additional configuration flags such `save_all_harmonics`.
+while the JSON format also supports additional configuration flags such as `save_all_harmonics`.
 
 The JSON format provides the same information in a structured layout.
 A JSON setup file contains a required samples entry, optional background entry, and optional configuration flags.
@@ -157,6 +157,17 @@ Additional CLI options for ``reduceUSANS`` can be viewed in the terminal by runn
 .. code-block:: bash
 
    (usansred) $ reduceUSANS --help
+   usage: reduceUSANS [-h] [-l] [-o OUTPUT] path
+
+   USANS Data Reduction
+
+   positional arguments:
+     path                         Path to the configuration file
+
+   options:
+     -h, --help                   show this help message and exit
+     -l, --logbin                 Enable log-binning of data during reduction. Option only valid for CSV files
+     -o OUTPUT, --output OUTPUT   Output folder for reduced data (default: current folder)
 
 Summary
 -------

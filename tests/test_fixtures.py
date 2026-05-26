@@ -1,12 +1,10 @@
-import math
 import os
 from unittest.mock import patch
 
-import numpy as np
 import pytest
 
 from usansred.model import IQData, MonitorData, XYData
-from usansred.reduce import CombinedSample, Experiment, Sample, Scan
+from usansred.reduce import Experiment, Sample, Scan
 
 
 @pytest.mark.datarepo
