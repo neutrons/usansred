@@ -140,13 +140,20 @@ def config_from_csv(csv_path: str) -> dict:
 
             if sample is not None:
                 if row[0] == "b":
-                    # Check if this sample is the empty sample
-                    sample["is_background"] = True
                     background = sample
                 else:
                     samples.append(sample)
 
-    return {"background": background, "samples": samples}
+    config = {"background": background, "samples": samples}
+    _validate_config(config)
+
+    # Add fields not in the schema
+    for sample in config["samples"]:
+        sample["is_background"] = False
+    if background is not None:
+        background["is_background"] = True
+
+    return config
 
 
 def config_from_json(json_path: str) -> dict:

@@ -63,7 +63,7 @@ and descriptions for each property.
        "exclude": ["<integer|string>"]        // scan numbers to skip during reduction; default: []
      },
 
-     "save_all_harmonics": "<boolean>",        // save reduced data for higher harmonics; default: false
+     "save_all_harmonics": "<boolean>",        // optional; save reduced data for higher harmonics; default: false
      "binning": {
        "log_binning": "<boolean>",             // apply log binning to the reduced data; default: false
        "steps_per_decade": "<integer>"          // step per decade when log binning; default: 33

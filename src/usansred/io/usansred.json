@@ -5,7 +5,7 @@
   "description": "Configuration schema for JSON setup files consumed by usansred.io.read.config_from_json.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["samples", "save_all_harmonics"],
+  "required": ["samples"],
   "properties": {
     "samples": {
       "description": "Sample configurations to reduce.",
@@ -17,6 +17,7 @@
     },
     "background": {
       "description": "Optional background sample configuration. If omitted or null, reduction proceeds without a configured background.",
+      "default": null,
       "anyOf": [
         {
           "$ref": "#/$defs/background"

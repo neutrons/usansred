@@ -5,10 +5,12 @@ to avoid issues with missing attributes during testing.
 """
 
 import json
+from importlib import resources
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from usansred.io.read import read_config
 from usansred.reduce import Experiment, Sample
@@ -42,6 +44,20 @@ def test_read_config_csv():
     assert samples[0].name == "sample1"
     assert samples[1].name == "sample2"
     assert samples[1].exclude == [12345, 67890]
+
+
+def test_read_config_csv_applies_schema_defaults(tmp_path):
+    """Schema defaults (save_all_harmonics, binning, exclude) are injected for CSV configs."""
+
+    csv_file = tmp_path / "setup.csv"
+    csv_file.write_text("s,sample1,45306,6,0.1\n", encoding="utf-8")
+
+    config = read_config(csv_file)
+
+    assert config["save_all_harmonics"] is False
+    assert config["binning"]["log_binning"] is False
+    assert config["binning"]["steps_per_decade"] == 33
+    assert config["samples"][0]["exclude"] == []
 
 
 def test_read_config_json():
@@ -91,6 +107,27 @@ def test_read_config_json_applies_schema_defaults(tmp_path):
     assert config["binning"]["log_binning"] is False
     assert config["binning"]["steps_per_decade"] == 33
     assert config["samples"][0]["exclude"] == []
+
+
+def test_usansred_schema_treats_save_all_harmonics_as_optional():
+    """The bundled schema validates configs that omit save_all_harmonics."""
+
+    schema_path = resources.files("usansred.io").joinpath("usansred.json")
+    with schema_path.open("r", encoding="utf-8") as schema_file:
+        schema = json.load(schema_file)
+
+    config = {
+        "samples": [
+            {
+                "name": "sample1",
+                "start_scan_num": "45306",
+                "num_of_scans": 6,
+                "thickness": 0.1,
+            }
+        ]
+    }
+
+    Draft202012Validator(schema).validate(config)
 
 
 def test_read_config_json_missing_samples_raises(tmp_path):
