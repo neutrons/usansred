@@ -43,7 +43,8 @@ class TestLogBinning:
         )
 
         with patch.object(Sample, "model_post_init", return_value=None):
-            experiment = Experiment(config_file=str(config_file), log_binning=True)
+            experiment = Experiment(config_file=str(config_file))
+        experiment.amend_log_binning(True)
 
         assert experiment.log_binning is True
         assert experiment.config["binning"]["steps_per_decade"] == 44

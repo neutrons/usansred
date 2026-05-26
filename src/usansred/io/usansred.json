@@ -52,6 +52,12 @@
           "description": "step per decade when log binning",
           "type": "integer",
           "default": 33
+        },
+        "q_min": {
+          "description": "Minimum Q value (1/Angstrom) for the log-binned output grid",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1e-6
         }
       }
     }

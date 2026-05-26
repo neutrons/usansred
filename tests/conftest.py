@@ -65,8 +65,7 @@ def mock_experiment():
     exp.prim_wave = 3.6
     exp.log_binning = False
     exp.v_angle = 0.042
-    exp.min_q = 1e-6
-    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33}}
+    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6}}
     exp.background = None
     exp.samples = []
     return exp
@@ -83,8 +82,7 @@ def mock_experiment_2banks():
     exp.prim_wave = 3.6
     exp.log_binning = False
     exp.v_angle = 0.042
-    exp.min_q = 1e-6
-    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33}}
+    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6}}
     exp.background = None
     exp.samples = []
     return exp

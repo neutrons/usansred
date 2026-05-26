@@ -10,7 +10,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 from scipy.optimize import curve_fit, differential_evolution
 
-from usansred.io.read import read_config
+from usansred.io.read import is_csv, read_config
 from usansred.model import IQData, MonitorData, XYData
 from usansred.summary import generate_report
 
@@ -386,9 +386,10 @@ class Sample(BaseModel):
         kappa = 2.0 * (alpha - 1) / (alpha + 1)
 
         # floor ((ln((MyQ[InLength-1])/Qmin))/(ln(alpha)))
-        numOfBins = math.floor(math.log(max(iq_dict["Q"]) / self.experiment.min_q) / math.log(alpha))
+        q_min = self.experiment.config["binning"]["q_min"]
+        numOfBins = math.floor(math.log(max(iq_dict["Q"]) / q_min) / math.log(alpha))
 
-        logQ = [self.experiment.min_q * (alpha**n) for n in range(numOfBins)]
+        logQ = [q_min * (alpha**n) for n in range(numOfBins)]
         logI = [None] * numOfBins
         logE = [None] * numOfBins
         logW = [1] * numOfBins
@@ -982,8 +983,6 @@ class Experiment(BaseModel):
         Primary wavelength in Angstroms, default is 3.6
     v_angle : float
         Vertical angle, default is 0.042
-    min_q : float
-        Minimum Q value for binning output, default is 1e-6
     log_binning : bool
         Flag for log-binning, default is False
     """
@@ -993,11 +992,9 @@ class Experiment(BaseModel):
     output_dir: str = Field("", description="Output folder for reduced data")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
     v_angle: float = Field(0.042, description="Vertical angle")
-    min_q: float = Field(1e-6, description="Minimum Q value for binning output")
     log_binning: bool = Field(False, description="Flag for log-binning")
-    # Fields that are initialized in model_post_init and not expected from user input
-    folder: str = Field(default="", init=False, description="Working folder for this experiment")
     num_of_banks: int = Field(default=4, init=False, description="Number of detector banks")
+    folder: str = Field(default="", init=False, description="Working folder for this experiment")
     background: "Sample | None" = Field(default=None, init=False, description="Background sample")
     samples: list["Sample"] = Field(default_factory=list, init=False, description="List of samples")
 
@@ -1018,28 +1015,32 @@ class Experiment(BaseModel):
 
         self.folder = os.path.dirname(self.config_file)
         self.config = read_config(self.config_file)
-        self.config.setdefault("save_all_harmonics", False)
-        binning_config = self.config.setdefault("binning", {})
-        binning_config.setdefault("log_binning", self.log_binning)
-        binning_config.setdefault("steps_per_decade", 33)
 
-        _, extension = os.path.splitext(self.config_file)
-        if extension.lower() == ".json":
-            if self.log_binning:  # command line option --logbin overrides the JSON options
-                binning_config["log_binning"] = True
-            else:
-                self.log_binning = bool(binning_config.get("log_binning", False))
-        else:
-            binning_config["log_binning"] = self.log_binning
+        self.log_binning = bool(self.config["binning"]["log_binning"])
 
         background = self.config["background"]
-        samples = self.config["samples"]
         if background is None:
-            logging.warning("No background sample defined in the configuration file.")
+            logging.info("No background sample defined in the configuration file.")
             self.background = None
         else:
             self.background = Sample(**background, experiment=self)
-        self.samples = [Sample(**s, experiment=self) for s in samples]
+
+        self.samples = [Sample(**s, experiment=self) for s in self.config["samples"]]
+
+    def amend_log_binning(self, logbin: bool) -> None:
+        """Override the log-binning setting with the command-line --logbin flag.
+
+        For backwards compatibility when user enters a CSV file
+
+        Parameters
+        ----------
+        logbin : bool
+            When True, enables log-binning regardless of what the config file says.
+            When False, the config-file value set during initialisation is preserved.
+        """
+        if logbin:
+            self.log_binning = True
+            self.config["binning"]["log_binning"] = True
 
     def reduce(self, output_dir: str | None = None):
         """Reduce the USANS data
@@ -1092,7 +1093,9 @@ def parse_args():
 def main():
     """Main function to run USANS data reduction"""
     args = parse_args()
-    experiment = Experiment(config_file=args.path, log_binning=args.logbin, output_dir=args.output)
+    experiment = Experiment(config_file=args.path, output_dir=args.output)
+    if is_csv(args.path):  # backwards compatibility for CSV files, which don't have log-binning settings
+        experiment.amend_log_binning(args.logbin)
     experiment.reduce()
     generate_report(config_file_path=args.path, output_dir=experiment.output_dir)
 

@@ -178,8 +178,6 @@ def config_from_json(json_path: str) -> dict:
         bg["thickness"] = float(bg["thickness"])
         bg["exclude"] = [int(x) for x in bg["exclude"]]
         bg["is_background"] = True
-    else:
-        logging.info("No background configuration found.")
 
     # Samples block: coerce to preferred types for easier processing
     for sample in config["samples"]:
@@ -212,4 +210,9 @@ def read_config(file_path: str) -> dict:
     elif ext.lower() == ".json":
         return config_from_json(file_path)
     else:
-        raise ValueError(f"Unsupported configuration file format: {ext}")
+        raise ValueError(f"Unsupported configuration file format: {ext}. Valid formats are .csv and .json.")
+
+
+def is_csv(file_path: str) -> bool:
+    _, ext = os.path.splitext(file_path)
+    return ext.lower() == ".csv"
