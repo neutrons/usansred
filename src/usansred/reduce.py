@@ -535,9 +535,6 @@ class Sample(BaseModel):
     def rescale_data(self) -> None:
         """Rescale reflected data by the analyzer's solid angle acceptance and by sample thickness."""
 
-        # DEBUG: temporary save
-        columns = [self.data.q] + [iq.i for iq in self.detector_data]
-        np.savetxt(f"/tmp/stiched_{self.scans[0].number}.dat", np.column_stack(columns), delimiter="  ", fmt="%.6e")
 
         assert self.size > 0, "No data points to rescale. Please check if the scans have been stitched correctly."
 
