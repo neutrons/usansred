@@ -10,7 +10,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 from scipy.optimize import curve_fit
 
-from usansred.io.read import is_csv, read_config
+from usansred.io.read import cast_to_bool, is_csv, read_config
 from usansred.model import IQData, MonitorData, XYData
 from usansred.summary import generate_report
 
@@ -1010,7 +1010,7 @@ class Experiment(BaseModel):
         self.folder = os.path.dirname(self.config_file)
         self.config = read_config(self.config_file)
 
-        self.log_binning = bool(self.config["binning"]["log_binning"])
+        self.log_binning = cast_to_bool(self.config["binning"]["log_binning"])
 
         background = self.config["background"]
         if background is None:

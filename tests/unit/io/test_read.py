@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 from jsonschema import Draft202012Validator
 
-from usansred.io.read import read_config
+from usansred.io.read import cast_to_bool, read_config
 from usansred.reduce import Experiment, Sample
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
@@ -22,6 +22,25 @@ def _write_json_config(tmp_path: Path, config: dict) -> Path:
     config_file = tmp_path / "setup.json"
     config_file.write_text(json.dumps(config), encoding="utf-8")
     return config_file
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (True, True),
+        (False, False),
+        (1, True),
+        (0, False),
+        ("1", True),
+        ("0", False),
+        ("True", True),
+        ("False", False),
+        ("", False),
+    ],
+)
+def test_cast_to_bool(value, expected):
+    """Test casting common setup-file boolean values."""
+    assert cast_to_bool(value) is expected
 
 
 def test_read_config_csv():

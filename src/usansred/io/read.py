@@ -4,6 +4,7 @@ import logging
 import os
 from copy import deepcopy
 from importlib import resources
+from typing import Any
 
 from jsonschema import Draft202012Validator, validators
 from jsonschema import ValidationError as JsonSchemaValidationError
@@ -98,6 +99,19 @@ def _validate_config(config: dict) -> None:
 
     error = errors[0]
     raise ValueError(_format_validation_error(error))
+
+
+def cast_to_bool(value: Any) -> bool:
+    """Convert common setup-file values to a boolean."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"", "0", "false", "f", "no", "n", "off"}:
+            return False
+        if normalized in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        raise ValueError(f"Cannot cast string value {value!r} to bool")
+
+    return bool(value)
 
 
 def config_from_csv(csv_path: str) -> dict:
