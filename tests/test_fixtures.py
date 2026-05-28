@@ -1,12 +1,10 @@
-import math
 import os
 from unittest.mock import patch
 
-import numpy as np
 import pytest
 
 from usansred.model import IQData, MonitorData, XYData
-from usansred.reduce import CombinedSample, Experiment, Sample, Scan
+from usansred.reduce import Experiment, Sample, Scan
 
 
 @pytest.mark.datarepo
@@ -20,16 +18,14 @@ def test_data_server(data_server):
 def mock_experiment():
     """Create a minimal Experiment with model_post_init bypassed."""
     with patch.object(Experiment, "model_post_init", return_value=None):
-        exp = Experiment(config="dummy.json")
+        exp = Experiment(config_file="dummy.json")
     exp.folder = ""
     exp.output_dir = ""
     exp.num_of_banks = 1
     exp.prim_wave = 3.6
-    exp.darwin_width = 5.1
-    exp.logbin = False
+    exp.log_binning = False
     exp.v_angle = 0.042
-    exp.min_q = 1e-6
-    exp.step_per_dec = 33
+    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6}}
     exp.background = None
     exp.samples = []
     return exp
@@ -39,16 +35,14 @@ def mock_experiment():
 def mock_experiment_2banks():
     """Create a minimal Experiment with 2 detector banks."""
     with patch.object(Experiment, "model_post_init", return_value=None):
-        exp = Experiment(config="dummy.json")
+        exp = Experiment(config_file="dummy.json")
     exp.folder = ""
     exp.output_dir = ""
     exp.num_of_banks = 2
     exp.prim_wave = 3.6
-    exp.darwin_width = 5.1
-    exp.logbin = False
+    exp.log_binning = False
     exp.v_angle = 0.042
-    exp.min_q = 1e-6
-    exp.step_per_dec = 33
+    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6}}
     exp.background = None
     exp.samples = []
     return exp

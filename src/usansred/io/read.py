@@ -1,15 +1,127 @@
 # TODO: Modify to allow multiple backgrounds
-
+import json
 import logging
+import os
+from copy import deepcopy
+from importlib import resources
+from typing import Any
+
+from jsonschema import Draft202012Validator, validators
+from jsonschema import ValidationError as JsonSchemaValidationError
 
 
-def config_from_csv(csv_path: str) -> tuple[dict | None, list[dict]]:
+def _validator_with_defaults(validator_class: type[Draft202012Validator]) -> type[Draft202012Validator]:
+    """Create a JSON schema validator that inserts schema defaults."""
+    validate_properties = validator_class.VALIDATORS["properties"]
+    validate_required = validator_class.VALIDATORS["required"]
+
+    def set_defaults(validator, properties, instance, schema):  # noqa ANN001
+        if isinstance(instance, dict):
+            for property_name, subschema in properties.items():
+                if "default" in subschema and property_name not in instance:
+                    instance[property_name] = deepcopy(subschema["default"])
+
+        yield from validate_properties(validator, properties, instance, schema)
+
+    def validate_required_defaults(validator, required, instance, schema):  # noqa ANN001
+        if not isinstance(instance, dict):
+            yield from validate_required(validator, required, instance, schema)
+            return
+
+        properties = schema.get("properties", {})
+        for property_name in required:
+            if property_name in instance:
+                continue
+
+            subschema = properties.get(property_name, {})
+            if "default" in subschema:
+                instance[property_name] = deepcopy(subschema["default"])
+                continue
+
+            yield JsonSchemaValidationError(
+                f"Required property '{property_name}' is missing from input configuration "
+                "and no default value is defined in the schema."
+            )
+
+    return validators.extend(
+        validator_class,
+        {
+            "properties": set_defaults,
+            "required": validate_required_defaults,
+        },
+    )
+
+
+DefaultValidatingDraft202012Validator = _validator_with_defaults(Draft202012Validator)
+
+
+def _read_schema() -> dict:
+    """Read the JSON schema for USANSRED setup files."""
+    schema_path = resources.files("usansred.io").joinpath("usansred.json")
+    with schema_path.open("r", encoding="utf-8") as schema_file:
+        return json.load(schema_file)
+
+
+def _format_json_path(error: JsonSchemaValidationError) -> str:
+    """Format a JSON schema error path for user-facing messages."""
+    if not error.path:
+        return ""
+
+    path = "".join(f"[{item}]" if isinstance(item, int) else f".{item}" for item in error.path)
+    return path.lstrip(".")
+
+
+def _format_validation_error(error: JsonSchemaValidationError) -> str:
+    """Format a JSON schema validation error for setup-file users."""
+    path = _format_json_path(error)
+    prefix = f"{path}: " if path else ""
+
+    if (
+        error.validator == "additionalProperties"
+        and error.validator_value is False
+        and isinstance(error.instance, dict)
+    ):
+        allowed_properties = set(error.schema.get("properties", {}))
+        extra_properties = sorted(set(error.instance) - allowed_properties)
+        extras = ", ".join(repr(property_name) for property_name in extra_properties)
+        return f"{prefix}Additional properties are not allowed: {extras}"
+
+    return f"{prefix}{error.message}"
+
+
+def _validate_config(config: dict) -> None:
+    """Validate a reduction configuration and insert schema defaults."""
+    schema = _read_schema()
+    validator = DefaultValidatingDraft202012Validator(schema)
+    errors = sorted(validator.iter_errors(config), key=lambda error: list(error.path))
+    if not errors:
+        return
+
+    error = errors[0]
+    raise ValueError(_format_validation_error(error))
+
+
+def cast_to_bool(value: Any) -> bool:
+    """Convert common setup-file values to a boolean."""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"", "0", "false", "f", "no", "n", "off"}:
+            return False
+        if normalized in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        raise ValueError(f"Cannot cast string value {value!r} to bool")
+
+    return bool(value)
+
+
+def config_from_csv(csv_path: str) -> dict:
     """Reads the reduction configuration from a CSV file.
 
     Returns
     -------
-    tuple[dict | None, list[dict]]
-        A tuple containing the background configuration (or None) and a list of sample configurations.
+    dict
+        A dictionary with keys ``"background"`` (a dict or ``None``) and
+        ``"samples"`` (a list of dicts).
     """
     import csv
 
@@ -42,73 +154,56 @@ def config_from_csv(csv_path: str) -> tuple[dict | None, list[dict]]:
 
             if sample is not None:
                 if row[0] == "b":
-                    # Check if this sample is the empty sample
-                    sample["is_background"] = True
                     background = sample
                 else:
                     samples.append(sample)
 
-    return background, samples
+    config = {"background": background, "samples": samples}
+    _validate_config(config)
+
+    # Add fields not in the schema
+    for sample in config["samples"]:
+        sample["is_background"] = False
+    if background is not None:
+        background["is_background"] = True
+
+    return config
 
 
-def config_from_json(json_path: str) -> tuple[dict | None, list[dict]]:
+def config_from_json(json_path: str) -> dict:
     """Reads the reduction configuration from a JSON file.
 
     Returns
     -------
-    tuple[dict | None, list[dict]]
-        A tuple containing the background configuration (or None) and a list of sample configurations.
+    dict
+        A dictionary with keys ``"background"`` (a dict or ``None``) and
+        ``"samples"`` (a list of dicts), among other entries
     """
-
-    import json
-
     with open(json_path, "r") as f:
-        data = json.load(f)
+        config = json.load(f)
 
-    bg = data.get("background")
+    _validate_config(config)
+
+    # Background block: coerce to preferred types for easier processing
+    bg = config.get("background")
     if bg:
-        try:
-            background = {
-                "name": bg["name"],
-                "start_scan_num": int(bg["start_scan_num"]),
-                "num_of_scans": int(bg["num_of_scans"]),
-                "thickness": float(bg["thickness"]),
-                "is_background": True,
-            }
-        except KeyError as e:
-            logging.info(f"Missing key in background configuration: {e}")
-            background = None
-        except (TypeError, ValueError) as e:
-            logging.info(f"Error parsing background configuration: {e}")
-            background = None
-    else:
-        logging.info("No background sample found in the configuration.")
-        background = None
+        bg["start_scan_num"] = int(bg["start_scan_num"])
+        bg["num_of_scans"] = int(bg["num_of_scans"])
+        bg["thickness"] = float(bg["thickness"])
+        bg["exclude"] = [int(x) for x in bg["exclude"]]
+        bg["is_background"] = True
 
-    _samples: list[dict] = data.get("samples")
-    if not _samples:
-        logging.info("No samples found in the configuration.")
-        return background, []
-
-    samples = []
-    for s in _samples:
-        try:
-            sample = {
-                "name": s["name"],
-                "start_scan_num": int(s["start_scan_num"]),
-                "num_of_scans": int(s["num_of_scans"]),
-                "thickness": float(s["thickness"]),
-                "exclude": [int(x) for x in s.get("exclude", [])],
-            }
-            samples.append(sample)
-        except Exception as e:  # noqa E722
-            logging.info(f"Error parsing sample {s}: {e}")
-            # traceback.print_exc()
-
-    return background, samples
+    # Samples block: coerce to preferred types for easier processing
+    for sample in config["samples"]:
+        sample["start_scan_num"] = int(sample["start_scan_num"])
+        sample["num_of_scans"] = int(sample["num_of_scans"])
+        sample["thickness"] = float(sample["thickness"])
+        sample["exclude"] = [int(x) for x in sample["exclude"]]
+        sample["is_background"] = False
+    return config
 
 
-def read_config(file_path: str) -> tuple[dict | None, list[dict]]:
+def read_config(file_path: str) -> dict:
     """Wrapper function to read configuration from different file formats.
 
     Parameters
@@ -118,10 +213,10 @@ def read_config(file_path: str) -> tuple[dict | None, list[dict]]:
 
     Returns
     -------
-    tuple[dict | None, list[dict]]
-        A tuple containing the background configuration (or None) and a list of sample configurations.
+    dict
+        A dictionary with a minumum set of keys ``"background"`` (a dict or ``None``) and
+        ``"samples"`` (a list of dicts).
     """
-    import os
 
     _, ext = os.path.splitext(file_path)
     if ext.lower() == ".csv":
@@ -129,4 +224,9 @@ def read_config(file_path: str) -> tuple[dict | None, list[dict]]:
     elif ext.lower() == ".json":
         return config_from_json(file_path)
     else:
-        raise ValueError(f"Unsupported configuration file format: {ext}")
+        raise ValueError(f"Unsupported configuration file format: {ext}. Valid formats are .csv and .json.")
+
+
+def is_csv(file_path: str) -> bool:
+    _, ext = os.path.splitext(file_path)
+    return ext.lower() == ".csv"

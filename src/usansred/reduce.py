@@ -8,9 +8,9 @@ from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, Field
-from scipy.optimize import curve_fit, differential_evolution
+from scipy.optimize import curve_fit
 
-from usansred.io.read import read_config
+from usansred.io.read import cast_to_bool, is_csv, read_config
 from usansred.model import IQData, MonitorData, XYData
 from usansred.summary import generate_report
 
@@ -20,7 +20,36 @@ console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logging.getLogger("").addHandler(console)
 
-DARWIN_WIDTH = 5.1  # Darwin width, shouldn't really ever change unless instrument is disassembled
+
+ARCSEC_TO_RADIANS = math.pi / (3600.0 * 180.0)
+
+
+def _gaussian(x: np.ndarray, background: float, amplitude: float, sigma: float, center: float) -> np.ndarray:
+    """Gaussian peak with arbitrary amplitude on a constant background."""
+    return background + amplitude * np.exp(-0.5 * ((x - center) / sigma) ** 2.0)
+
+
+def horizontal_rocking_width(order: int) -> float:
+    """
+    FWHM (arcs) of the resolution function at the detector for a given reflection order
+
+    References
+    ----------
+    M. Agamalian et al., "Progress on The Time-of-Flight Ultra Small Angle Neutron Scattering Instrument at SNS",
+    J. Phys.: Conf. Ser. 1021 (2018) 012033.
+
+    Parameters
+    ----------
+    order : int
+        Positive reflection order (a.k.a. harmonic or bank)
+
+    Returns
+    -------
+    float
+        Computed horizontal angular resolution.
+    """
+    assert order > 0, "Order must be positive"
+    return 5.34 * math.exp(-0.01793 * order**2) / order**2
 
 
 class Scan(BaseModel):
@@ -119,6 +148,31 @@ class Scan(BaseModel):
         )
         return iq_data
 
+    def normalize_by_monitor(self) -> None:
+        """Normalize detector intensities by monitor counts.
+
+        Each harmonic in the scan is normalized independently, and within each harmonic,
+        the counts collected at the detector during the time the analyzer-motor remained at a particular angle
+        are divided by the counts collected at the monitor during such time.
+        """
+        for harmonic in self.detector_data:
+            intensity_normalized = []
+            error_normalized = []
+
+            for monitor_i, monitor_e, detector_i, detector_e in zip(
+                self.monitor_data.iq_data.i,
+                self.monitor_data.iq_data.e,
+                harmonic.iq_data.i,
+                harmonic.iq_data.e,
+            ):
+                intensity = detector_i / monitor_i
+                error = np.sqrt(detector_e**2 + (intensity * monitor_e) ** 2) / monitor_i
+                intensity_normalized.append(intensity)
+                error_normalized.append(error)
+
+            harmonic.iq_data.i = intensity_normalized
+            harmonic.iq_data.e = error_normalized
+
 
 class Sample(BaseModel):
     """Container for sample information, related scans, and data reduction methods"""
@@ -150,7 +204,7 @@ class Sample(BaseModel):
         self.num_of_scans = len(self.scans)
 
         # NOTE:
-        #  - detector_data: original data after being stitched with another scan
+        #  - detector_data: original data after being stitched with another monitor-normalized scan
         #  - data_scaled: data after being scaled to thickness
         #  - data_log_binned: data_scaled after being log-binned
         #  - data_bg_subtracted: data_log_binned after background subtraction (aliased as self.data_reduced)
@@ -190,6 +244,10 @@ class Sample(BaseModel):
         return len(self.data_reduced.q)
 
     @property
+    def config(self):
+        return self.experiment.config
+
+    @property
     def num_of_banks(self) -> int:
         """Number of detector banks in the Experiment"""
         return self.experiment.num_of_banks
@@ -207,6 +265,11 @@ class Sample(BaseModel):
 
     def dump_data_to_csv(self, filepath: str, data: IQData | XYData, title: str | None = None):
         """Dump IQ or XY data to a CSV file."""
+        output_dir = os.path.dirname(filepath)
+        if output_dir and not os.path.exists(output_dir):
+            logging.info(f"Output directory {output_dir} does not exist; creating it.")
+            os.makedirs(output_dir)
+
         data_dict = data.as_dict()
         keys = list(data_dict.keys())
 
@@ -238,10 +301,28 @@ class Sample(BaseModel):
         if detector_data and self.data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_unscaled.txt")
             self.dump_data_to_csv(filepath, self.data)
+            if self.config.get("save_all_harmonics", False):
+                for i in range(1, self.num_of_banks):
+                    bank = i + 1  # start with the second order
+                    filepath = os.path.join(
+                        self.experiment.output_dir,
+                        f"bank_{bank}",
+                        f"UN_{self.name}_unscaled.txt",
+                    )
+                    self.dump_data_to_csv(filepath, self.detector_data[i])
 
         if scaled_data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1.txt")
             self.dump_data_to_csv(filepath, self.data_scaled[0])
+            if self.config.get("save_all_harmonics", False):
+                for i in range(1, self.num_of_banks):
+                    bank = i + 1  # start with the second order
+                    filepath = os.path.join(
+                        self.experiment.output_dir,
+                        f"bank_{bank}",
+                        f"UN_{self.name}.txt",
+                    )
+                    self.dump_data_to_csv(filepath, self.data_scaled[i])
 
         if bg_subtracted_data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_lbs.txt")
@@ -256,9 +337,16 @@ class Sample(BaseModel):
 
         return
 
+    def normalize_by_monitor(self) -> None:
+        """Normalize detector intensities by monitor counts for all scans."""
+        for scan in self.scans:
+            scan.normalize_by_monitor()
+
     def reduce(self):
         """Reduce this sample's scans"""
-        self.stitch_data()
+        self.normalize_by_monitor()
+        self.stitch_scans()
+        self.rocking_curve_centering()
         self.rescale_data()
 
         # Only process first detector bank
@@ -266,47 +354,42 @@ class Sample(BaseModel):
         logging.info(f"Only the first bank data is used for sample {self.name}.")
 
         # Log-binning is optional
-        if self.experiment.logbin:
-            self.data_log_binned.q, self.data_log_binned.i, self.data_log_binned.e = self.log_bin_data(
-                data_scaled.q, data_scaled.i, data_scaled.e
-            )
+        if self.experiment.log_binning:
+            self.data_log_binned = self.log_bin_data(data_scaled)
 
-        if not self.is_background:
+        if self.experiment.background and not self.is_background:
             self.subtract_background(self.experiment.background)
 
         logging.info(f"Data reduction finished for sample {self.name}.")
         return
 
     # TODO: This function should be re-written from scratch
-    def log_bin_data(
-        self, momentum_transfer: list[float], intensity: list[float], error: list[float]
-    ) -> tuple[list[float], list[float], list[float]]:
+    def log_bin_data(self, data: IQData) -> IQData:
         """Log-bin the I(Q) data."""
-        assert len(momentum_transfer) == len(intensity) == len(error)
+        assert len(data.q) == len(data.i) == len(data.e)
 
         # Sort by momentum transfer
-        sorted_indices = np.argsort(momentum_transfer)
-        momentum_transfer = np.array(momentum_transfer)[sorted_indices]
-        intensity = np.array(intensity)[sorted_indices]
-        error = np.array(error)[sorted_indices]
+        sorted_indices = np.argsort(data.q)
+        q = np.array(data.q)[sorted_indices]
+        i = np.array(data.i)[sorted_indices]
+        e = np.array(data.e)[sorted_indices]
 
-        data = {"I": list(intensity), "Q": list(momentum_transfer), "E": list(error)}
+        iq_dict = {"I": list(i), "Q": list(q), "E": list(e)}
 
-        # The fundamental Q width of the measurement
-        harNo = 1.0  # Only the first harmonic peak is used
-        fundamentalStep = (
-            2 * math.pi**2 * self.experiment.darwin_width * harNo / (self.experiment.prim_wave * 3600.0 * 180.0)
-        )
+        # The resolution in Q, ΔQ=2πΔθ/λ_1, where Δθ is the FWHM of the resolution function at the detector
+        fundamentalStep = 2 * math.pi * horizontal_rocking_width(1) * ARCSEC_TO_RADIANS / self.experiment.prim_wave
 
         # Step multiplier
-        alpha = math.exp(math.log(10) / self.experiment.step_per_dec)
+        steps_per_decade = self.experiment.config["binning"]["steps_per_decade"]
+        alpha = math.exp(math.log(10) / steps_per_decade)
         # step relative width
         kappa = 2.0 * (alpha - 1) / (alpha + 1)
 
         # floor ((ln((MyQ[InLength-1])/Qmin))/(ln(alpha)))
-        numOfBins = math.floor(math.log(max(data["Q"]) / self.experiment.min_q) / math.log(alpha))
+        q_min = self.experiment.config["binning"]["q_min"]
+        numOfBins = math.floor(math.log(max(iq_dict["Q"]) / q_min) / math.log(alpha))
 
-        logQ = [self.experiment.min_q * (alpha**i) for i in range(numOfBins)]
+        logQ = [q_min * (alpha**n) for n in range(numOfBins)]
         logI = [None] * numOfBins
         logE = [None] * numOfBins
         logW = [1] * numOfBins
@@ -324,229 +407,180 @@ class Sample(BaseModel):
 
             if testVal <= fundamentalStep:
                 while logI[lIdx] is None:
-                    if origIdx < (len(data["Q"]) - 1) and data["Q"][origIdx + 1] > lq:
-                        k2 = data["Q"][origIdx + 1] - data["Q"][origIdx]
-                        k3 = lq - data["Q"][origIdx + 1]
+                    if origIdx < (len(iq_dict["Q"]) - 1) and iq_dict["Q"][origIdx + 1] > lq:
+                        k2 = iq_dict["Q"][origIdx + 1] - iq_dict["Q"][origIdx]
+                        k3 = lq - iq_dict["Q"][origIdx + 1]
                         # rtemp[outindex]=((k3/k2)+1)*MyR[inindex+1]-(k3/k2)*MyR[inindex]
-                        logI[lIdx] = ((k3 / k2) + 1) * data["I"][origIdx + 1] - (k3 / k2) * data["I"][origIdx]
-                        logE[lIdx] = (((k3 / k2) + 1) ** 2.0) * (data["E"][origIdx + 1] ** 2.0) + ((k3 / k2) ** 2.0) * (
-                            data["E"][origIdx] ** 2.0
-                        )
+                        logI[lIdx] = ((k3 / k2) + 1) * iq_dict["I"][origIdx + 1] - (k3 / k2) * iq_dict["I"][origIdx]
+                        logE[lIdx] = (((k3 / k2) + 1) ** 2.0) * (iq_dict["E"][origIdx + 1] ** 2.0) + (
+                            (k3 / k2) ** 2.0
+                        ) * (iq_dict["E"][origIdx] ** 2.0)
                         logW[lIdx] = 1
                     else:
                         origIdx += 1
             else:
                 stepmin = lq - testVal / 2.0
                 stepmax = lq + testVal / 2.0
-                origIdx = 0
-                while origIdx < len(data["Q"]):
-                    origIdx += 1
-                    # emulate the do-while loop
-                    if not ((data["Q"][origIdx] + fundamentalStep / 2.0) < stepmin):
+                origIdx = 1
+                while origIdx < len(iq_dict["Q"]):
+                    if (iq_dict["Q"][origIdx] + fundamentalStep / 2.0) >= stepmin:
                         break
+                    origIdx += 1
 
-                while origIdx < len(data["Q"]):
-                    if (data["Q"][origIdx] - fundamentalStep / 2.0) <= stepmin:
+                while origIdx < len(iq_dict["Q"]):
+                    if (iq_dict["Q"][origIdx] - fundamentalStep / 2.0) <= stepmin:
                         if logI[lIdx] is None:
                             # rtemp[outindex]=MyR[Inindex]*((MyQ[inindex]+FunStep/2)-stepmin)/funstep
                             # wtemp[outindex]=(MyQ[inindex]+FunStep/2-stepmin)/funstep
                             # stemp[outindex]=(MyS[InIndex]^2)*((MyQ[inindex]+FunStep/2-stepmin)/funstep)^2
                             logI[lIdx] = (
-                                data["I"][origIdx]
-                                * ((data["Q"][origIdx] + fundamentalStep / 2.0) - stepmin)
+                                iq_dict["I"][origIdx]
+                                * ((iq_dict["Q"][origIdx] + fundamentalStep / 2.0) - stepmin)
                                 / fundamentalStep
                             )
-                            logW[lIdx] = (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
-                            logE[lIdx] = (data["E"][origIdx] ** 2.0) * (
-                                (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
+                            logW[lIdx] = (iq_dict["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
+                            logE[lIdx] = (iq_dict["E"][origIdx] ** 2.0) * (
+                                (iq_dict["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
                             ) ** 2.0
                         else:
                             # rtemp[outindex]+=MyR[Inindex]*((MyQ[inindex]+FunStep/2)-stepmin)/funstep
                             # wtemp[outindex]+=(MyQ[inindex]+FunStep/2-stepmin)/funstep
                             # stemp[outindex]+=(MyS[InIndex]^2)*((MyQ[inindex]+FunStep/2-stepmin)/funstep)^2
                             logI[lIdx] += (
-                                data["I"][origIdx]
-                                * ((data["Q"][origIdx] + fundamentalStep / 2.0) - stepmin)
+                                iq_dict["I"][origIdx]
+                                * ((iq_dict["Q"][origIdx] + fundamentalStep / 2.0) - stepmin)
                                 / fundamentalStep
                             )
-                            logW[lIdx] += (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
-                            logE[lIdx] += (data["E"][origIdx] ** 2.0) * (
-                                (data["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
+                            logW[lIdx] += (iq_dict["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
+                            logE[lIdx] += (iq_dict["E"][origIdx] ** 2.0) * (
+                                (iq_dict["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
                             ) ** 2.0
-                    elif (self.data["Q"][origIdx] + fundamentalStep / 2.0) > stepmax:
+                    elif (iq_dict["Q"][origIdx] + fundamentalStep / 2.0) > stepmax:
                         if logI[lIdx] is None:
                             # rtemp[outindex]=MyR[Inindex]*(stepmax-(MyQ[inindex]-FunStep/2))/funstep
                             # wtemp[outindex]=(stepmax-(MyQ[inindex]-FunStep/2))/funstep
                             # stemp[outindex]=(MyS[InIndex]^2)*((stepmax-(MyQ[inindex]-FunStep/2))/funstep)^2
                             logI[lIdx] = (
-                                data["I"][origIdx]
-                                * (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0))
+                                iq_dict["I"][origIdx]
+                                * (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0))
                                 / fundamentalStep
                             )
-                            logW[lIdx] = (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
-                            logE[lIdx] = (data["E"][origIdx] ** 2.0) * (
-                                (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
+                            logW[lIdx] = (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
+                            logE[lIdx] = (iq_dict["E"][origIdx] ** 2.0) * (
+                                (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
                             ) ** 2.0
                         else:
                             logI[lIdx] += (
-                                data["I"][origIdx]
-                                * (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0))
+                                iq_dict["I"][origIdx]
+                                * (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0))
                                 / fundamentalStep
                             )
-                            logW[lIdx] += (
-                                stepmax - (self.data["Q"][origIdx] - fundamentalStep / 2.0)
-                            ) / fundamentalStep
-                            logE[lIdx] += (data["E"][origIdx] ** 2.0) * (
-                                (stepmax - (data["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
+                            logW[lIdx] += (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
+                            logE[lIdx] += (iq_dict["E"][origIdx] ** 2.0) * (
+                                (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
                             ) ** 2.0
                     else:
                         if logI[lIdx] is None:
-                            logI[lIdx] = data["I"][origIdx]
+                            logI[lIdx] = iq_dict["I"][origIdx]
                             logW[lIdx] = 1.0
-                            logE[lIdx] = data["E"][origIdx] ** 2.0
+                            logE[lIdx] = iq_dict["E"][origIdx] ** 2.0
                         else:
-                            logI[lIdx] += data["I"][origIdx]
+                            logI[lIdx] += iq_dict["I"][origIdx]
                             logW[lIdx] += 1.0
-                            logE[lIdx] += data["E"][origIdx] ** 2.0
+                            logE[lIdx] += iq_dict["E"][origIdx] ** 2.0
 
                     origIdx += 1
-                    # emulate the do-while loop
-                    if not ((data["Q"][origIdx] - fundamentalStep / 2.0) < stepmax):
+                    if origIdx < len(iq_dict["Q"]) and (iq_dict["Q"][origIdx] - fundamentalStep / 2.0) >= stepmax:
                         break
 
         logI = [logI[ii] / logW[ii] for ii in range(numOfBins)]
         logE = [logE[ii] / (logW[ii] ** 2.0) for ii in range(numOfBins)]
         logE = [le**0.5 for le in logE]
 
-        return (logQ, logI, logE)
+        return IQData(q=logQ, i=logI, e=logE)
 
-    def rescale_data(self, guess_init: bool = False) -> None:
-        """Rescale data with thickness.
-        Fit the I(Q) data to gaussian and calculate peak area.
+    @staticmethod
+    def _combine_duplicate_q_points(
+        q_scaled: list[float], i_scaled: list[float], e_scaled: list[float]
+    ) -> tuple[list[float], list[float], list[float]]:
+        """Sort by Q and average duplicate momentum transfer points.
 
-        Parameters
-        ----------
-        guess_init : bool
-            Whether to guess initial parameters for fitting with differential_evolution.
+        Duplicate Q values happen when negative and positive analyzer-motor angles
+        have the same magnitude after conversion to momentum transfer in 1/angstrom.
+        Intensities are averaged, and uncertainties are propagated for the averaged
+        values.
         """
+        # Dictionary to store sums for averaging I and propagating errors for E.
+        # One dictionary entry per unique Q value, which is itself a dictionary.
+        sum_dict = defaultdict(lambda: {"I_sum": 0, "I_count": 0, "E_sum_squares": 0})
 
-        def _gaussian(x: np.ndarray, k0: float, k1: float, k2: float) -> np.ndarray:
-            """The Gaussian equation according to Igor definition of gaussian curvefit.
+        for q, i, e in zip(q_scaled, i_scaled, e_scaled):
+            sum_dict[q]["I_sum"] += i
+            sum_dict[q]["I_count"] += 1
+            sum_dict[q]["E_sum_squares"] += e**2
 
-            https://www.wavemetrics.net/doc/igorman/V-01%20Reference.pdf
-            """
-            return k0 + 1.0 / (k1 * np.sqrt(2 * math.pi)) * np.exp(-1.0 / 2.0 * ((x - k2) / k1) ** 2.0)
+        q_cleaned = []
+        i_cleaned = []
+        e_cleaned = []
 
-        def _sum_of_squared_error(params: tuple[float, float, float]) -> float:
-            """Function for genetic algorithm to minimize."""
-            k0, k1, k2 = params
-            val = _gaussian(np.array(self.data.q), k0, k1, k2)
-            result = np.sum((np.array(self.data.i) - val) ** 2)
-            return result
+        for q, values in sorted(sum_dict.items()):
+            q_cleaned.append(q)
+            i_cleaned.append(values["I_sum"] / values["I_count"])
+            e_cleaned.append(math.sqrt(values["E_sum_squares"]) / values["I_count"])
 
-        def _generate_initial_parameters(test_x: np.ndarray, test_y: np.ndarray):
-            max_x = max(test_x)
-            max_y = max(test_y)
-            max_xy = max(max_x, max_y)
+        return q_cleaned, i_cleaned, e_cleaned
 
-            parameter_bounds = [
-                [-max_xy, max_xy],  # k0
-                [-max_xy, max_xy],  # k1
-                [-max_xy, max_xy],  # k2
-            ]
+    def rescale_data(self) -> None:
+        """Rescale reflected data by the analyzer's solid angle acceptance and by sample thickness."""
 
-            # "seed" the numpy random number generator for repeatable results
-            result = differential_evolution(_sum_of_squared_error, parameter_bounds, seed=3)
+        assert self.size > 0, "No data points to rescale. Please check if the scans have been stitched correctly."
 
-            return result.x
+        self.data_scaled = []
 
-        def _clean_iq(q_scaled: list[float], i_scaled: list[float], e_scaled: list[float]):
-            """Remove duplicate values in q by:
-            - Taking the average of all i-values with the same q
-            - Taking the standard deviation of all e-values with the same q
-            """
-            # Dictionary to store sums for averaging I and propagating errors for E
-            sum_dict = defaultdict(lambda: {"I_sum": 0, "I_count": 0, "E_sum_squares": 0})
+        for harmonic in range(1, 1 + self.num_of_banks):
+            # angle-to-Q conversion factor: radians_per_arcsecond * (2π / λ_n)
+            theta_to_q = ARCSEC_TO_RADIANS * (2 * math.pi / (self.experiment.prim_wave / harmonic))
 
-            for q, i, e in zip(q_scaled, i_scaled, e_scaled):
-                sum_dict[q]["I_sum"] += i
-                sum_dict[q]["I_count"] += 1
-                sum_dict[q]["E_sum_squares"] += e**2
+            # analyzer solid angle acceptance ΔΩ = vertical angular width * horizontal angular width
+            analyzer_solid_angle = self.experiment.v_angle * (horizontal_rocking_width(harmonic) * ARCSEC_TO_RADIANS)
 
-            q_cleaned = []
-            i_cleaned = []
-            e_cleaned = []
+            # negative theta angles do correspond to positive values of the momentum transfer, hence abs()
+            iq_data = self.detector_data[harmonic - 1]
+            q_scaled = [abs(theta) * theta_to_q for theta in iq_data.q]
+            scaling_factor = 1.0 / (analyzer_solid_angle * self.thickness)
+            i_scaled = [i * scaling_factor for i in iq_data.i]
+            e_scaled = [e * scaling_factor for e in iq_data.e]
 
-            for q, values in sum_dict.items():
-                q_cleaned.append(q)
-                i_cleaned.append(values["I_sum"] / values["I_count"])
-                e_cleaned.append(math.sqrt(values["E_sum_squares"]))
-
-            return q_cleaned, i_cleaned, e_cleaned
-
-        assert self.size > 0
-
-        initial_vals = [3.8e-6, 0.1, 0.8]
-        peak_area = None
-        q_offset = None
-
-        for b in range(self.num_of_banks):
-            bank = b + 1
-
-            # 2*(Pi^2)*HarNo/(PrimWavel*3600*180)
-            h_scale = 2 * (math.pi**2.0) * bank / (self.experiment.prim_wave * 3600.0 * 180.0)
-            # VertScale=VertAngle*(DarWidth/HarNo)*Pi/(3600*180)*Sthick//10
-            v_scale = (
-                self.experiment.v_angle
-                * (self.experiment.darwin_width / bank)
-                * math.pi
-                / (3600.0 * 180.0)
-                * self.thickness
-            )
-
-            if guess_init:
-                initial_vals = _generate_initial_parameters(np.array(self.data.q), np.array(self.data.i))
-
-            best_vals, sigma = curve_fit(
-                _gaussian,
-                np.array(self.data.q),
-                np.array(self.data.i),
-                p0=initial_vals,
-                sigma=self.data.e,
-                maxfev=100000,
-            )
-
-            initial_vals = list(best_vals)
-            peak_area = (
-                1.0
-                / (initial_vals[1] * math.sqrt(2 * math.pi))
-                * initial_vals[1]
-                * math.sqrt(2.0)
-                / math.sqrt(2 * math.pi)
-            )
-            dar_test = initial_vals[1] * math.sqrt(2.0) * (math.pi) ** 0.5 * bank / self.experiment.darwin_width
-
-            if dar_test <= 0.13:
-                q_offset = initial_vals[2]
-            else:
-                q_offset = 0.0
-
-            q_scaled = [math.fabs((q - q_offset) * h_scale) for q in self.data.q]
-            i_scaled = [i / (v_scale * peak_area) for i in self.data.i]
-            e_scaled = [e / (v_scale * peak_area) for e in self.data.e]
-
-            q_cleaned, i_cleaned, e_cleaned = _clean_iq(q_scaled, i_scaled, e_scaled)
+            q_cleaned, i_cleaned, e_cleaned = self._combine_duplicate_q_points(q_scaled, i_scaled, e_scaled)
             iq_scaled = IQData(q=q_cleaned, i=i_cleaned, e=e_cleaned, t=[])
-
             self.data_scaled.append(iq_scaled)
 
         q_range = f"{min(self.data_scaled[0].q)} - {max(self.data_scaled[0].q)}"
         logging.info(f"Rescaled data for sample {self.name}, Q-range: {q_range} 1/angstrom\n")
         return
 
-    def stitch_data(self):
-        """Stitch scans together and store in property `self.data`"""
+    def stitch_scans(self):
+        """Stitch scan data from each detector bank into per-bank intensity curves.
 
+        For each detector bank (harmonic), combine all scans in ``self.scans`` onto a single
+        Intensity-versus-Q profile. Detector intensities and errors are expected to
+        already be normalized by ``Scan.normalize_by_monitor`` before being added
+        to the stitched output.
+
+        Notice that at this stage, the "Q" values are actually analyzer-motor angles,
+        that is, detector bank ``iq_data.q`` values are analyzer-motor angles (in arcsec units).
+
+        If two or more scans contain the same "Q" value, their intensities are combined
+        into one point using inverse-variance weighting, and the combined uncertainty
+        is stored as the square root of the inverse summed weights.
+
+        After all scans for a bank are processed, the stitched points are sorted by Q
+
+        The method also generates log messages for the raw scan theta ranges
+        and converted Q ranges in ``1/angstrom`` for the first detector bank.
+        Results are stored on ``self.detector_data``; no value is returned.
+        """
+        # Build one stitched Q/I/E curve for each detector bank(harmonic).
         for bank in range(self.num_of_banks):
             momentum_transfer = []
             intensity = []
@@ -554,26 +588,28 @@ class Sample(BaseModel):
             # transmission = []  # omitted for now
 
             for scan in self.scans:
-                it = list(
-                    zip(
-                        scan.monitor_data.iq_data.q,
-                        scan.monitor_data.iq_data.i,
-                        scan.monitor_data.iq_data.e,
-                        scan.detector_data[bank].iq_data.i,
-                        scan.detector_data[bank].iq_data.e,
-                    )
+                scan_data = zip(
+                    scan.detector_data[bank].iq_data.q,
+                    scan.detector_data[bank].iq_data.i,
+                    scan.detector_data[bank].iq_data.e,
                 )
 
-                for mq, mi, me, di, de in it:
-                    if mq in momentum_transfer:
-                        idx = momentum_transfer.index(mq)
-                        var = error[idx] ** 2 + (de / mi) ** 2
-                        intensity[idx] = (intensity[idx] * (error[idx] ** 2) + (di / mi) * (de / mi) ** 2) / var
-                        error[idx] = var**0.5
+                for scan_q, detector_intensity, detector_error in scan_data:
+                    if scan_q in momentum_transfer:
+                        # Merge repeated Q values from multiple scans using inverse-variance weights.
+                        matched_q_index = momentum_transfer.index(scan_q)
+                        matched_weight = 1.0 / error[matched_q_index] ** 2
+                        detector_weight = 1.0 / detector_error**2
+                        combined_weight = matched_weight + detector_weight
+                        intensity[matched_q_index] = (
+                            intensity[matched_q_index] * matched_weight + detector_intensity * detector_weight
+                        ) / combined_weight
+                        error[matched_q_index] = (1.0 / combined_weight) ** 0.5
                     else:
-                        momentum_transfer.append(mq)
-                        intensity.append(di / mi)
-                        error.append(de / mi)
+                        # Add Q values that have not appeared in earlier scans.
+                        momentum_transfer.append(scan_q)
+                        intensity.append(detector_intensity)
+                        error.append(detector_error)
 
             # Sort by momentum transfer (outside the scan loop, inside the bank loop)
             sorted_indices = np.argsort(momentum_transfer)
@@ -581,6 +617,7 @@ class Sample(BaseModel):
             intensity = np.array(intensity)[sorted_indices]
             error = np.array(error)[sorted_indices]
 
+            # Store the stitched curve for this detector bank.
             self.detector_data.append(
                 IQData(
                     q=momentum_transfer.tolist(),
@@ -590,20 +627,82 @@ class Sample(BaseModel):
             )
         logging.info(f"Scans stitched together for sample {self.name}.\n")
 
-        h_scale = 2 * (math.pi**2.0) * 1.0 / (self.experiment.prim_wave * 3600.0 * 180.0)
+        theta_to_q = 2 * (math.pi**2.0) * 1.0 / (self.experiment.prim_wave * 3600.0 * 180.0)
         theta_range_msg = ""
         q_range_msg = ""
 
+        # Log raw theta ranges and converted Q ranges for each scan. Remember at this stage in the reduction,
+        # scan.detector_data[0].iq_data.q stores analyzer-motor angles, not yet converted to Q values
         for scan in self.scans:
-            q_range = f"{min(scan.detector_data[0].iq_data.q)} - {max(scan.detector_data[0].iq_data.q)}"
-            theta_range_msg += f"Theta range for scan {scan.number}: {q_range}\n"
-
-            temp_q = [math.fabs(q * h_scale) for q in scan.detector_data[0].iq_data.q]
+            theta_range = f"{min(scan.detector_data[0].iq_data.q)} - {max(scan.detector_data[0].iq_data.q)}"
+            theta_range_msg += f"Theta range for scan {scan.number}: {theta_range}\n"
+            temp_q = [math.fabs(theta * theta_to_q) for theta in scan.detector_data[0].iq_data.q]
             q_range_msg += f"Q range for scan {scan.number}: {min(temp_q)} - {max(temp_q)} 1/angstrom\n"
 
         logging.info(theta_range_msg)
         logging.info(q_range_msg)
         return
+
+    def rocking_curve_centering(self) -> float:
+        """Center the stitched rocking curves by fitting a Gaussian peak to the rocking curve of the first harmonic.
+
+        Notice that the ``q`` values of the stitched rocking curves are analyzer motor angles at this
+        stage of reduction, not yet converted to Q values.
+        The first harmonic is fit to a Gaussian over the  mostly symmetric angle range ``[q_min, -q_min]``,
+        where ``q_min`` is the minimum analyzier motor angle. It will be a negative value.
+        The center of the fitted Gaussian represents the value of the analyzer motor angle at which
+        the analyzer reflects neutrons that have not been scattered by the sample. It should be very close to zero.
+
+        Returns
+        -------
+        float
+            Fitted first-harmonic motor-angle center.
+        """
+        assert self.detector_data, "Detector data must be stitched before centering."
+
+        first_harmonic_rocking_curve = self.detector_data[0]
+        if not first_harmonic_rocking_curve.q:
+            raise ValueError("Cannot center rocking curve because first-harmonic curve is empty.")
+
+        q = np.array(first_harmonic_rocking_curve.q)
+        intensity = np.array(first_harmonic_rocking_curve.i)
+        error = np.array(first_harmonic_rocking_curve.e)
+
+        q_min = float(np.min(q))
+        if q_min >= 0:
+            raise ValueError("Can't center rocking curve because angles don't include negative values.")
+
+        fit_mask = (q >= q_min) & (q <= -q_min)
+        q_fit = q[fit_mask]
+        intensity_fit = intensity[fit_mask]
+        error_fit = error[fit_mask] if len(error) == len(q) else None
+
+        if len(q_fit) < 3:
+            raise ValueError("Can't center rocking curve because fewer than three points are in the symmetric range.")
+
+        # Initial guess for Gaussian parameters: background, amplitude, sigma, center
+        initial_guess = {
+            "background": float(np.min(intensity_fit)),
+            "amplitude": float(np.max(intensity_fit) - np.min(intensity_fit)),
+            "sigma": float(max(np.std(q_fit), np.finfo(float).eps)),
+            "center": float(q_fit[np.argmax(intensity_fit)]),
+        }
+
+        best_vals, _sigma = curve_fit(
+            _gaussian,
+            q_fit,
+            intensity_fit,
+            p0=list(initial_guess.values()),
+            sigma=error_fit,
+            maxfev=100000,
+        )
+        q_offset = float(best_vals[3])  # the center of the fitted Gaussian
+
+        for rocking_curve in self.detector_data:
+            rocking_curve.q = [float(harmonic_q - q_offset) for harmonic_q in rocking_curve.q]
+
+        logging.info(f"Centered rocking curves for sample {self.name} using offset {q_offset}.")
+        return q_offset
 
     def _match_or_interpolate(
         self,
@@ -644,7 +743,7 @@ class Sample(BaseModel):
             Scaling factor for background intensity before subtraction.
         """
 
-        if self.experiment.logbin:
+        if self.experiment.log_binning:
             assert self.is_log_binned, f"Sample {self.name} must be log-binned before background subtraction."
             assert background.is_log_binned, (
                 f"Background {background.name} must be log-binned before background subtraction."
@@ -868,35 +967,28 @@ class Experiment(BaseModel):
 
     Attributes
     ----------
-    config : str
+    config_file : str
         Path to the configuration file
+    config : dict
+        Configuration file loaded into a Python dictionary. Populated for both JSON and CSV config files
     output_dir : str | None
         Output folder for reduced data, default is current folder
     prim_wave : float
         Primary wavelength in Angstroms, default is 3.6
-    darwin_width : float
-        Darwin width, default is 5.1
     v_angle : float
         Vertical angle, default is 0.042
-    min_q : float
-        Minimum Q value for binning output, default is 1e-6
-    step_per_dec : int
-        Steps per decade in binning, default is 33
-    logbin : bool
+    log_binning : bool
         Flag for log-binning, default is False
     """
 
-    config: str = Field(..., description="Path to the configuration file")
+    config_file: str = Field(..., description="Path to the configuration file")
+    config: dict = Field(default_factory=dict, description="configuration file loaded into a Python dictionary")
     output_dir: str = Field("", description="Output folder for reduced data")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
-    darwin_width: float = Field(DARWIN_WIDTH, description="Darwin width")
     v_angle: float = Field(0.042, description="Vertical angle")
-    min_q: float = Field(1e-6, description="Minimum Q value for binning output")
-    step_per_dec: int = Field(33, description="Steps per decade in binning")
-    logbin: bool = Field(False, description="Flag for logbinning")
-    # Fields that are initialized in model_post_init and not expected from user input
-    folder: str = Field(default="", init=False, description="Working folder for this experiment")
+    log_binning: bool = Field(False, description="Flag for log-binning")
     num_of_banks: int = Field(default=4, init=False, description="Number of detector banks")
+    folder: str = Field(default="", init=False, description="Working folder for this experiment")
     background: "Sample | None" = Field(default=None, init=False, description="Background sample")
     samples: list["Sample"] = Field(default_factory=list, init=False, description="List of samples")
 
@@ -904,7 +996,7 @@ class Experiment(BaseModel):
         """Post-validation initializer"""
 
         # The working folder for this experiment, default is current folder
-        _setupfile = os.path.abspath(self.config)
+        _setupfile = os.path.abspath(self.config_file)
         self.folder = os.path.dirname(_setupfile)
 
         if bool(self.output_dir) is False:  # in case `output_dir` is an empty string
@@ -912,17 +1004,37 @@ class Experiment(BaseModel):
 
         self.num_of_banks: int = 4
 
-        if not os.path.exists(self.config):
-            raise FileNotFoundError(f"The file path: {self.config} does not exist")
+        if not os.path.exists(self.config_file):
+            raise FileNotFoundError(f"The file path: {self.config_file} does not exist")
 
-        self.folder = os.path.dirname(self.config)
-        background, samples = read_config(self.config)
+        self.folder = os.path.dirname(self.config_file)
+        self.config = read_config(self.config_file)
+
+        self.log_binning = cast_to_bool(self.config["binning"]["log_binning"])
+
+        background = self.config["background"]
         if background is None:
-            logging.warning("No background sample defined in the configuration file.")
+            logging.info("No background sample defined in the configuration file.")
             self.background = None
         else:
             self.background = Sample(**background, experiment=self)
-        self.samples = [Sample(**s, experiment=self) for s in samples]
+
+        self.samples = [Sample(**s, experiment=self) for s in self.config["samples"]]
+
+    def amend_log_binning(self, logbin: bool) -> None:
+        """Override the log-binning setting with the command-line --logbin flag.
+
+        For backwards compatibility when user enters a CSV file
+
+        Parameters
+        ----------
+        logbin : bool
+            When True, enables log-binning regardless of what the config file says.
+            When False, the config-file value set during initialisation is preserved.
+        """
+        if logbin:
+            self.log_binning = True
+            self.config["binning"]["log_binning"] = True
 
     def reduce(self, output_dir: str | None = None):
         """Reduce the USANS data
@@ -937,10 +1049,11 @@ class Experiment(BaseModel):
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-        try:
-            self.background.reduce()
-        except Exception as e:  # noqa BLE001
-            logging.exception(f"Cannot reduce background {self.background.name}: {e}")
+        if self.background:
+            try:
+                self.background.reduce()
+            except Exception as e:  # noqa BLE001
+                logging.exception(f"Cannot reduce background {self.background.name}: {e}")
 
         for sample in self.samples:
             try:
@@ -966,7 +1079,12 @@ def parse_args():
 
     parser = argparse.ArgumentParser(description="USANS Data Reduction")
     parser.add_argument("path", help="Path to the configuration file")
-    parser.add_argument("-l", "--logbin", action="store_true", help="Enable log-binning of data during reduction")
+    parser.add_argument(
+        "-l",
+        "--logbin",
+        action="store_true",
+        help="Enable log-binning of data during reduction. Option only valid for CSV files",
+    )
     parser.add_argument("-o", "--output", default="", help="Output folder for reduced data (default: current folder)")
     args = parser.parse_args()
     return args
@@ -975,7 +1093,9 @@ def parse_args():
 def main():
     """Main function to run USANS data reduction"""
     args = parse_args()
-    experiment = Experiment(config=args.path, logbin=args.logbin, output_dir=args.output)
+    experiment = Experiment(config_file=args.path, output_dir=args.output)
+    if is_csv(args.path):  # backwards compatibility for CSV files, which don't have log-binning settings
+        experiment.amend_log_binning(args.logbin)
     experiment.reduce()
     generate_report(config_file_path=args.path, output_dir=experiment.output_dir)
 

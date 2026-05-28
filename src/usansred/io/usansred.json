@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neutrons.github.io/usansred/schemas/usansred.json",
+  "title": "USANSRED reduction configuration",
+  "description": "Configuration schema for JSON setup files consumed by usansred.io.read.config_from_json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["samples"],
+  "properties": {
+    "samples": {
+      "description": "Sample configurations to reduce.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/sample"
+      }
+    },
+    "background": {
+      "description": "Optional background sample configuration. If omitted or null, reduction proceeds without a configured background.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/$defs/background"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "save_all_harmonics": {
+      "description": "Save reduced data for higher harmonics",
+      "type": "boolean",
+      "default": false
+    },
+    "binning": {
+      "description": "Binning configuration for the reduced data.",
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "log_binning": {
+          "description": "Enable logarithmic Q-binning of reduced data",
+          "examples": [0, 1, "", false, true],
+          "default": false,
+          "anyOf": [
+            {"type": "boolean"},
+            {"type": "integer"},
+            {"type": "string"}
+          ]
+        },
+        "steps_per_decade": {
+          "description": "step per decade when log binning",
+          "type": "integer",
+          "default": 33
+        },
+        "q_min": {
+          "description": "Minimum Q value (1/Angstrom) for the log-binned output grid",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1e-6
+        }
+      }
+    }
+  },
+  "$defs": {
+    "background": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "start_scan_num", "num_of_scans", "thickness"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "start_scan_num": {
+          "$ref": "#/$defs/scanNumber"
+        },
+        "num_of_scans": {
+          "$ref": "#/$defs/scanCount"
+        },
+        "thickness": {
+          "$ref": "#/$defs/thickness"
+        },
+        "exclude": {
+          "description": "Optional list of scan numbers to skip during reduction.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/scanNumber"
+          },
+          "default": []
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "start_scan_num", "num_of_scans", "thickness"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "start_scan_num": {
+          "$ref": "#/$defs/scanNumber"
+        },
+        "num_of_scans": {
+          "$ref": "#/$defs/scanCount"
+        },
+        "thickness": {
+          "$ref": "#/$defs/thickness"
+        },
+        "exclude": {
+          "description": "Optional list of scan numbers to skip during reduction.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/scanNumber"
+          },
+          "default": []
+        }
+      }
+    },
+    "name": {
+      "description": "Sample or background name.",
+      "type": "string",
+      "minLength": 1
+    },
+    "scanNumber": {
+      "description": "Run or scan number. Numeric strings are accepted because read.py casts these values with int().",
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        }
+      ]
+    },
+    "scanCount": {
+      "description": "Number of scans in the sequence. Numeric strings are accepted because read.py casts this value with int().",
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      ]
+    },
+    "thickness": {
+      "description": "Sample thickness in centimeters. Numeric strings are accepted because read.py casts this value with float().",
+      "oneOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "string",
+          "pattern": "^\\+?(?:(?:0*[1-9][0-9]*)(?:\\.[0-9]*)?|(?:0*\\.[0-9]*[1-9][0-9]*))(?:[eE][+-]?[0-9]+)?$"
+        }
+      ]
+    }
+  }
+}

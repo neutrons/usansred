@@ -14,7 +14,6 @@ from mantid.simpleapi import (
     LoadEventNexus,
     Rebin,
     StepScan,
-    SumSpectra,
     mtd,
 )
 from matplotlib import use
@@ -215,8 +214,8 @@ def main():
                         OutputWorkspace="USANS_scan_detector",
                     )
                     mtd["USANS_scan_detector"].getAxis(1).getUnit().setLabel("Counts", "Counts")
-                    x_data = mtd["USANS_scan_detector"].readX(0)
-                    y_data = mtd["USANS_scan_detector"].readY(0)
+                    x_data = mtd["USANS_scan_detector"].readX(0)  # rotation angle (arcsec) of the analyzer
+                    y_data = mtd["USANS_scan_detector"].readY(0)  # total counts at detector for each analyzer angle
                     e_data = mtd["USANS_scan_detector"].readE(0)
 
                     if i == 0:
@@ -401,7 +400,7 @@ def main():
     if not os.path.exists(autodir):
         os.makedirs(autodir)
 
-    exp = reduce.Experiment(config=autocsvfile)
+    exp = reduce.Experiment(config_file=autocsvfile)
     exp.reduce(output_dir=autodir)
 
     generate_report(config_file_path=autocsvfile, output_dir=exp.outputFolder)

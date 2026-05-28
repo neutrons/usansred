@@ -108,6 +108,37 @@ class TestScanConvertXYToIQ:
         np.testing.assert_allclose(iq.e, [math.sqrt(6.0)])
 
 
+class TestScanNormalizeByMonitor:
+    """Tests for Scan.normalize_by_monitor."""
+
+    def test_normalizes_detector_iq_data_by_monitor_counts(self, mock_experiment_2banks):
+        """Detector intensities and errors should be normalized for each bank."""
+        scan = Scan(number=0, experiment=mock_experiment_2banks, load_data=False)
+        scan.monitor_data = MonitorData(iq_data=IQData(q=[1.0, 2.0], i=[100.0, 200.0], e=[10.0, 20.0]))
+        scan.detector_data = [
+            MonitorData(iq_data=IQData(q=[1.0, 2.0], i=[50.0, 100.0], e=[5.0, 10.0], t=[7.0, 8.0])),
+            MonitorData(iq_data=IQData(q=[1.0, 2.0], i=[25.0, 50.0], e=[2.5, 5.0])),
+        ]
+
+        scan.normalize_by_monitor()
+
+        expected_first_error = [
+            math.sqrt(5.0**2 + (0.5 * 10.0) ** 2) / 100.0,
+            math.sqrt(10.0**2 + (0.5 * 20.0) ** 2) / 200.0,
+        ]
+        expected_second_error = [
+            math.sqrt(2.5**2 + (0.25 * 10.0) ** 2) / 100.0,
+            math.sqrt(5.0**2 + (0.25 * 20.0) ** 2) / 200.0,
+        ]
+
+        np.testing.assert_allclose(scan.detector_data[0].iq_data.i, [0.5, 0.5])
+        np.testing.assert_allclose(scan.detector_data[0].iq_data.e, expected_first_error)
+        assert scan.detector_data[0].iq_data.q == [1.0, 2.0]
+        assert scan.detector_data[0].iq_data.t == [7.0, 8.0]
+        np.testing.assert_allclose(scan.detector_data[1].iq_data.i, [0.25, 0.25])
+        np.testing.assert_allclose(scan.detector_data[1].iq_data.e, expected_second_error)
+
+
 class TestScanReadXYFile:
     """Tests for Scan.read_xy_file."""
 
