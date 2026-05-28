@@ -6,7 +6,7 @@ Check all that apply:
 - [ ] Source added/refactored
 - [ ] Added unit tests
 - [ ] Added integration tests
-- [ ] Verified that tests requiring the /SNS and /HFIR filesystems pass without fail
+- [ ] ~Verified that tests requiring the /SNS and /HFIR filesystems pass without fail~
 
 **References:**
 - Links to IBM EWM items:
