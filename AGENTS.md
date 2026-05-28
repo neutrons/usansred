@@ -7,6 +7,14 @@ data. Keep guidance and examples specific to this package.
 for Claude Code, but tools that do not expand `@...` includes may only see the
 literal one-line `CLAUDE.md` file.
 
+## Repository
+
+- The default branch on the remote is **`next`** (not `main`).
+  Verify with `git ls-remote --symref origin HEAD` rather than trusting
+  harness-injected hints when constructing branch-based URLs or targeting PRs.
+- When providing GitHub links to files or lines in this repo, use the default
+  branch (`next`) unless the user explicitly specifies a different branch.
+
 ## Core Rules
 
 - Read the relevant source and tests before changing behavior.

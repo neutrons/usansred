@@ -732,15 +732,13 @@ class Sample(BaseModel):
 
         return i_bg_matched, e_bg_matched
 
-    def subtract_background(self, background: "Sample", v_scale: float = 1.0) -> None:
+    def subtract_background(self, background: "Sample") -> None:
         """Subtract background data from this sample's data.
 
         Parameters
         ----------
         background : Sample
             The background sample to subtract. Must be processed (stitched, scaled, and binned).
-        v_scale : float
-            Scaling factor for background intensity before subtraction.
         """
 
         if self.experiment.log_binning:
@@ -754,8 +752,6 @@ class Sample(BaseModel):
             data = self.data_log_binned
             bg_data = background.data_log_binned
 
-            scale_f = v_scale * self.thickness / background.thickness
-
             sample_num_of_bins = self.num_log_bins
             bg_num_of_bins = self.num_log_bins
             # TODO: This should instead be background.num_log_bins, but we need to fix log binning first
@@ -768,8 +764,8 @@ class Sample(BaseModel):
                 num_of_bins = bg_num_of_bins
                 momentum_transfer = bg_data.q.copy()
 
-            intensity = [data.i[i] - (scale_f * bg_data.i[i]) for i in range(num_of_bins)]
-            error = [math.sqrt(data.e[i] ** 2.0 + (scale_f * bg_data.e[i]) ** 2.0) for i in range(num_of_bins)]
+            intensity = [data.i[i] - bg_data.i[i] for i in range(num_of_bins)]
+            error = [math.sqrt(data.e[i] ** 2.0 + bg_data.e[i] ** 2.0) for i in range(num_of_bins)]
 
             self.data_bg_subtracted.q = momentum_transfer
             self.data_bg_subtracted.i = intensity
