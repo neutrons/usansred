@@ -75,7 +75,7 @@ jobs:
           cp ${{ env.PKG_NAME }}-*.conda /tmp/local-channel/linux-64
 
       - name: Verify Conda Package
-        uses: neutrons/conda-actions/pkg-verify@v1
+        uses: neutrons/conda-actions/pkg-verify@v2
         with:
           python-version: "3.11"
           package-name: ${{ env.PKG_NAME }}
@@ -119,7 +119,7 @@ jobs:
 
       - name: Remove old packages
         if: github.ref == 'refs/heads/next'
-        uses: neutrons/conda-actions/pkg-remove@v1
+        uses: neutrons/conda-actions/pkg-remove@v2
         with:
           anaconda_token: ${{ secrets.ANACONDA_TOKEN }}
           organization: neutrons
