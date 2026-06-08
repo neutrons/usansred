@@ -50,6 +50,7 @@ def _to_int(v: object) -> object:
 def _to_float(v: object) -> object:
     return float(v) if isinstance(v, str) else v
 
+
 class _ScanBase(BaseModel):
     """Base class for scan configurations"""
 
