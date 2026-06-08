@@ -112,6 +112,7 @@ class BackgroundConfig(_ScanBase):
     def _coerce_thickness(cls, v):
         return _to_float(v)
 
+
 class BinningConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
