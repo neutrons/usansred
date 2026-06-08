@@ -179,7 +179,7 @@ def load_samples(config_file: str) -> list[Sample]:
     """Load sample definitions from a USANSRED setup file."""
     experiment = Experiment(config_file=config_file)
     config = read_config(config_file)
-    samples = config["samples"]
+    samples = config.samples
     logging.info("Loaded %d samples from %s", len(samples), config_file)
     return [Sample(**sample, experiment=experiment) for sample in samples]
 ```
@@ -235,10 +235,10 @@ def test_read_config_json_excludes_scans():
     config_file = DATA_DIR / "config.json"
 
     config = read_config(config_file)
-    samples = config["samples"]
+    samples = config.samples
 
-    assert samples[1]["name"] == "sample2"
-    assert samples[1]["exclude"] == [45307, 45308]
+    assert samples[1].name == "sample2"
+    assert samples[1].exclude == [45307, 45308]
 ```
 
 ## Review Checklist
