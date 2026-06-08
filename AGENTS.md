@@ -181,7 +181,7 @@ def load_samples(config_file: str) -> list[Sample]:
     config = read_config(config_file)
     samples = config.samples
     logging.info("Loaded %d samples from %s", len(samples), config_file)
-    return [Sample(**sample, experiment=experiment) for sample in samples]
+    return [Sample(**sample.model_dump(), experiment=experiment) for sample in samples]
 ```
 
 ## Testing Guidance
