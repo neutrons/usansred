@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from scipy.optimize import curve_fit
 
 from usansred.io.read import read_config
-from usansred.model import IQData, MonitorData, XYData
+from usansred.model import IQData, MonitorData, ReductionConfig, XYData
 from usansred.summary import generate_report
 
 # separate logging in file and console
@@ -966,8 +966,8 @@ class Experiment(BaseModel):
     ----------
     config_file : str
         Path to the configuration file
-    config : dict
-        Configuration file loaded into a Python dictionary. Populated for both JSON and CSV config files
+    config : ReductionConfig
+        Validated reduction configuration. Populated for both JSON and CSV config files
     output_dir : str | None
         Output folder for reduced data, default is current folder
     prim_wave : float
@@ -979,7 +979,7 @@ class Experiment(BaseModel):
     """
 
     config_file: str = Field(..., description="Path to the configuration file")
-    config: dict = Field(default_factory=dict, description="configuration file loaded into a Python dictionary")
+    config: ReductionConfig = Field(default=None, init=False, description="Validated reduction configuration")
     output_dir: str = Field("", description="Output folder for reduced data")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
     v_angle: float = Field(0.042, description="Vertical angle")

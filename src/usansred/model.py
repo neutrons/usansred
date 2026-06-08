@@ -126,7 +126,7 @@ class BinningConfig(BaseModel):
         return cast_to_bool(v)
 
 
-class ReductionInput(BaseModel):
+class ReductionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     samples: Annotated[list[SampleConfig], Field(min_length=1)]

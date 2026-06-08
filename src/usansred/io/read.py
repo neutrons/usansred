@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from usansred.model import ReductionInput
+from usansred.model import ReductionConfig
 
 
 def _format_validation_error(e: ValidationError) -> str:
@@ -15,12 +15,12 @@ def _format_validation_error(e: ValidationError) -> str:
     return f"{prefix}{first['msg']}"
 
 
-def config_from_csv(csv_path: str) -> ReductionInput:
+def config_from_csv(csv_path: str) -> ReductionConfig:
     """Reads the reduction configuration from a CSV file.
 
     Returns
     -------
-    ReductionInput
+    ReductionConfig
         Validated reduction configuration.
     """
     import csv
@@ -59,29 +59,29 @@ def config_from_csv(csv_path: str) -> ReductionInput:
                     samples.append(sample)
 
     try:
-        return ReductionInput.model_validate({"background": background, "samples": samples})
+        return ReductionConfig.model_validate({"background": background, "samples": samples})
     except ValidationError as e:
         raise ValueError(_format_validation_error(e)) from e
 
 
-def config_from_json(json_path: str) -> ReductionInput:
+def config_from_json(json_path: str) -> ReductionConfig:
     """Reads the reduction configuration from a JSON file.
 
     Returns
     -------
-    ReductionInput
+    ReductionConfig
         Validated reduction configuration.
     """
     with open(json_path, "r") as f:
         raw = json.load(f)
 
     try:
-        return ReductionInput.model_validate(raw)
+        return ReductionConfig.model_validate(raw)
     except ValidationError as e:
         raise ValueError(_format_validation_error(e)) from e
 
 
-def read_config(file_path: str) -> ReductionInput:
+def read_config(file_path: str) -> ReductionConfig:
     """Wrapper function to read configuration from different file formats.
 
     Parameters
@@ -91,7 +91,7 @@ def read_config(file_path: str) -> ReductionInput:
 
     Returns
     -------
-    ReductionInput
+    ReductionConfig
         Validated reduction configuration.
     """
     ext = Path(file_path).suffix.lower()
