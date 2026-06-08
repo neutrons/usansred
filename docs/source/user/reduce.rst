@@ -38,10 +38,6 @@ The JSON format provides the same information in a structured layout.
 A JSON setup file contains a required samples entry, optional background entry, and optional configuration flags.
 Each background and sample object contains descriptive keys for each field.
 
-A JSON schema (usansred.json) is provided in the repository to validate the JSON setup file.
-It contains valid input structures and types, default values for optional properties,
-and descriptions for each property.
-
 .. code-block:: javascript
 
    {

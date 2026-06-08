@@ -123,7 +123,6 @@ pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
 finddata = { version = "=0.10.1", channel = "neutrons" }
-jsonschema = "*"
 
 # Conda packages (no PyPi) to be enumerated within the conda package to be built.
 [tool.pixi.package.run-dependencies]
@@ -133,7 +132,6 @@ pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
 finddata = { version = "=0.10.1", channel = "neutrons" }
-jsonschema = "*"
 
 [tool.pixi.package]
 name = "usansred"

@@ -99,16 +99,6 @@ class BackgroundConfig(_ScanBase):
         return _to_float(v)
 
 
-class EmptyCellConfig(_ScanBase):
-    thickness: Annotated[float, Field(gt=0)] | None = None  # optional
-    is_background: bool = False
-
-    @field_validator("thickness", mode="before")
-    @classmethod
-    def _coerce_thickness(cls, v):
-        return None if v is None else _to_float(v)
-
-
 class BinningConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -127,6 +117,5 @@ class ReductionInput(BaseModel):
 
     samples: Annotated[list[SampleConfig], Field(min_length=1)]
     background: BackgroundConfig | None = None
-    empty_cell: EmptyCellConfig | None = None
     save_all_harmonics: bool = False
     binning: BinningConfig = Field(default_factory=BinningConfig)
