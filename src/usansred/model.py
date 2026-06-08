@@ -100,11 +100,17 @@ class BackgroundConfig(_ScanBase):
     thickness: Annotated[float, Field(gt=0)]
     is_background: bool = True  # fixed default, not settable by users
 
+    @field_validator("is_background")
+    @classmethod
+    def _force_is_background(cls, v):
+        if v is not True:
+            raise ValueError("background.is_background must be true")
+        return True
+
     @field_validator("thickness", mode="before")
     @classmethod
     def _coerce_thickness(cls, v):
         return _to_float(v)
-
 
 class BinningConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
