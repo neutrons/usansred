@@ -979,7 +979,7 @@ class Experiment(BaseModel):
     """
 
     config_file: str = Field(..., description="Path to the configuration file")
-    config: ReductionConfig = Field(default=None, init=False, description="Validated reduction configuration")
+    config: ReductionConfig | None = Field(default=None, init=False, description="Validated reduction configuration")
     output_dir: str = Field("", description="Output folder for reduced data")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
     v_angle: float = Field(0.042, description="Vertical angle")
