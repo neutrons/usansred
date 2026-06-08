@@ -27,6 +27,18 @@
         }
       ]
     },
+    "empty_cell": {
+      "description": "Optional empty-cell configuration. Identical to background but thickness is optional.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/$defs/empty_cell"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "save_all_harmonics": {
       "description": "Save reduced data for higher harmonics",
       "type": "boolean",
@@ -67,6 +79,34 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "start_scan_num", "num_of_scans", "thickness"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "start_scan_num": {
+          "$ref": "#/$defs/scanNumber"
+        },
+        "num_of_scans": {
+          "$ref": "#/$defs/scanCount"
+        },
+        "thickness": {
+          "$ref": "#/$defs/thickness"
+        },
+        "exclude": {
+          "description": "Optional list of scan numbers to skip during reduction.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/scanNumber"
+          },
+          "default": []
+        }
+      }
+    },
+    "empty_cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "start_scan_num", "num_of_scans"],
       "properties": {
         "name": {
           "$ref": "#/$defs/name"

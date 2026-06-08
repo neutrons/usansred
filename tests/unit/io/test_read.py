@@ -12,8 +12,9 @@ from unittest.mock import patch
 import pytest
 from jsonschema import Draft202012Validator
 
-from usansred.io.read import cast_to_bool, read_config
+from usansred.io.read import read_config
 from usansred.reduce import Experiment, Sample
+from usansred.utils import cast_to_bool
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
@@ -46,17 +47,17 @@ def test_cast_to_bool(value, expected):
 def test_read_config_csv():
     """Test reading configuration from a CSV file."""
 
-    csv_file = DATA_DIR / "example-config.csv"
+    csv_file = DATA_DIR / "config.csv"
     config = read_config(csv_file)
-    background = config["background"]
-    samples = config["samples"]
+    background = config.background
+    samples = config.samples
 
     with patch.object(Experiment, "model_post_init", return_value=None):
         experiment = Experiment(config_file="dummy.csv")
 
     with patch.object(Sample, "model_post_init", return_value=None):
-        background = Sample(**background, experiment=experiment) if background else None
-        samples = [Sample(**s, experiment=experiment) for s in samples]
+        background = Sample(**background.model_dump(), experiment=experiment) if background else None
+        samples = [Sample(**s.model_dump(), experiment=experiment) for s in samples]
 
     assert background is not None
     assert len(samples) == 2
@@ -73,26 +74,26 @@ def test_read_config_csv_applies_schema_defaults(tmp_path):
 
     config = read_config(csv_file)
 
-    assert config["save_all_harmonics"] is False
-    assert config["binning"]["log_binning"] is False
-    assert config["binning"]["steps_per_decade"] == 33
-    assert config["samples"][0]["exclude"] == []
+    assert config.save_all_harmonics is False
+    assert config.binning.log_binning is False
+    assert config.binning.steps_per_decade == 33
+    assert config.samples[0].exclude == []
 
 
 def test_read_config_json():
     """Test reading configuration from a JSON file."""
 
-    json_file = DATA_DIR / "example-config.json"
+    json_file = DATA_DIR / "config.json"
     config = read_config(json_file)
-    background = config["background"]
-    samples = config["samples"]
+    background = config.background
+    samples = config.samples
 
     with patch.object(Experiment, "model_post_init", return_value=None):
         experiment = Experiment(config_file="dummy.json")
 
     with patch.object(Sample, "model_post_init", return_value=None):
-        background = Sample(**background, experiment=experiment) if background else None
-        samples = [Sample(**s, experiment=experiment) for s in samples]
+        background = Sample(**background.model_dump(), experiment=experiment) if background else None
+        samples = [Sample(**s.model_dump(), experiment=experiment) for s in samples]
 
     assert background is not None
     assert background.name == "example_background"
@@ -122,10 +123,10 @@ def test_read_config_json_applies_schema_defaults(tmp_path):
 
     config = read_config(json_file)
 
-    assert config["save_all_harmonics"] is False
-    assert config["binning"]["log_binning"] is False
-    assert config["binning"]["steps_per_decade"] == 33
-    assert config["samples"][0]["exclude"] == []
+    assert config.save_all_harmonics is False
+    assert config.binning.log_binning is False
+    assert config.binning.steps_per_decade == 33
+    assert config.samples[0].exclude == []
 
 
 def test_usansred_schema_treats_save_all_harmonics_as_optional():
@@ -164,7 +165,7 @@ def test_read_config_json_missing_samples_raises(tmp_path):
         },
     )
 
-    with pytest.raises(ValueError, match="Required property 'samples' is missing"):
+    with pytest.raises(ValueError, match="Field required"):
         read_config(json_file)
 
 
@@ -184,7 +185,7 @@ def test_read_config_json_missing_sample_required_property_raises(tmp_path):
         },
     )
 
-    with pytest.raises(ValueError, match="Required property 'name' is missing"):
+    with pytest.raises(ValueError, match="Field required"):
         read_config(json_file)
 
 
@@ -206,24 +207,24 @@ def test_read_config_json_unexpected_property_raises(tmp_path):
         },
     )
 
-    with pytest.raises(ValueError, match="Additional properties are not allowed: 'unexpected'"):
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         read_config(json_file)
 
 
 def test_read_config_json_no_background():
     """Test reading configuration from a JSON file with no background sample."""
 
-    json_file = DATA_DIR / "example-config-no-bg.json"
+    json_file = DATA_DIR / "config-no-bg.json"
     config = read_config(json_file)
-    background = config["background"]
-    samples = config["samples"]
+    background = config.background
+    samples = config.samples
 
     with patch.object(Experiment, "model_post_init", return_value=None):
         experiment = Experiment(config_file="dummy.json")
 
     with patch.object(Sample, "model_post_init", return_value=None):
-        background = Sample(**background, experiment=experiment) if background else None
-        samples = [Sample(**s, experiment=experiment) for s in samples]
+        background = Sample(**background.model_dump(), experiment=experiment) if background else None
+        samples = [Sample(**s.model_dump(), experiment=experiment) for s in samples]
 
     assert background is None
     assert len(samples) == 2
