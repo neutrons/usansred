@@ -83,11 +83,17 @@ class SampleConfig(_ScanBase):
     thickness: Annotated[float, Field(gt=0)]
     is_background: bool = False
 
+    @field_validator("is_background")
+    @classmethod
+    def _forbid_background_flag(cls, v):
+        if v is not False:
+            raise ValueError("samples[].is_background must be false")
+        return False
+
     @field_validator("thickness", mode="before")
     @classmethod
     def _coerce_thickness(cls, v):
         return _to_float(v)
-
 
 class BackgroundConfig(_ScanBase):
     thickness: Annotated[float, Field(gt=0)]
