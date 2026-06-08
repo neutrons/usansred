@@ -95,6 +95,7 @@ class SampleConfig(_ScanBase):
     def _coerce_thickness(cls, v):
         return _to_float(v)
 
+
 class BackgroundConfig(_ScanBase):
     thickness: Annotated[float, Field(gt=0)]
     is_background: bool = True  # fixed default, not settable by users
