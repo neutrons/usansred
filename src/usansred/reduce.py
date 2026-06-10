@@ -992,7 +992,8 @@ class Experiment(BaseModel):
     @property
     def config(self) -> "ReductionConfig":
         """Validated reduction configuration, always set after construction."""
-        assert self._config is not None, "Experiment.config accessed before model_post_init completed"
+        if self._config is None:
+            raise RuntimeError("Experiment.config accessed before model_post_init completed")
         return self._config
 
     def model_post_init(self, _context: Any) -> None:  # noqa ANN401
