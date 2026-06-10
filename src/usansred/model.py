@@ -57,9 +57,12 @@ class _ScanBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: Annotated[str, Field(min_length=1, description="Sample/background name.")]
-    start_scan_num: Annotated[int, Field(ge=0, description="Starting scan number (numeric string or integer is valid).")]
+    start_scan_num: Annotated[
+        int, Field(ge=0, description="Starting scan number (numeric string or integer is valid).")
+    ]
     num_of_scans: Annotated[
-        int, Field(ge=1, description="Number of consecutive scans in the sequence (numeric string or integer is valid).")
+        int,
+        Field(ge=1, description="Number of consecutive scans in the sequence (numeric string or integer is valid)."),
     ]
     exclude: list[int] = Field(default_factory=list, description="Optional list of scans to skip during reduction.")
 
