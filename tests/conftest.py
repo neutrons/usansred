@@ -70,7 +70,7 @@ def mock_experiment():
         {
             "save_all_harmonics": False,
             "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6},
-            "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 0, "thickness": 0.1}],
+            "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 1, "thickness": 0.1}],
         }
     )
     exp.background = None
@@ -93,7 +93,7 @@ def mock_experiment_2banks():
         {
             "save_all_harmonics": False,
             "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6},
-            "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 0, "thickness": 0.1}],
+            "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 1, "thickness": 0.1}],
         }
     )
     exp.background = None
