@@ -101,7 +101,7 @@ channels = [
   "conda-forge",
   "mantid/label/main",
   "neutrons",
-  "https://prefix.dev/pixi-build-backends"
+  "https://prefix.dev/pixi-build-backends",
 ]
 
 [tool.pixi.environments]
@@ -138,11 +138,11 @@ name = "usansred"
 version = "1.0.0" # placeholder, overwritten by sync-version
 
 [tool.pixi.package.build]
-backend = { name = "pixi-build-python", version = "0.4.*"}
+backend = { name = "pixi-build-python", version = "0.4.*" }
 
 [tool.pixi.tasks]
 # Documentation
-build-docs = { cmd = 'sphinx-build -b html docs docs/_build', description = "Build documentation" }
+build-docs = { cmd = 'python scripts/generate_schema.py && sphinx-build -b html docs docs/_build', description = "Build documentation" }
 test-docs = { cmd = "sphinx-build -M doctest docs docs/_build", description = "Test building the documentation" }
 # Testing
 test = { description = "Run the test suite", cmd = "pytest" }

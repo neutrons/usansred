@@ -1,0 +1,159 @@
+{
+  "$defs": {
+    "BackgroundConfig": {
+      "additionalProperties": false,
+      "description": "Optional background sample configuration.",
+      "properties": {
+        "name": {
+          "description": "Sample/background name.",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "start_scan_num": {
+          "description": "Starting scan number (numeric string or integer is valid).",
+          "title": "Start Scan Num",
+          "type": "integer"
+        },
+        "num_of_scans": {
+          "description": "Number of consecutive scans in the sequence (numeric string or integer is valid).",
+          "title": "Num Of Scans",
+          "type": "integer"
+        },
+        "exclude": {
+          "description": "Optional list of scans to skip during reduction.",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Exclude",
+          "type": "array"
+        },
+        "thickness": {
+          "description": "Background sample thickness in cm.",
+          "exclusiveMinimum": 0,
+          "title": "Thickness",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "start_scan_num",
+        "num_of_scans",
+        "thickness"
+      ],
+      "title": "BackgroundConfig",
+      "type": "object"
+    },
+    "BinningConfig": {
+      "additionalProperties": false,
+      "description": "Q binning settings applied during reduction.",
+      "properties": {
+        "log_binning": {
+          "default": false,
+          "description": "Enable logarithmic Q binning.",
+          "title": "Log Binning",
+          "type": "boolean"
+        },
+        "steps_per_decade": {
+          "default": 33,
+          "description": "Number of Q bins per decade when log binning is enabled.",
+          "title": "Steps Per Decade",
+          "type": "integer"
+        },
+        "q_min": {
+          "default": 1e-06,
+          "description": "Minimum Q value in 1/\u00c5 for log binning.",
+          "exclusiveMinimum": 0,
+          "title": "Q Min",
+          "type": "number"
+        }
+      },
+      "title": "BinningConfig",
+      "type": "object"
+    },
+    "SampleConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for a single sample to reduce.",
+      "properties": {
+        "name": {
+          "description": "Sample/background name.",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "start_scan_num": {
+          "description": "Starting scan number (numeric string or integer is valid).",
+          "title": "Start Scan Num",
+          "type": "integer"
+        },
+        "num_of_scans": {
+          "description": "Number of consecutive scans in the sequence (numeric string or integer is valid).",
+          "title": "Num Of Scans",
+          "type": "integer"
+        },
+        "exclude": {
+          "description": "Optional list of scans to skip during reduction.",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Exclude",
+          "type": "array"
+        },
+        "thickness": {
+          "description": "Sample thickness in cm (numeric string or float is valid).",
+          "exclusiveMinimum": 0,
+          "title": "Thickness",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "start_scan_num",
+        "num_of_scans",
+        "thickness"
+      ],
+      "title": "SampleConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level configuration for a USANS reduction run.",
+  "properties": {
+    "samples": {
+      "description": "List of sample configurations to reduce.",
+      "items": {
+        "$ref": "#/$defs/SampleConfig"
+      },
+      "minItems": 1,
+      "title": "Samples",
+      "type": "array"
+    },
+    "background": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BackgroundConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Background (empty cell) configuration. Omit to skip background subtraction."
+    },
+    "save_all_harmonics": {
+      "default": false,
+      "description": "Save individual harmonic output files in addition to the combined result.",
+      "title": "Save All Harmonics",
+      "type": "boolean"
+    },
+    "binning": {
+      "$ref": "#/$defs/BinningConfig",
+      "description": "Q binning configuration."
+    }
+  },
+  "required": [
+    "samples"
+  ],
+  "title": "ReductionConfig",
+  "type": "object"
+}

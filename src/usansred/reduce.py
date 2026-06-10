@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
 
 from usansred.io.read import read_config
@@ -138,7 +138,7 @@ class Scan(BaseModel):
 
         Directly copies x to q, y to i, and t.
         For error, calculates based on a Poisson-like statistical model:
-            err = sqrt(|y - 0.5| + 0.5)
+        ``err = sqrt(|y - 0.5| + 0.5)``
         which ensures a minimum value to avoid zero error for low counts.
         """
         iq_data = IQData(
@@ -979,7 +979,7 @@ class Experiment(BaseModel):
     """
 
     config_file: str = Field(..., description="Path to the configuration file")
-    config: ReductionConfig | None = Field(default=None, init=False, description="Validated reduction configuration")
+    _config: ReductionConfig | None = PrivateAttr(default=None)
     output_dir: str = Field("", description="Output folder for reduced data")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
     v_angle: float = Field(0.042, description="Vertical angle")
@@ -988,6 +988,12 @@ class Experiment(BaseModel):
     folder: str = Field(default="", init=False, description="Working folder for this experiment")
     background: "Sample | None" = Field(default=None, init=False, description="Background sample")
     samples: list["Sample"] = Field(default_factory=list, init=False, description="List of samples")
+
+    @property
+    def config(self) -> "ReductionConfig":
+        """Validated reduction configuration, always set after construction."""
+        assert self._config is not None, "Experiment.config accessed before model_post_init completed"
+        return self._config
 
     def model_post_init(self, _context: Any) -> None:  # noqa ANN401
         """Post-validation initializer"""
@@ -1005,7 +1011,7 @@ class Experiment(BaseModel):
             raise FileNotFoundError(f"The file path: {self.config_file} does not exist")
 
         self.folder = os.path.dirname(self.config_file)
-        self.config = read_config(self.config_file)
+        self._config = read_config(self.config_file)
 
         self.log_binning = self.config.binning.log_binning
 

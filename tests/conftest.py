@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from mantid.simpleapi import config
 
+from usansred.model import ReductionConfig
 from usansred.reduce import Experiment
 
 this_module_path = sys.modules[__name__].__file__
@@ -65,7 +66,13 @@ def mock_experiment():
     exp.prim_wave = 3.6
     exp.log_binning = False
     exp.v_angle = 0.042
-    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6}}
+    exp._config = ReductionConfig.model_validate(
+        {
+            "save_all_harmonics": False,
+            "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6},
+            "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 0, "thickness": 0.1}],
+        }
+    )
     exp.background = None
     exp.samples = []
     return exp
@@ -82,7 +89,13 @@ def mock_experiment_2banks():
     exp.prim_wave = 3.6
     exp.log_binning = False
     exp.v_angle = 0.042
-    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6}}
+    exp._config = ReductionConfig.model_validate(
+        {
+            "save_all_harmonics": False,
+            "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6},
+            "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 0, "thickness": 0.1}],
+        }
+    )
     exp.background = None
     exp.samples = []
     return exp

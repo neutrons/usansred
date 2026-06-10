@@ -1,5 +1,6 @@
 .. using_reduce_script
 
+
 Reducing One (or more) Experiments
 ==================================
 
@@ -110,6 +111,18 @@ For example, create a file named ``setup.json`` with the following content:
        "steps_per_decade": 33
      }
    }
+
+JSON Schema
+-----------
+
+Your reduction ``config.json`` must conform to the schema defined by the ``ReductionConfig`` Pydantic model.
+Below is the content of the generated JSON schema, which serves as a reference for the expected structure, data types, and value constraints of the setup file:
+
+.. literalinclude:: ../../../src/usansred/io/usansred.json
+   :language: json
+
+CSV Format (Legacy)
+-------------------
 
 The old CSV format provides only part of the information that can be encoded in the JSON file.
 Information is entered in rows, with items in a row separated by `,`:
