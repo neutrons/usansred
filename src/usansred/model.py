@@ -111,7 +111,9 @@ class BinningConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     log_binning: bool = Field(default=False, description="Enable logarithmic Q binning.")
-    steps_per_decade: int = Field(default=33, ge=1, description="Number of Q bins per decade when log binning is enabled.")
+    steps_per_decade: int = Field(
+        default=33, ge=1, description="Number of Q bins per decade when log binning is enabled."
+    )
     q_min: Annotated[float, Field(gt=0, description="Minimum Q value in 1/Å for log binning.")] = 1e-6
 
     @field_validator("log_binning", mode="before")
