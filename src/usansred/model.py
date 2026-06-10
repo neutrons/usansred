@@ -1,7 +1,7 @@
 """Data model definitions for USANS reduction."""
 
 from dataclasses import field
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass
@@ -56,10 +56,12 @@ class _ScanBase(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str
-    start_scan_num: int
-    num_of_scans: int
-    exclude: list[int] = Field(default_factory=list)
+    name: Annotated[str, Field(min_length=1, description="Sample/background name.")]
+    start_scan_num: Annotated[int, Field(description="Starting scan number (numeric string or integer is valid).")]
+    num_of_scans: Annotated[
+        int, Field(description="Number of consecutive scans in the sequence (numeric string or integer is valid).")
+    ]
+    exclude: list[int] = Field(default_factory=list, description="Optional list of scans to skip during reduction.")
 
     @field_validator("start_scan_num", "num_of_scans", mode="before")
     @classmethod
@@ -80,15 +82,10 @@ class _ScanBase(BaseModel):
 
 
 class SampleConfig(_ScanBase):
-    thickness: Annotated[float, Field(gt=0)]
-    is_background: bool = False
+    """Configuration for a single sample to reduce."""
 
-    @field_validator("is_background")
-    @classmethod
-    def _forbid_background_flag(cls, v):
-        if v is not False:
-            raise ValueError("samples[].is_background must be false")
-        return False
+    is_background: ClassVar[bool] = False
+    thickness: Annotated[float, Field(gt=0, description="Sample thickness in cm (numeric string or float is valid).")]
 
     @field_validator("thickness", mode="before")
     @classmethod
@@ -97,15 +94,10 @@ class SampleConfig(_ScanBase):
 
 
 class BackgroundConfig(_ScanBase):
-    thickness: Annotated[float, Field(gt=0)]
-    is_background: bool = True  # fixed default, not settable by users
+    """Optional background sample configuration."""
 
-    @field_validator("is_background")
-    @classmethod
-    def _force_is_background(cls, v):
-        if v is not True:
-            raise ValueError("background.is_background must be true")
-        return True
+    is_background: ClassVar[bool] = True
+    thickness: Annotated[float, Field(gt=0, description="Background sample thickness in cm.")]
 
     @field_validator("thickness", mode="before")
     @classmethod
@@ -114,11 +106,13 @@ class BackgroundConfig(_ScanBase):
 
 
 class BinningConfig(BaseModel):
+    """Q binning settings applied during reduction."""
+
     model_config = ConfigDict(extra="forbid")
 
-    log_binning: bool = False
-    steps_per_decade: int = 33
-    q_min: Annotated[float, Field(gt=0)] = 1e-6
+    log_binning: bool = Field(default=False, description="Enable logarithmic Q binning.")
+    steps_per_decade: int = Field(default=33, description="Number of Q bins per decade when log binning is enabled.")
+    q_min: Annotated[float, Field(gt=0, description="Minimum Q value in 1/Å for log binning.")] = 1e-6
 
     @field_validator("log_binning", mode="before")
     @classmethod
@@ -127,9 +121,15 @@ class BinningConfig(BaseModel):
 
 
 class ReductionConfig(BaseModel):
+    """Top-level configuration for a USANS reduction run."""
+
     model_config = ConfigDict(extra="forbid")
 
-    samples: Annotated[list[SampleConfig], Field(min_length=1)]
-    background: BackgroundConfig | None = None
-    save_all_harmonics: bool = False
-    binning: BinningConfig = Field(default_factory=BinningConfig)
+    samples: Annotated[list[SampleConfig], Field(min_length=1, description="List of sample configurations to reduce.")]
+    background: BackgroundConfig | None = Field(
+        default=None, description="Background (empty cell) configuration. Omit to skip background subtraction."
+    )
+    save_all_harmonics: bool = Field(
+        default=False, description="Save individual harmonic output files in addition to the combined result."
+    )
+    binning: BinningConfig = Field(default_factory=BinningConfig, description="Q binning configuration.")
