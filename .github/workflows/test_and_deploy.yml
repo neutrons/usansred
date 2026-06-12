@@ -89,11 +89,10 @@ jobs:
           extra-channels: mantid neutrons
 
       - name: Verify Conda Package
-        uses: neutrons/conda-actions/pkg-verify@v1
+        uses: neutrons/conda-actions/pkg-verify@v2
         with:
-          python-version: "3.11"
           package-name: ${{ env.PKG_NAME }}
-          local-channel: /tmp/local-channel
+          conda-env-name: ${{ steps.install.outputs.conda_env }}
           extra-commands: |
             pixi run python -c "import mantid"
             pixi run python -c "import finddata"
