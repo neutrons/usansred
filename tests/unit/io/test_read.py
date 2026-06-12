@@ -208,3 +208,31 @@ def test_read_config_json_no_background():
     assert samples[0].name == "sample1"
     assert samples[1].name == "sample2"
     assert samples[1].exclude == [45307, 45308]
+
+
+def test_read_config_with_empty_cell():
+    """Test reading configuration from a JSON file with empty cell entry."""
+
+    json_file = DATA_DIR / "config-with-empty-cell.json"
+    config = read_config(json_file)
+    background = config.background
+    empty_cell = config.empty_cell
+    samples = config.samples
+
+    with patch.object(Experiment, "model_post_init", return_value=None):
+        experiment = Experiment(config_file="dummy.json")
+
+    with patch.object(Sample, "model_post_init", return_value=None):
+        background = Sample(**background.model_dump(), experiment=experiment) if background else None
+        empty_cell = Sample(**empty_cell.model_dump(), experiment=experiment) if empty_cell else None
+        samples = [Sample(**s.model_dump(), experiment=experiment) for s in samples]
+
+    assert background is not None
+    assert background.name == "example_background"
+    assert background.exclude == [45336]
+    assert empty_cell is not None
+    assert empty_cell.name == "empty_cell_scan"
+    assert len(samples) == 2
+    assert samples[0].name == "sample1"
+    assert samples[1].name == "sample2"
+    assert samples[1].exclude == [45307, 45308]

@@ -10,7 +10,7 @@ from unittest.mock import patch
 import numpy as np
 
 from tests.test_fixtures import _make_sample
-from usansred.model import IQData, MonitorData, XYData
+from usansred.models import IQData, MonitorData, XYData
 from usansred.reduce import ARCSEC_TO_RADIANS, Experiment, Sample, Scan, horizontal_rocking_width
 
 

@@ -1,42 +1,11 @@
 """Data model definitions for USANS reduction."""
 
-from dataclasses import field
 from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pydantic.dataclasses import dataclass
 
+from usansred.enums import MeasurementType
 from usansred.utils import cast_to_bool
-
-
-@dataclass
-class XYData:
-    x: list[float] = field(default_factory=list)
-    y: list[float] = field(default_factory=list)
-    e: list[float] = field(default_factory=list)
-    t: list[float] = field(default_factory=list)
-
-    def as_dict(self) -> dict:
-        return {"X": self.x, "Y": self.y, "E": self.e, "T": self.t}
-
-
-@dataclass
-class IQData:
-    q: list[float] = field(default_factory=list)
-    i: list[float] = field(default_factory=list)
-    e: list[float] = field(default_factory=list)
-    t: list[float] = field(default_factory=list)
-
-    def as_dict(self) -> dict:
-        return {"Q": self.q, "I": self.i, "E": self.e, "T": self.t}
-
-
-@dataclass
-class MonitorData:
-    xy_data: XYData = field(default_factory=XYData)
-    iq_data: IQData = field(default_factory=IQData)
-    filepath: str = ""
-
 
 ######################################
 ### Reduction input configurations ###
@@ -85,7 +54,7 @@ class _ScanBase(BaseModel):
 class SampleConfig(_ScanBase):
     """Configuration for a single sample to reduce."""
 
-    is_background: ClassVar[bool] = False
+    measurement_type: ClassVar[MeasurementType] = MeasurementType.SAMPLE
     thickness: Annotated[float, Field(gt=0, description="Sample thickness in cm (numeric string or float is valid).")]
 
     @field_validator("thickness", mode="before")
@@ -97,13 +66,25 @@ class SampleConfig(_ScanBase):
 class BackgroundConfig(_ScanBase):
     """Optional background sample configuration."""
 
-    is_background: ClassVar[bool] = True
+    measurement_type: ClassVar[MeasurementType] = MeasurementType.BACKGROUND
     thickness: Annotated[float, Field(gt=0, description="Background sample thickness in cm.")]
 
     @field_validator("thickness", mode="before")
     @classmethod
     def _coerce_thickness(cls, v):
         return _to_float(v)
+
+
+class EmptyCellConfig(_ScanBase):
+    """Configuration for an empty cell scan."""
+
+    measurement_type: ClassVar[MeasurementType] = MeasurementType.EMPTY_CELL
+    thickness: Annotated[float | None, Field(gt=0, description="Empty cell thickness in cm (optional).")] = None
+
+    @field_validator("thickness", mode="before")
+    @classmethod
+    def _coerce_thickness(cls, v):
+        return _to_float(v) if v is not None else None
 
 
 class BinningConfig(BaseModel):
@@ -131,6 +112,9 @@ class ReductionConfig(BaseModel):
     samples: Annotated[list[SampleConfig], Field(min_length=1, description="List of sample configurations to reduce.")]
     background: BackgroundConfig | None = Field(
         default=None, description="Background (empty cell) configuration. Omit to skip background subtraction."
+    )
+    empty_cell: EmptyCellConfig | None = Field(
+        default=None, description="Empty cell configuration. Omit if no empty cell correction is needed."
     )
     save_all_harmonics: bool = Field(
         default=False, description="Save individual harmonic output files in addition to the combined result."

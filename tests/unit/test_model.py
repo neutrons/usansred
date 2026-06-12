@@ -2,7 +2,7 @@
 # Tests for XYData and IQData models
 # ===========================================================================
 
-from usansred.model import IQData, MonitorData, XYData
+from usansred.models import IQData, MonitorData, XYData
 
 
 class TestXYData:

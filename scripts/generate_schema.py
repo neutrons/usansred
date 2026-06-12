@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from usansred.model import ReductionConfig
+from usansred.models import ReductionConfig
 
 schema = ReductionConfig.model_json_schema()
 

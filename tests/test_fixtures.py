@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from usansred.model import IQData, MonitorData, ReductionConfig, XYData
+from usansred.models import IQData, MonitorData, ReductionConfig, XYData
 from usansred.reduce import Experiment, Sample, Scan
 
 

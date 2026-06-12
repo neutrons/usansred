@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from usansred.model import ReductionConfig
+from usansred.models import ReductionConfig
 
 
 def _format_validation_error(e: ValidationError) -> str:

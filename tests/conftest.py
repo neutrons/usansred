@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from mantid.simpleapi import config
 
-from usansred.model import ReductionConfig
+from usansred.models import ReductionConfig
 from usansred.reduce import Experiment
 
 this_module_path = sys.modules[__name__].__file__
