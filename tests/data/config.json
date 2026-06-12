@@ -6,10 +6,6 @@
     "thickness": 0.1,
     "exclude": [45336]
   },
-  "binning": {
-    "log_binning": false,
-    "steps_per_decade": 33
-  },
   "samples": [
     {
       "name": "sample1",
@@ -24,5 +20,9 @@
       "thickness": 0.1,
       "exclude": [45307, 45308]
     }
-  ]
+  ],
+  "binning": {
+    "log_binning": false,
+    "steps_per_decade": 33
+  }
 }

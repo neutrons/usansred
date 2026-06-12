@@ -32,7 +32,7 @@ class TestLogBinning:
             experiment = Experiment(config_file=str(config_file))
 
         assert experiment.log_binning is expected_log_binning
-        assert experiment.config["binning"]["steps_per_decade"] == expected_steps_per_decade
+        assert experiment.config.binning.steps_per_decade == expected_steps_per_decade
 
     def test_cli_logbin_overrides_json_config(self, tmp_path):
         """CLI --logbin=True takes precedence over binning.log_binning: false in the JSON."""
@@ -47,7 +47,7 @@ class TestLogBinning:
         experiment.amend_log_binning(True)
 
         assert experiment.log_binning is True
-        assert experiment.config["binning"]["steps_per_decade"] == 44
+        assert experiment.config.binning.steps_per_decade == 44
 
     def test_json_log_binning_governs_when_cli_not_set(self, tmp_path):
         """JSON binning.log_binning: true takes effect when CLI --logbin is not passed."""
@@ -58,4 +58,4 @@ class TestLogBinning:
             experiment = Experiment(config_file=str(config_file), log_binning=False)
 
         assert experiment.log_binning is True
-        assert experiment.config["binning"]["steps_per_decade"] == 33
+        assert experiment.config.binning.steps_per_decade == 33

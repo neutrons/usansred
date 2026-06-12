@@ -17,8 +17,8 @@ def save_ascii(input_workspace, file_path, header=None, **saveascii):
         Destination file path for the ASCII output.
     header : str, optional
         Header text to insert or replace in the output file.
-        If provided, and it does not start with ``#``, it is prefixed with ``# ``.
-    **saveascii
+        If provided, and it does not start with ``#``, it is prefixed with ``#``.
+    saveascii : kwargs
         Additional keyword arguments passed through to ``mantid.simpleapi.SaveAscii``.
         If argument ``WriteSpectrumID`` is not supplied, it defaults to ``False``.
     """
@@ -56,10 +56,7 @@ def save_summed_spectra(input_workspace, file_path, header=None):
         Destination file path for the ASCII output.
     header : str, optional
         Header text to insert or replace in the output file.
-        If provided, and it does not start with ``#``, it is prefixed with ``# ``.
-    **saveascii
-        Additional keyword arguments passed through to ``mantid.simpleapi.SaveAscii``.
-        If argument ``WriteSpectrumID`` is not supplied, it defaults to ``False``.
+        If provided, and it does not start with ``#``, it is prefixed with ``#``.
     """
     workspace = SumSpectra(InputWorkspace=input_workspace, OutputWorkspace=mtd.unique_name())
     save_ascii(workspace, file_path, header=header)

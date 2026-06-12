@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from usansred.model import IQData, MonitorData, XYData
+from usansred.models import IQData, MonitorData, XYData
 from usansred.reduce import Scan
 
 # ===========================================================================

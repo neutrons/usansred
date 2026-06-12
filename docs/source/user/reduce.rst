@@ -1,5 +1,6 @@
 .. using_reduce_script
 
+
 Reducing One (or more) Experiments
 ==================================
 
@@ -38,10 +39,6 @@ The JSON format provides the same information in a structured layout.
 A JSON setup file contains a required samples entry, optional background entry, and optional configuration flags.
 Each background and sample object contains descriptive keys for each field.
 
-A JSON schema (usansred.json) is provided in the repository to validate the JSON setup file.
-It contains valid input structures and types, default values for optional properties,
-and descriptions for each property.
-
 .. code-block:: javascript
 
    {
@@ -62,7 +59,13 @@ and descriptions for each property.
        "thickness": "<number|string>",        // required if background is present; thickness in cm
        "exclude": ["<integer|string>"]        // scan numbers to skip during reduction; default: []
      },
-
+     "empty_cell": {
+       "name": "<string>",                    // required if empty cell is present; empty cell name
+       "start_scan_num": "<integer|string>",  // required if empty cell is present; run or scan number
+       "num_of_scans": "<integer|string>",    // required if empty cell is present; number of scans
+       "thickness": "<number|string>",        // Optional; thickness in cm
+       "exclude": ["<integer|string>"]        // scan numbers to skip during reduction; default: []
+     },
      "save_all_harmonics": "<boolean>",        // optional; save reduced data for higher harmonics; default: false
      "binning": {
        "log_binning": "<boolean>",             // apply log binning to the reduced data; default: false
@@ -114,6 +117,18 @@ For example, create a file named ``setup.json`` with the following content:
        "steps_per_decade": 33
      }
    }
+
+JSON Schema
+-----------
+
+Your reduction ``config.json`` must conform to the schema defined by the ``ReductionConfig`` Pydantic model.
+Below is the content of the generated JSON schema, which serves as a reference for the expected structure, data types, and value constraints of the setup file:
+
+.. literalinclude:: ../../../src/usansred/io/usansred.json
+   :language: json
+
+CSV Format (Legacy)
+-------------------
 
 The old CSV format provides only part of the information that can be encoded in the JSON file.
 Information is entered in rows, with items in a row separated by `,`:

@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 
 from tests.test_fixtures import _make_sample, _make_scan, _make_scan_multi_bank
-from usansred.model import XYData
+from usansred.enums import MeasurementType
+from usansred.models import XYData
 from usansred.reduce import CombinedSample
 
 # ===========================================================================
@@ -423,10 +424,10 @@ class TestCombinedSampleDefaults:
         cs = CombinedSample(name="test", experiment=mock_experiment)
         assert cs.thickness == 0.1
 
-    def test_default_is_background(self, mock_experiment):
-        """Default is_background should be False."""
+    def test_default_measurement_type(self, mock_experiment):
+        """Default measurement_type should be SAMPLE."""
         cs = CombinedSample(name="test", experiment=mock_experiment)
-        assert cs.is_background is False
+        assert cs.measurement_type is MeasurementType.SAMPLE
 
     def test_default_combined_samples_empty(self, mock_experiment):
         """Default combined_samples should be empty list."""
@@ -443,10 +444,10 @@ class TestCombinedSampleDefaults:
         cs = CombinedSample(name="test", experiment=mock_experiment, thickness=0.5)
         assert cs.thickness == 0.5
 
-    def test_custom_is_background(self, mock_experiment):
-        """Custom is_background should be stored."""
-        cs = CombinedSample(name="test", experiment=mock_experiment, is_background=True)
-        assert cs.is_background is True
+    def test_custom_measurement_type(self, mock_experiment):
+        """Custom measurement_type should be stored."""
+        cs = CombinedSample(name="test", experiment=mock_experiment, measurement_type=MeasurementType.BACKGROUND)
+        assert cs.measurement_type is MeasurementType.BACKGROUND
 
 
 class TestCombinedSampleCombineResetPath:
