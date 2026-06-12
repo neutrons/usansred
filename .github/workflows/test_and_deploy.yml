@@ -94,8 +94,8 @@ jobs:
           package-name: ${{ env.PKG_NAME }}
           conda-env-name: ${{ steps.install.outputs.conda_env }}
           extra-commands: |
-            pixi run python -c "import mantid"
-            pixi run python -c "import finddata"
+            python -c "import mantid"
+            python -c "import finddata"
 
       # Audit the dependencies of the conda package we just installed. SARIF
       # results are uploaded to GitHub code scanning by the grype action.
