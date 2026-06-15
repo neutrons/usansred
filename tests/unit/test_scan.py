@@ -26,7 +26,7 @@ class TestScanLoadData:
 
     def test_scan_load_data_true_calls_load(self, mock_experiment):
         """Creating a Scan with load_data=True should call load()."""
-        with patch.object(Scan, "load") as mock_load:
+        with patch.object(Scan, "load") as mock_load, patch.object(Scan, "_get_event_counts"):
             scan = Scan(number=1, experiment=mock_experiment, load_data=True)
             mock_load.assert_called_once()
             assert scan.number == 1
@@ -234,14 +234,14 @@ class TestScanLoadDataBranch:
 
     def test_load_data_true_calls_load(self, mock_experiment):
         """Creating a Scan with load_data=True should call load()."""
-        with patch.object(Scan, "load") as mock_load:
+        with patch.object(Scan, "load") as mock_load, patch.object(Scan, "_get_event_counts"):
             scan = Scan(number=1, experiment=mock_experiment, load_data=True)
             mock_load.assert_called_once()
         assert scan.number == 1
 
     def test_load_data_default_is_true(self, mock_experiment):
         """The default value of load_data should be True (so load() is called)."""
-        with patch.object(Scan, "load") as mock_load:
+        with patch.object(Scan, "load") as mock_load, patch.object(Scan, "_get_event_counts"):
             Scan(number=1, experiment=mock_experiment)
             mock_load.assert_called_once()
 
