@@ -7,17 +7,15 @@ import os
 
 import pandas
 
+from usansred.utils.logging import get_logger
+
 __author__ = "Yingrui Shang"
 __copyright__ = "Copyright 2021, NSD, ORNL"
 __all__ = ["generate_report"]
 
-# separate logging in file and console
-logging.basicConfig(filename="file.log", filemode="w", level=logging.INFO)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-logging.getLogger("").addHandler(console)
-
 suffix = 0
+
+logger = get_logger(__name__)
 
 
 def format_sheet_name(filename: str) -> str:
@@ -146,14 +144,14 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
         fp = os.path.join(output_dir, file)
 
         if not os.path.exists(fp):
-            logging.info(f"Sample {file} file path does not exist!")
+            logger.info(f"Sample {file} file path does not exist!")
             continue
 
         if os.stat(fp).st_size == 0:
-            logging.warning(f"Sample file {file} is empty and will be skipped. ")
+            logger.warning(f"Sample file {file} is empty and will be skipped. ")
             continue
 
-        logging.info(f"Reading sample file {file} to summary.xlsx")
+        logger.info(f"Reading sample file {file} to summary.xlsx")
         df = pandas.read_csv(
             fp,
             sep=",",
@@ -238,10 +236,7 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
             )
 
         chart.set_x_axis({"name": f"={wn}!$A$1", "log_base": 10})
-
         chart.set_y_axis({"name": f"={wn}!$B$1", "log_base": 10})
-
-        # print(f'={file}!$A:$B')
         worksheet.insert_chart("F1", chart)
 
     if main_chart_unscaled.series:
@@ -261,7 +256,7 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
     # workbook.close()
     xlsx_writer.close()
 
-    logging.info(f"complete processing {config_file_path}")
+    logger.info(f"complete processing {config_file_path}")
     return
 
 

@@ -12,8 +12,6 @@ class TestExperiment:
         self.experiment = Experiment(config_file=data_server.path_to("setup-empty-cell.json"))
 
     def test_event_counts(self):
-        for i in self.experiment.samples:
-            print(f"{i.name=}")
         assert self.experiment.samples[0].counts.monitor == 8556560
         assert self.experiment.samples[0].counts.detector == 201120
         assert self.experiment.samples[0].counts.transmission == 2622355

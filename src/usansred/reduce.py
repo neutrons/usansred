@@ -15,15 +15,14 @@ from usansred.enums import MeasurementType
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.summary import generate_report
-
-# separate logging in file and console
-logging.basicConfig(filename="file.log", filemode="w", level=logging.INFO)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-logging.getLogger("").addHandler(console)
-
+from usansred.utils.logging import get_logger, set_log_config
 
 ARCSEC_TO_RADIANS = math.pi / (3600.0 * 180.0)
+
+# Setup root logging config
+set_log_config()
+
+logger = get_logger(__name__)
 
 
 def _gaussian(x: np.ndarray, background: float, amplitude: float, sigma: float, center: float) -> np.ndarray:
@@ -242,7 +241,7 @@ class Sample(BaseModel):
             try:
                 self.transmission = self.transmitted / self.experiment.empty_cell.transmitted
             except AttributeError:
-                logging.warning(f"Empty cell counts not available for sample {self.name}; using default transmission.")
+                logger.warning(f"Empty cell counts not available for sample {self.name}; using default transmission.")
                 self.transmission = 1.0
 
         # NOTE:
@@ -309,7 +308,7 @@ class Sample(BaseModel):
         """Dump IQ or XY data to a CSV file."""
         output_dir = os.path.dirname(filepath)
         if output_dir and not os.path.exists(output_dir):
-            logging.info(f"Output directory {output_dir} does not exist; creating it.")
+            logger.info(f"Output directory {output_dir} does not exist; creating it.")
             os.makedirs(output_dir)
 
         data_dict = data.as_dict()
@@ -372,7 +371,7 @@ class Sample(BaseModel):
 
         if log_binned_data:
             if not self.is_log_binned:
-                logging.info(f"Sample {self.name} has not been log-binned; skipping log-binned data dump.")
+                logger.info(f"Sample {self.name} has not been log-binned; skipping log-binned data dump.")
                 return
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_lb.txt")
             self.dump_data_to_csv(filepath, self.data_log_binned)
@@ -393,7 +392,7 @@ class Sample(BaseModel):
 
         # Only process first detector bank
         data_scaled = self.data_scaled[0]
-        logging.info(f"Only the first bank data is used for sample {self.name}.")
+        logger.info(f"Only the first bank data is used for sample {self.name}.")
 
         # Log-binning is optional
         if self.experiment.log_binning:
@@ -402,7 +401,7 @@ class Sample(BaseModel):
         if self.type is MeasurementType.SAMPLE:
             self.subtract_background(self.experiment.background)
 
-        logging.info(f"Data reduction finished for sample {self.name}.")
+        logger.info(f"Data reduction finished for sample {self.name}.")
         return
 
     # TODO: This function should be re-written from scratch
@@ -598,7 +597,7 @@ class Sample(BaseModel):
             self.data_scaled.append(iq_scaled)
 
         q_range = f"{min(self.data_scaled[0].q)} - {max(self.data_scaled[0].q)}"
-        logging.info(f"Rescaled data for sample {self.name}, Q-range: {q_range} 1/angstrom\n")
+        logger.info(f"Rescaled data for sample {self.name}, Q-range: {q_range} 1/angstrom\n")
         return
 
     def stitch_scans(self):
@@ -667,7 +666,7 @@ class Sample(BaseModel):
                     e=error.tolist(),
                 )
             )
-        logging.info(f"Scans stitched together for sample {self.name}.\n")
+        logger.info(f"Scans stitched together for sample {self.name}.\n")
 
         theta_to_q = 2 * (math.pi**2.0) * 1.0 / (self.experiment.prim_wave * 3600.0 * 180.0)
         theta_range_msg = ""
@@ -681,8 +680,8 @@ class Sample(BaseModel):
             temp_q = [math.fabs(theta * theta_to_q) for theta in scan.detector_data[0].iq_data.q]
             q_range_msg += f"Q range for scan {scan.number}: {min(temp_q)} - {max(temp_q)} 1/angstrom\n"
 
-        logging.info(theta_range_msg)
-        logging.info(q_range_msg)
+        logger.info(theta_range_msg)
+        logger.info(q_range_msg)
         return
 
     def rocking_curve_centering(self) -> float:
@@ -743,7 +742,7 @@ class Sample(BaseModel):
         for rocking_curve in self.detector_data:
             rocking_curve.q = [float(harmonic_q - q_offset) for harmonic_q in rocking_curve.q]
 
-        logging.info(f"Centered rocking curves for sample {self.name} using offset {q_offset}.")
+        logger.info(f"Centered rocking curves for sample {self.name} using offset {q_offset}.")
         return q_offset
 
     def _match_or_interpolate(
@@ -788,7 +787,7 @@ class Sample(BaseModel):
             assert background.is_log_binned, (
                 f"Background {background.name} must be log-binned before background subtraction."
             )
-            logging.info(
+            logger.info(
                 f"Logbinned data are used for background subtraction. Sample {self.name}, background {background.name}"
             )
             data = self.data_log_binned
@@ -839,7 +838,7 @@ class Sample(BaseModel):
             self.data_bg_subtracted.i = i_subtracted.tolist()
             self.data_bg_subtracted.e = e_subtracted.tolist()
 
-        logging.info(f"Subtracted background {background.name} from sample {self.name}")
+        logger.info(f"Subtracted background {background.name} from sample {self.name}")
         return
 
 
@@ -895,7 +894,7 @@ class CombinedSample(BaseModel):
         for scan_idx in range(max_scans):
             for sample in self.combined_samples:
                 if scan_idx >= len(sample.scans):
-                    logging.warning(
+                    logger.warning(
                         f"Sample '{sample.name}' contains fewer scans than others "
                         f"(has {len(sample.scans)}, expected at least {scan_idx + 1}). Skipping."
                     )
@@ -942,7 +941,7 @@ class CombinedSample(BaseModel):
                     scan.detector_data[bank_id].xy_data,
                 )
 
-        logging.info(
+        logger.info(
             f"Combined {len(self.combined_samples)} samples into '{self.name}' ({len(self.combined_scans)} scans)."
         )
 
@@ -1104,13 +1103,13 @@ class Experiment(BaseModel):
             try:
                 self.background.reduce()
             except Exception as e:  # noqa BLE001
-                logging.exception(f"Cannot reduce background {self.background.name}: {e}")
+                logger.exception(f"Cannot reduce background {self.background.name}: {e}")
 
         for sample in self.samples:
             try:
                 sample.reduce()
             except Exception as e:  # noqa BLE001
-                logging.exception(f"Cannot reduce sample {sample.name}: {e}")
+                logger.exception(f"Cannot reduce sample {sample.name}: {e}")
 
         self.dump_reduced_data()
 
@@ -1151,7 +1150,7 @@ def main():
     experiment.reduce()
     generate_report(config_file_path=args.path, output_dir=experiment.output_dir)
 
-    logging.info("USANS data reduction completed.")
+    logger.info("USANS data reduction completed.")
 
 
 if __name__ == "__main__":

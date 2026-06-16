@@ -25,10 +25,7 @@ def read_numbers_from_file(filename):
 
 
 def compare_lines(file1, file2, threshold=0.01):
-    """
-    Compare corresponding numbers in two files line by line.
-    If the relative difference exceeds the threshold, print a warning.
-    """
+    """Compare corresponding numbers in two files line by line."""
     numbers_list1 = read_numbers_from_file(file1)
     numbers_list2 = read_numbers_from_file(file2)
 
