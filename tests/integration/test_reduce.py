@@ -11,6 +11,8 @@ import pytest
 from usansred.reduce import Experiment
 from usansred.reduce import main as reduce
 
+### Helper functions for tests ###
+
 
 def read_numbers_from_file(filename):
     """
@@ -39,6 +41,19 @@ def compare_lines(file1, file2, threshold=0.01):
                 raise ValueError(f"Line {i}, Number {num1:.6f} differs significantly from {num2:.6f}")
 
 
+def assert_reduction_log_files(output_dir: str | Path, sample_names: list[str]):
+    """Assert per-sample reduction log files exist and include completion messages."""
+    output_path = Path(output_dir)
+    for name in sample_names:
+        logfile = output_path / f"reduction_{name}.log"
+        assert logfile.is_file()
+        content = logfile.read_text(encoding="utf-8")
+        assert f"Data reduction finished for sample {name}." in content
+
+
+### Tests ###
+
+
 @pytest.mark.datarepo
 @mock_patch("usansred.reduce.parse_args")
 def test_main(mock_parse_args, data_server, tmp_path):
@@ -63,6 +78,8 @@ def test_main(mock_parse_args, data_server, tmp_path):
             output, expected = os.path.join(tmp_path, filename), os.path.join(goldendir, filename)
             if os.path.exists(expected) and os.path.exists(output):  # "UN_EmptyPCell_det_1_lbs.txt" doesn't exist
                 compare_lines(output, expected)
+
+    assert_reduction_log_files(tmp_path, ["S115_pc3", "S115_dry", "EmptyPCell"])
 
 
 @mock_patch("usansred.reduce.parse_args")
@@ -115,6 +132,8 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
             scaled_file = bank_dir / f"UN_{name}.txt"
             assert scaled_file.is_file()
             assert scaled_file.stat().st_size > 0
+
+    assert_reduction_log_files(output_dir, ["S115_pc3", "S115_dry", "EmptyPCell"])
 
 
 @pytest.mark.datarepo
