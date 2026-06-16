@@ -70,6 +70,9 @@ pygments_style = "sphinx"
 
 html_theme = "sphinx_rtd_theme"
 
-html_theme_options = {"style_nav_header_background": "#472375"}
+html_theme_options = {
+    "style_nav_header_background": "#472375",
+    "navigation_depth": 3,
+}
 
 epub_show_urls = "footnote"

@@ -1,167 +1,159 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://neutrons.github.io/usansred/schemas/usansred.json",
-  "title": "USANSRED reduction configuration",
-  "description": "Configuration schema for JSON setup files consumed by usansred.io.read.config_from_json.",
-  "type": "object",
+  "$defs": {
+    "BackgroundConfig": {
+      "additionalProperties": false,
+      "description": "Optional background sample configuration.",
+      "properties": {
+        "name": {
+          "description": "Sample/background name.",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "start_scan_num": {
+          "description": "Starting scan number (numeric string or integer is valid).",
+          "title": "Start Scan Num",
+          "type": "integer"
+        },
+        "num_of_scans": {
+          "description": "Number of consecutive scans in the sequence (numeric string or integer is valid).",
+          "title": "Num Of Scans",
+          "type": "integer"
+        },
+        "exclude": {
+          "description": "Optional list of scans to skip during reduction.",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Exclude",
+          "type": "array"
+        },
+        "thickness": {
+          "description": "Background sample thickness in cm.",
+          "exclusiveMinimum": 0,
+          "title": "Thickness",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "start_scan_num",
+        "num_of_scans",
+        "thickness"
+      ],
+      "title": "BackgroundConfig",
+      "type": "object"
+    },
+    "BinningConfig": {
+      "additionalProperties": false,
+      "description": "Q binning settings applied during reduction.",
+      "properties": {
+        "log_binning": {
+          "default": false,
+          "description": "Enable logarithmic Q binning.",
+          "title": "Log Binning",
+          "type": "boolean"
+        },
+        "steps_per_decade": {
+          "default": 33,
+          "description": "Number of Q bins per decade when log binning is enabled.",
+          "title": "Steps Per Decade",
+          "type": "integer"
+        },
+        "q_min": {
+          "default": 1e-06,
+          "description": "Minimum Q value in 1/\u00c5 for log binning.",
+          "exclusiveMinimum": 0,
+          "title": "Q Min",
+          "type": "number"
+        }
+      },
+      "title": "BinningConfig",
+      "type": "object"
+    },
+    "SampleConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for a single sample to reduce.",
+      "properties": {
+        "name": {
+          "description": "Sample/background name.",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "start_scan_num": {
+          "description": "Starting scan number (numeric string or integer is valid).",
+          "title": "Start Scan Num",
+          "type": "integer"
+        },
+        "num_of_scans": {
+          "description": "Number of consecutive scans in the sequence (numeric string or integer is valid).",
+          "title": "Num Of Scans",
+          "type": "integer"
+        },
+        "exclude": {
+          "description": "Optional list of scans to skip during reduction.",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Exclude",
+          "type": "array"
+        },
+        "thickness": {
+          "description": "Sample thickness in cm (numeric string or float is valid).",
+          "exclusiveMinimum": 0,
+          "title": "Thickness",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "start_scan_num",
+        "num_of_scans",
+        "thickness"
+      ],
+      "title": "SampleConfig",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
-  "required": ["samples"],
+  "description": "Top-level configuration for a USANS reduction run.",
   "properties": {
     "samples": {
-      "description": "Sample configurations to reduce.",
-      "type": "array",
-      "minItems": 1,
+      "description": "List of sample configurations to reduce.",
       "items": {
-        "$ref": "#/$defs/sample"
-      }
+        "$ref": "#/$defs/SampleConfig"
+      },
+      "minItems": 1,
+      "title": "Samples",
+      "type": "array"
     },
     "background": {
-      "description": "Optional background sample configuration. If omitted or null, reduction proceeds without a configured background.",
-      "default": null,
       "anyOf": [
         {
-          "$ref": "#/$defs/background"
+          "$ref": "#/$defs/BackgroundConfig"
         },
         {
           "type": "null"
         }
-      ]
+      ],
+      "default": null,
+      "description": "Background (empty cell) configuration. Omit to skip background subtraction."
     },
     "save_all_harmonics": {
-      "description": "Save reduced data for higher harmonics",
-      "type": "boolean",
-      "default": false
+      "default": false,
+      "description": "Save individual harmonic output files in addition to the combined result.",
+      "title": "Save All Harmonics",
+      "type": "boolean"
     },
     "binning": {
-      "description": "Binning configuration for the reduced data.",
-      "type": "object",
-      "additionalProperties": false,
-      "default": {},
-      "properties": {
-        "log_binning": {
-          "description": "Enable logarithmic Q-binning of reduced data",
-          "examples": [0, 1, "", false, true],
-          "default": false,
-          "anyOf": [
-            {"type": "boolean"},
-            {"type": "integer"},
-            {"type": "string"}
-          ]
-        },
-        "steps_per_decade": {
-          "description": "step per decade when log binning",
-          "type": "integer",
-          "default": 33
-        },
-        "q_min": {
-          "description": "Minimum Q value (1/Angstrom) for the log-binned output grid",
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "default": 1e-6
-        }
-      }
+      "$ref": "#/$defs/BinningConfig",
+      "description": "Q binning configuration."
     }
   },
-  "$defs": {
-    "background": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "start_scan_num", "num_of_scans", "thickness"],
-      "properties": {
-        "name": {
-          "$ref": "#/$defs/name"
-        },
-        "start_scan_num": {
-          "$ref": "#/$defs/scanNumber"
-        },
-        "num_of_scans": {
-          "$ref": "#/$defs/scanCount"
-        },
-        "thickness": {
-          "$ref": "#/$defs/thickness"
-        },
-        "exclude": {
-          "description": "Optional list of scan numbers to skip during reduction.",
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/scanNumber"
-          },
-          "default": []
-        }
-      }
-    },
-    "sample": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "start_scan_num", "num_of_scans", "thickness"],
-      "properties": {
-        "name": {
-          "$ref": "#/$defs/name"
-        },
-        "start_scan_num": {
-          "$ref": "#/$defs/scanNumber"
-        },
-        "num_of_scans": {
-          "$ref": "#/$defs/scanCount"
-        },
-        "thickness": {
-          "$ref": "#/$defs/thickness"
-        },
-        "exclude": {
-          "description": "Optional list of scan numbers to skip during reduction.",
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/scanNumber"
-          },
-          "default": []
-        }
-      }
-    },
-    "name": {
-      "description": "Sample or background name.",
-      "type": "string",
-      "minLength": 1
-    },
-    "scanNumber": {
-      "description": "Run or scan number. Numeric strings are accepted because read.py casts these values with int().",
-      "oneOf": [
-        {
-          "type": "integer",
-          "minimum": 0
-        },
-        {
-          "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)$"
-        }
-      ]
-    },
-    "scanCount": {
-      "description": "Number of scans in the sequence. Numeric strings are accepted because read.py casts this value with int().",
-      "oneOf": [
-        {
-          "type": "integer",
-          "minimum": 1
-        },
-        {
-          "type": "string",
-          "pattern": "^[1-9][0-9]*$"
-        }
-      ]
-    },
-    "thickness": {
-      "description": "Sample thickness in centimeters. Numeric strings are accepted because read.py casts this value with float().",
-      "oneOf": [
-        {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        {
-          "type": "string",
-          "pattern": "^\\+?(?:(?:0*[1-9][0-9]*)(?:\\.[0-9]*)?|(?:0*\\.[0-9]*[1-9][0-9]*))(?:[eE][+-]?[0-9]+)?$"
-        }
-      ]
-    }
-  }
+  "required": [
+    "samples"
+  ],
+  "title": "ReductionConfig",
+  "type": "object"
 }

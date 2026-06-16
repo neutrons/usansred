@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from usansred.model import IQData, MonitorData, XYData
+from usansred.model import IQData, MonitorData, ReductionConfig, XYData
 from usansred.reduce import Experiment, Sample, Scan
 
 
@@ -25,7 +25,13 @@ def mock_experiment():
     exp.prim_wave = 3.6
     exp.log_binning = False
     exp.v_angle = 0.042
-    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6}}
+    exp._config = ReductionConfig.model_validate(
+        {
+            "save_all_harmonics": False,
+            "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6},
+            "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 0, "thickness": 0.1}],
+        }
+    )
     exp.background = None
     exp.samples = []
     return exp
@@ -42,7 +48,13 @@ def mock_experiment_2banks():
     exp.prim_wave = 3.6
     exp.log_binning = False
     exp.v_angle = 0.042
-    exp.config = {"save_all_harmonics": False, "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6}}
+    exp._config = ReductionConfig.model_validate(
+        {
+            "save_all_harmonics": False,
+            "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6},
+            "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 0, "thickness": 0.1}],
+        }
+    )
     exp.background = None
     exp.samples = []
     return exp

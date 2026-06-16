@@ -4,14 +4,15 @@ import logging
 import math
 import os
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
 
-from usansred.io.read import cast_to_bool, is_csv, read_config
-from usansred.model import IQData, MonitorData, XYData
+from usansred.io.read import read_config
+from usansred.model import IQData, MonitorData, ReductionConfig, XYData
 from usansred.summary import generate_report
 
 # separate logging in file and console
@@ -137,7 +138,7 @@ class Scan(BaseModel):
 
         Directly copies x to q, y to i, and t.
         For error, calculates based on a Poisson-like statistical model:
-            err = sqrt(|y - 0.5| + 0.5)
+        ``err = sqrt(|y - 0.5| + 0.5)``
         which ensures a minimum value to avoid zero error for low counts.
         """
         iq_data = IQData(
@@ -301,7 +302,7 @@ class Sample(BaseModel):
         if detector_data and self.data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_unscaled.txt")
             self.dump_data_to_csv(filepath, self.data)
-            if self.config.get("save_all_harmonics", False):
+            if self.config.save_all_harmonics:
                 for i in range(1, self.num_of_banks):
                     bank = i + 1  # start with the second order
                     filepath = os.path.join(
@@ -314,7 +315,7 @@ class Sample(BaseModel):
         if scaled_data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1.txt")
             self.dump_data_to_csv(filepath, self.data_scaled[0])
-            if self.config.get("save_all_harmonics", False):
+            if self.config.save_all_harmonics:
                 for i in range(1, self.num_of_banks):
                     bank = i + 1  # start with the second order
                     filepath = os.path.join(
@@ -380,13 +381,13 @@ class Sample(BaseModel):
         fundamentalStep = 2 * math.pi * horizontal_rocking_width(1) * ARCSEC_TO_RADIANS / self.experiment.prim_wave
 
         # Step multiplier
-        steps_per_decade = self.experiment.config["binning"]["steps_per_decade"]
+        steps_per_decade = self.experiment.config.binning.steps_per_decade
         alpha = math.exp(math.log(10) / steps_per_decade)
         # step relative width
         kappa = 2.0 * (alpha - 1) / (alpha + 1)
 
         # floor ((ln((MyQ[InLength-1])/Qmin))/(ln(alpha)))
-        q_min = self.experiment.config["binning"]["q_min"]
+        q_min = self.experiment.config.binning.q_min
         numOfBins = math.floor(math.log(max(iq_dict["Q"]) / q_min) / math.log(alpha))
 
         logQ = [q_min * (alpha**n) for n in range(numOfBins)]
@@ -965,8 +966,8 @@ class Experiment(BaseModel):
     ----------
     config_file : str
         Path to the configuration file
-    config : dict
-        Configuration file loaded into a Python dictionary. Populated for both JSON and CSV config files
+    config : ReductionConfig
+        Validated reduction configuration. Populated for both JSON and CSV config files
     output_dir : str | None
         Output folder for reduced data, default is current folder
     prim_wave : float
@@ -978,7 +979,7 @@ class Experiment(BaseModel):
     """
 
     config_file: str = Field(..., description="Path to the configuration file")
-    config: dict = Field(default_factory=dict, description="configuration file loaded into a Python dictionary")
+    _config: ReductionConfig | None = PrivateAttr(default=None)
     output_dir: str = Field("", description="Output folder for reduced data")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
     v_angle: float = Field(0.042, description="Vertical angle")
@@ -987,6 +988,13 @@ class Experiment(BaseModel):
     folder: str = Field(default="", init=False, description="Working folder for this experiment")
     background: "Sample | None" = Field(default=None, init=False, description="Background sample")
     samples: list["Sample"] = Field(default_factory=list, init=False, description="List of samples")
+
+    @property
+    def config(self) -> "ReductionConfig":
+        """Validated reduction configuration, always set after construction."""
+        if self._config is None:
+            raise RuntimeError("Experiment.config accessed before model_post_init completed")
+        return self._config
 
     def model_post_init(self, _context: Any) -> None:  # noqa ANN401
         """Post-validation initializer"""
@@ -1004,18 +1012,18 @@ class Experiment(BaseModel):
             raise FileNotFoundError(f"The file path: {self.config_file} does not exist")
 
         self.folder = os.path.dirname(self.config_file)
-        self.config = read_config(self.config_file)
+        self._config = read_config(self.config_file)
 
-        self.log_binning = cast_to_bool(self.config["binning"]["log_binning"])
+        self.log_binning = self.config.binning.log_binning
 
-        background = self.config["background"]
+        background = self.config.background
         if background is None:
             logging.info("No background sample defined in the configuration file.")
             self.background = None
         else:
-            self.background = Sample(**background, experiment=self)
+            self.background = Sample(**background.model_dump(), experiment=self)
 
-        self.samples = [Sample(**s, experiment=self) for s in self.config["samples"]]
+        self.samples = [Sample(**s.model_dump(), experiment=self) for s in self.config.samples]
 
     def amend_log_binning(self, logbin: bool) -> None:
         """Override the log-binning setting with the command-line --logbin flag.
@@ -1030,7 +1038,7 @@ class Experiment(BaseModel):
         """
         if logbin:
             self.log_binning = True
-            self.config["binning"]["log_binning"] = True
+            self.config.binning.log_binning = True
 
     def reduce(self, output_dir: str | None = None):
         """Reduce the USANS data
@@ -1090,7 +1098,8 @@ def main():
     """Main function to run USANS data reduction"""
     args = parse_args()
     experiment = Experiment(config_file=args.path, output_dir=args.output)
-    if is_csv(args.path):  # backwards compatibility for CSV files, which don't have log-binning settings
+    # backwards compatibility for CSV files, which don't have log-binning settings
+    if Path(args.path).suffix.lower() == ".csv":
         experiment.amend_log_binning(args.logbin)
     experiment.reduce()
     generate_report(config_file_path=args.path, output_dir=experiment.output_dir)

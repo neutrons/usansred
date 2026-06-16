@@ -179,9 +179,9 @@ def load_samples(config_file: str) -> list[Sample]:
     """Load sample definitions from a USANSRED setup file."""
     experiment = Experiment(config_file=config_file)
     config = read_config(config_file)
-    samples = config["samples"]
+    samples = config.samples
     logging.info("Loaded %d samples from %s", len(samples), config_file)
-    return [Sample(**sample, experiment=experiment) for sample in samples]
+    return [Sample(**sample.model_dump(), experiment=experiment) for sample in samples]
 ```
 
 ## Testing Guidance
@@ -220,7 +220,7 @@ def test_reads_sns_filesystem_data():
 Testing expectations:
 
 - Parser changes: add or update tests in `tests/unit/io/test_read.py`.
-- Schema changes: validate against `tests/data/example-config*.json` and, when
+- Schema changes: validate against `tests/data/config*.json` and, when
   relevant, `tests/usansred-data/IPTS-30410/shared/setup.json`.
 - Data model changes: update `tests/unit/test_model.py`, `test_scan.py`,
   `test_sample.py`, or `test_combined_sample.py`.
@@ -232,13 +232,13 @@ Use Arrange-Act-Assert style:
 
 ```python
 def test_read_config_json_excludes_scans():
-    config_file = DATA_DIR / "example-config.json"
+    config_file = DATA_DIR / "config.json"
 
     config = read_config(config_file)
-    samples = config["samples"]
+    samples = config.samples
 
-    assert samples[1]["name"] == "sample2"
-    assert samples[1]["exclude"] == [45307, 45308]
+    assert samples[1].name == "sample2"
+    assert samples[1].exclude == [45307, 45308]
 ```
 
 ## Review Checklist
