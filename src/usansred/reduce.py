@@ -1,6 +1,5 @@
 import copy
 import csv
-import logging
 import math
 import os
 from collections import defaultdict
@@ -15,7 +14,7 @@ from usansred.enums import MeasurementType
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.summary import generate_report
-from usansred.utils.logging import get_logger, set_log_config
+from usansred.utils.logging import get_logger, open_log_fh, set_log_config
 
 ARCSEC_TO_RADIANS = math.pi / (3600.0 * 180.0)
 
@@ -385,6 +384,9 @@ class Sample(BaseModel):
 
     def reduce(self):
         """Reduce this sample's scans"""
+        logger.info(f"Starting reduction for sample {self.name} with {len(self.scans)} scans.")
+        logger.info(f"Transmission coefficient for sample {self.name}: {self.transmission:.4f}")
+
         self.normalize_by_monitor()
         self.stitch_scans()
         self.rocking_curve_centering()
@@ -398,7 +400,7 @@ class Sample(BaseModel):
         if self.experiment.log_binning:
             self.data_log_binned = self.log_bin_data(data_scaled)
 
-        if self.type is MeasurementType.SAMPLE:
+        if self.measurement_type is MeasurementType.SAMPLE:
             self.subtract_background(self.experiment.background)
 
         logger.info(f"Data reduction finished for sample {self.name}.")
@@ -597,7 +599,7 @@ class Sample(BaseModel):
             self.data_scaled.append(iq_scaled)
 
         q_range = f"{min(self.data_scaled[0].q)} - {max(self.data_scaled[0].q)}"
-        logger.info(f"Rescaled data for sample {self.name}, Q-range: {q_range} 1/angstrom\n")
+        logger.info(f"Rescaled data for sample {self.name}, Q-range: {q_range} 1/angstrom")
         return
 
     def stitch_scans(self):
@@ -666,7 +668,7 @@ class Sample(BaseModel):
                     e=error.tolist(),
                 )
             )
-        logger.info(f"Scans stitched together for sample {self.name}.\n")
+        logger.info(f"Scans stitched together for sample {self.name}.")
 
         theta_to_q = 2 * (math.pi**2.0) * 1.0 / (self.experiment.prim_wave * 3600.0 * 180.0)
         theta_range_msg = ""
@@ -1100,16 +1102,28 @@ class Experiment(BaseModel):
             os.makedirs(self.output_dir)
 
         if self.background:
-            try:
-                self.background.reduce()
-            except Exception as e:  # noqa BLE001
-                logger.exception(f"Cannot reduce background {self.background.name}: {e}")
+            log_fn = Path(self.output_dir) / f"reduction_{self.background.name}.log"
+            with open_log_fh(logger, log_fn):
+                try:
+                    self.background.reduce()
+                except Exception as e:  # noqa BLE001
+                    logger.exception(f"Cannot reduce background {self.background.name}: {e}")
+
+        if self.empty_cell:
+            log_fn = Path(self.output_dir) / f"reduction_{self.empty_cell.name}.log"
+            with open_log_fh(logger, log_fn):
+                try:
+                    self.empty_cell.reduce()
+                except Exception as e:  # noqa BLE001
+                    logger.exception(f"Cannot reduce empty cell {self.empty_cell.name}: {e}")
 
         for sample in self.samples:
-            try:
-                sample.reduce()
-            except Exception as e:  # noqa BLE001
-                logger.exception(f"Cannot reduce sample {sample.name}: {e}")
+            log_fn = Path(self.output_dir) / f"reduction_{sample.name}.log"
+            with open_log_fh(logger, log_fn):
+                try:
+                    sample.reduce()
+                except Exception as e:  # noqa BLE001
+                    logger.exception(f"Cannot reduce sample {sample.name}: {e}")
 
         self.dump_reduced_data()
 
