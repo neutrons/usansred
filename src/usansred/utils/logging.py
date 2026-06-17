@@ -97,7 +97,7 @@ def remove_log_fh(logger: logging.Logger, logfile: Optional[str] = None) -> int:
 
 
 @contextmanager
-def open_log_fh(logger: logging.Logger, logfile: str) -> Iterator[logging.Handler]:
+def log_to_file(logger: logging.Logger, logfile: str) -> Iterator[logging.Handler]:
     """Temporarily attach a file handler and always close it on exit."""
 
     handler = add_log_fh(logger, logfile)

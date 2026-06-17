@@ -2,7 +2,7 @@ import logging
 import os
 from pathlib import Path
 
-from usansred.utils.logging import add_log_fh, get_logger, open_log_fh, remove_log_fh, set_log_config
+from usansred.utils.logging import add_log_fh, get_logger, log_to_file, remove_log_fh, set_log_config
 
 
 def test_logger():
@@ -30,11 +30,11 @@ def test_logger():
     os.remove(logfile)
 
 
-def test_open_log_fh_context_manager():
+def test_log_to_file_context_manager():
     logger = get_logger("test_logger_context")
     logfile = "test_context.log"
 
-    with open_log_fh(logger, logfile) as handler:
+    with log_to_file(logger, logfile) as handler:
         logger.info("test context message")
         assert handler in logger.handlers
 

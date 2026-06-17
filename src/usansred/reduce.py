@@ -14,7 +14,7 @@ from usansred.enums import MeasurementType
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.summary import generate_report
-from usansred.utils.logging import get_logger, open_log_fh, set_log_config
+from usansred.utils.logging import get_logger, log_to_file, set_log_config
 
 ARCSEC_TO_RADIANS = math.pi / (3600.0 * 180.0)
 
@@ -1103,7 +1103,7 @@ class Experiment(BaseModel):
 
         if self.background:
             log_fn = Path(self.output_dir) / f"reduction_{self.background.name}.log"
-            with open_log_fh(logger, log_fn):
+            with log_to_file(logger, log_fn):
                 try:
                     self.background.reduce()
                 except Exception as e:  # noqa BLE001
@@ -1111,7 +1111,7 @@ class Experiment(BaseModel):
 
         if self.empty_cell:
             log_fn = Path(self.output_dir) / f"reduction_{self.empty_cell.name}.log"
-            with open_log_fh(logger, log_fn):
+            with log_to_file(logger, log_fn):
                 try:
                     self.empty_cell.reduce()
                 except Exception as e:  # noqa BLE001
@@ -1119,7 +1119,7 @@ class Experiment(BaseModel):
 
         for sample in self.samples:
             log_fn = Path(self.output_dir) / f"reduction_{sample.name}.log"
-            with open_log_fh(logger, log_fn):
+            with log_to_file(logger, log_fn):
                 try:
                     sample.reduce()
                 except Exception as e:  # noqa BLE001
