@@ -158,6 +158,26 @@ Coverage reports
 GitHuh actions create reports for unit and integration tests, then combine into one report and upload it to
 `Codecov <https://app.codecov.io/gh/neutrons/usansred>`_.
 
+AI Code Factory
+---------------
+The repository ships supporting files for Claude and Codex AI coding assistants.
+
+``AGENTS.md`` is the authoritative instructions file. All AI tools are expected to read it before making changes.
+
+Codex supporting files
+++++++++++++++++++++++
+
+- ``AGENTS.md``
+- ``.codex/agents/``: behavior for specialized agents in charge of implementing one step in the development workflow.
+- ``.agents/skills/``: instructions to carry out actions of narrow scope.
+
+Claude Code supporting files
++++++++++++++++++++++++++++++
+
+- ``CLAUDE.md``: delegates to ``AGENTS.md`` via the ``@AGENTS.md`` include directive.
+- ``.claude/agents/``: behavior for specialized agents in charge of implementing one step in the development workflow.
+- ``.claude/skills/``: instructions to carry out actions of narrow scope.
+
 
 Building the documentation
 --------------------------
