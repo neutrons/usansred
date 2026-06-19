@@ -63,7 +63,6 @@ Each background and sample object contains descriptive keys for each field.
        "name": "<string>",                    // required if empty cell is present; empty cell name
        "start_scan_num": "<integer|string>",  // required if empty cell is present; run or scan number
        "num_of_scans": "<integer|string>",    // required if empty cell is present; number of scans
-       "thickness": "<number|string>",        // Optional; thickness in cm
        "exclude": ["<integer|string>"]        // scan numbers to skip during reduction; default: []
      },
      "save_all_harmonics": "<boolean>",        // optional; save reduced data for higher harmonics; default: false

@@ -64,7 +64,11 @@ class SampleConfig(_ScanBase):
 
 
 class BackgroundConfig(_ScanBase):
-    """Optional background sample configuration."""
+    """Background sample configuration.
+
+    A background is a measurement without the sample container,
+    used to correct for instrument background and ambient scattering.
+    """
 
     measurement_type: ClassVar[MeasurementType] = MeasurementType.BACKGROUND
     thickness: Annotated[float, Field(gt=0, description="Background sample thickness in cm.")]
@@ -76,15 +80,14 @@ class BackgroundConfig(_ScanBase):
 
 
 class EmptyCellConfig(_ScanBase):
-    """Configuration for an empty cell scan."""
+    """Configuration for an empty cell scan.
+
+    An empty cell is a measurement with a sample container present, but without any sample material.
+    Used to help in the calculation of transmission coefficients and to correct for container scattering.
+    """
 
     measurement_type: ClassVar[MeasurementType] = MeasurementType.EMPTY_CELL
-    thickness: Annotated[float | None, Field(gt=0, description="Empty cell thickness in cm (optional).")] = None
-
-    @field_validator("thickness", mode="before")
-    @classmethod
-    def _coerce_thickness(cls, v):
-        return _to_float(v) if v is not None else None
+    thickness: ClassVar[float] = 1.0  # Empty cell thickness is fixed at 1 cm for correction purposes
 
 
 class BinningConfig(BaseModel):
@@ -111,10 +114,12 @@ class ReductionConfig(BaseModel):
 
     samples: Annotated[list[SampleConfig], Field(min_length=1, description="List of sample configurations to reduce.")]
     background: BackgroundConfig | None = Field(
-        default=None, description="Background (empty cell) configuration. Omit to skip background subtraction."
+        default=None, description="Background sample configuration. Omit to skip background subtraction."
     )
     empty_cell: EmptyCellConfig | None = Field(
-        default=None, description="Empty cell configuration. Omit if no empty cell correction is needed."
+        default=None,
+        description="Empty cell configuration. "
+        "If omitted, transmission correction and empty-cell subtraction will be skipped.",
     )
     save_all_harmonics: bool = Field(
         default=False, description="Save individual harmonic output files in addition to the combined result."

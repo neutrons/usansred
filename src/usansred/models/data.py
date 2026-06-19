@@ -4,6 +4,8 @@ from pydantic.dataclasses import dataclass
 
 @dataclass
 class EventCounts:
+    """Event counts associated with a single scan."""
+
     detector: int = Field(default=0)
     monitor: int = Field(default=0)
     transmission: int = Field(default=0)
@@ -11,6 +13,8 @@ class EventCounts:
 
 @dataclass
 class XYData:
+    """Dataclass for X-Y data associated with a single scan"""
+
     x: list[float] = Field(default_factory=list)
     y: list[float] = Field(default_factory=list)
     e: list[float] = Field(default_factory=list)
@@ -22,6 +26,11 @@ class XYData:
 
 @dataclass
 class IQData:
+    """Dataclass for I-Q data associated with a single scan
+
+    I vs. Q (intensity vs. momentum transfer) is determined from the X-Y data.
+    """
+
     q: list[float] = Field(default_factory=list)
     i: list[float] = Field(default_factory=list)
     e: list[float] = Field(default_factory=list)
@@ -33,6 +42,8 @@ class IQData:
 
 @dataclass
 class MonitorData:
+    """Container for monitor data associated with a single scan."""
+
     xy_data: XYData = Field(default_factory=XYData)
     iq_data: IQData = Field(default_factory=IQData)
     filepath: str = ""

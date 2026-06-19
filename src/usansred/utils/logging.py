@@ -10,7 +10,14 @@ LOG_FMT = logging.Formatter(fmt=FORMAT, datefmt=DATEFMT)
 
 
 def set_log_config(level: Union[str, int] = logging.INFO):
-    """Sets basic logging config and format"""
+    """Sets basic logging config and format for the root logger and all existing loggers,
+    ensuring that all log messages are printed to stdout with the same format.
+
+    Parameters
+    ----------
+    level : Union[str, int], optional
+        The logging level, by default logging.INFO
+    """
 
     logging.basicConfig(
         format=FORMAT,
@@ -26,8 +33,15 @@ def set_log_config(level: Union[str, int] = logging.INFO):
     return
 
 
-def get_logger(name: str, level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO") -> logging.Logger:
-    """Get the logger of a given name and level, adding a stream handler to stdout if none exists"""
+def get_logger(name: str, level: Union[str, int] = logging.INFO) -> logging.Logger:
+    """Get the logger of a given name and level, adding a stream handler to stdout if none exists
+
+    Parameters
+    ----------
+    name : str
+        Name of the logger to retrieve.
+    level : Union[str, int], optional
+        Logging level for the logger, by default logging.INFO"""
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -52,7 +66,19 @@ def get_logger(name: str, level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "C
 def add_log_fh(logger: logging.Logger, logfile: str, mode: Literal["w", "a"] = "w") -> logging.Handler:
     """Add a file handler to a logger, replacing any existing one for the same file.
 
-    mode follows FileHandler semantics, typically "w" (overwrite) or "a" (append).
+    Parameters
+    ----------
+    logger : logging.Logger
+        The logger to which the file handler will be added.
+    logfile : str
+        The path to the log file. If the file or its parent directories do not exist, they will be created.
+    mode : Literal["w", "a"], optional
+        The file mode for the handler, either "w" for overwrite or "a" for append, by default "w".
+
+    Returns
+    -------
+    logging.Handler
+        The file handler that was added to the logger.
     """
 
     resolved_logfile = str(Path(logfile).resolve())
@@ -69,7 +95,7 @@ def add_log_fh(logger: logging.Logger, logfile: str, mode: Literal["w", "a"] = "
     return file_handler
 
 
-def remove_log_fh(logger: logging.Logger, logfile: Optional[str] = None) -> int:
+def remove_log_fh(logger: logging.Logger, logfile: str | None = None) -> int:
     """Close and remove file handlers from a logger.
 
     If logfile is provided, only handlers for that file are removed.
@@ -98,7 +124,7 @@ def remove_log_fh(logger: logging.Logger, logfile: Optional[str] = None) -> int:
 
 @contextmanager
 def log_to_file(logger: logging.Logger, logfile: str) -> Iterator[logging.Handler]:
-    """Temporarily attach a file handler and always close it on exit."""
+    """Temporarily attach a file handler and close it on exit."""
 
     handler = add_log_fh(logger, logfile)
     try:

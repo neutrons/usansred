@@ -1,9 +1,9 @@
-from enum import StrEnum, auto
+from enum import StrEnum
 
 
 class MeasurementType(StrEnum):
     """Enum for measurement types."""
 
-    SAMPLE = auto()
-    BACKGROUND = auto()
-    EMPTY_CELL = auto()
+    SAMPLE = "sample"
+    BACKGROUND = "background"
+    EMPTY_CELL = "empty_cell"

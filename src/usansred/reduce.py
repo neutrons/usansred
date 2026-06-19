@@ -59,6 +59,8 @@ class Scan(BaseModel):
     ----------
     number : int
         Scan (run) number
+    counts : EventCounts
+        Event counts object for this scan
     experiment : Experiment
         Experiment this scan belongs to
     monitor_data : MonitorData
@@ -83,7 +85,10 @@ class Scan(BaseModel):
         """Post-validation initializer"""
         if self.load_data:
             self.load()
-            self._get_event_counts()
+            try:
+                self._get_event_counts()
+            except FileNotFoundError as e:
+                logger.error(f"Data files for scan {self.number} not found: {e}. Leaving event counts as zero.")
 
     def _get_event_counts(self):
         """Update event counts based on loaded data"""
@@ -94,17 +99,17 @@ class Scan(BaseModel):
                 count = sum(int(row[1]) for row in reader if len(row) >= 3 and not row[0].startswith("#"))
                 return count
 
-        monitor_fn = f"USANS_{self.number}_monitor.txt"
-        monitor_fp = os.path.join(self.experiment.folder, monitor_fn)
-        self.counts.monitor = _count_valid_rows(monitor_fp)
-
-        detector_fn = f"USANS_{self.number}_detector.txt"
-        detector_fp = os.path.join(self.experiment.folder, detector_fn)
-        self.counts.detector = _count_valid_rows(detector_fp)
-
-        trans_fn = f"USANS_{self.number}_trans.txt"
-        trans_fp = os.path.join(self.experiment.folder, trans_fn)
-        self.counts.transmission = _count_valid_rows(trans_fp)
+        for fn, attr in [
+            (f"USANS_{self.number}_monitor.txt", "monitor"),
+            (f"USANS_{self.number}_detector.txt", "detector"),
+            (f"USANS_{self.number}_trans.txt", "transmission"),
+        ]:
+            fp = os.path.join(self.experiment.folder, fn)
+            if not os.path.isfile(fp):
+                logger.warning(f"Event count file {fn} not found for scan {self.number}. Setting {attr} count to 0.")
+                setattr(self.counts, attr, 0)
+            else:
+                setattr(self.counts, attr, _count_valid_rows(fp))
 
     @property
     def size(self) -> int:
@@ -203,7 +208,7 @@ class Sample(BaseModel):
     start_scan_num: int = Field(..., description="Starting number for this sample")
     num_of_scans: int = Field(..., description="Number of scans for this sample")
     scans: list[Scan] = Field(default_factory=list, description="List of scans for this sample")
-    thickness: float | None = Field(None, description="Sample thickness in cm")
+    thickness: float = Field(1.0, description="Sample thickness in cm")
     counts: EventCounts = Field(default_factory=EventCounts, description="Event counts object for this sample")
     measurement_type: MeasurementType = Field(
         MeasurementType.SAMPLE, description="Type of measurement (sample, background, or empty cell)"
@@ -214,7 +219,7 @@ class Sample(BaseModel):
     data_scaled: list[IQData] = Field(default_factory=list, init=False, description="Data scaled to thickness")
     data_log_binned: IQData = Field(default_factory=IQData, init=False, description="Log-binned data")
     data_bg_subtracted: IQData = Field(default_factory=IQData, init=False, description="Background subtracted data")
-    transmitted: float = Field(0, description="Number of transmitted neutrons (for transmission correction)")
+    transmitted: float = Field(0, description="Ratio of transmitted neutrons (for transmission correction)")
     transmission: float = Field(1.0, description="Transmission coefficient (for transmission correction)")
 
     def model_post_init(self, _context: Any) -> None:  # noqa ANN401
@@ -229,18 +234,21 @@ class Sample(BaseModel):
             self.counts.monitor += scan.counts.monitor
             self.counts.detector += scan.counts.detector
             self.counts.transmission += scan.counts.transmission
-            self.num_of_scans = len(self.scans)
             self.scans.append(scan)
+        self.num_of_scans = len(self.scans)
 
         self.transmitted = (
             (self.counts.detector + self.counts.transmission) / self.counts.monitor if self.counts.monitor > 0 else 0
         )
         # Calculate transmission coefficient using the empty cell's transmitted value if available
-        if self.measurement_type == MeasurementType.SAMPLE:
+        if self.measurement_type in [MeasurementType.SAMPLE, MeasurementType.BACKGROUND]:
             try:
                 self.transmission = self.transmitted / self.experiment.empty_cell.transmitted
-            except AttributeError:
-                logger.warning(f"Empty cell counts not available for sample {self.name}; using default transmission.")
+            except (AttributeError, ZeroDivisionError) as e:
+                logger.warning(
+                    f"Error calculating transmission coefficient for sample {self.name}: {e}."
+                    "Setting transmission to 1.0."
+                )
                 self.transmission = 1.0
 
         # NOTE:
@@ -400,7 +408,7 @@ class Sample(BaseModel):
         if self.experiment.log_binning:
             self.data_log_binned = self.log_bin_data(data_scaled)
 
-        if self.measurement_type is MeasurementType.SAMPLE:
+        if self.measurement_type == MeasurementType.SAMPLE and self.experiment.background:
             self.subtract_background(self.experiment.background)
 
         logger.info(f"Data reduction finished for sample {self.name}.")
@@ -1010,8 +1018,8 @@ class Experiment(BaseModel):
     ----------
     config_file : str
         Path to the configuration file
-    config : ReductionConfig
-        Validated reduction configuration. Populated for both JSON and CSV config files
+    _config : ReductionConfig
+        Validated reduction configuration, always set after construction (private attribute)
     output_dir : str | None
         Output folder for reduced data, default is current folder
     prim_wave : float
@@ -1020,6 +1028,16 @@ class Experiment(BaseModel):
         Vertical angle, default is 0.042
     log_binning : bool
         Flag for log-binning, default is False
+    num_of_banks : int
+        Number of detector banks, default is 4 (not expected to change)
+    folder : str
+        Working folder for this experiment, derived from config file path (private attribute)
+    samples : list[Sample]
+        List of samples, populated from config file (private attribute)
+    background : Sample | None
+        Background sample, populated from config file if specified (private attribute)
+    empty_cell : Sample | None
+        Empty cell sample, populated from config file if specified (private attribute)
     """
 
     config_file: str = Field(..., description="Path to the configuration file")
@@ -1063,7 +1081,12 @@ class Experiment(BaseModel):
 
         ec = self.config.empty_cell
         if ec is not None:
-            self.empty_cell = Sample(**ec.model_dump(), experiment=self, measurement_type=MeasurementType.EMPTY_CELL)
+            self.empty_cell = Sample(
+                **ec.model_dump(),
+                thickness=1.0,  # ignore any user-provided thickness, used for transmission correction only
+                experiment=self,
+                measurement_type=MeasurementType.EMPTY_CELL,
+            )
 
         background = self.config.background
         if background is not None:
