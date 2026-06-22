@@ -6,6 +6,11 @@
     "thickness": 0.1,
     "exclude": [45336]
   },
+  "empty_cell": {
+    "name": "empty_cell_scan",
+    "start_scan_num": "45340",
+    "num_of_scans": 1
+  },
   "samples": [
     {
       "name": "sample1",

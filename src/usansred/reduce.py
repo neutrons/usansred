@@ -1,6 +1,5 @@
 import copy
 import csv
-import logging
 import math
 import os
 from collections import defaultdict
@@ -11,18 +10,18 @@ import numpy as np
 from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
 
+from usansred.enums import MeasurementType
 from usansred.io.read import read_config
-from usansred.model import IQData, MonitorData, ReductionConfig, XYData
+from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.summary import generate_report
-
-# separate logging in file and console
-logging.basicConfig(filename="file.log", filemode="w", level=logging.INFO)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-logging.getLogger("").addHandler(console)
-
+from usansred.utils.logging import get_logger, log_to_file, set_log_config
 
 ARCSEC_TO_RADIANS = math.pi / (3600.0 * 180.0)
+
+# Setup root logging config
+set_log_config()
+
+logger = get_logger(__name__)
 
 
 def _gaussian(x: np.ndarray, background: float, amplitude: float, sigma: float, center: float) -> np.ndarray:
@@ -60,6 +59,8 @@ class Scan(BaseModel):
     ----------
     number : int
         Scan (run) number
+    counts : EventCounts
+        Event counts object for this scan
     experiment : Experiment
         Experiment this scan belongs to
     monitor_data : MonitorData
@@ -72,19 +73,43 @@ class Scan(BaseModel):
     """
 
     number: int = Field(..., description="Scan (run) number")
+    counts: EventCounts = Field(default_factory=EventCounts, description="Event counts object for this scan")
     experiment: "Experiment" = Field(..., description="Experiment this scan belongs to")
     monitor_data: MonitorData = Field(default_factory=MonitorData, description="Monitor data associated with this scan")
     detector_data: list[MonitorData] = Field(
         default_factory=list, description="Detector data associated with this scan"
     )
     load_data: bool = Field(True, description="Whether to load data files during initialization")
-    # NOTE: Not currently used, but may be useful in the future
-    # sample: "Sample" = Field(..., description="The sample associated with this scan")
 
     def model_post_init(self, _context: Any) -> None:  # noqa ANN401
         """Post-validation initializer"""
         if self.load_data:
             self.load()
+            try:
+                self._get_event_counts()
+            except FileNotFoundError as e:
+                logger.error(f"Data files for scan {self.number} not found: {e}. Leaving event counts as zero.")
+
+    def _get_event_counts(self):
+        """Update event counts based on loaded data"""
+
+        def _count_valid_rows(filepath: str) -> int:
+            with open(filepath, "r") as file:
+                reader = csv.reader(file, delimiter=",")
+                count = sum(int(row[1]) for row in reader if len(row) >= 3 and not row[0].startswith("#"))
+                return count
+
+        for fn, attr in [
+            (f"USANS_{self.number}_monitor.txt", "monitor"),
+            (f"USANS_{self.number}_detector.txt", "detector"),
+            (f"USANS_{self.number}_trans.txt", "transmission"),
+        ]:
+            fp = os.path.join(self.experiment.folder, fn)
+            if not os.path.isfile(fp):
+                logger.warning(f"Event count file {fn} not found for scan {self.number}. Setting {attr} count to 0.")
+                setattr(self.counts, attr, 0)
+            else:
+                setattr(self.counts, attr, _count_valid_rows(fp))
 
     @property
     def size(self) -> int:
@@ -97,18 +122,18 @@ class Scan(BaseModel):
         return self.experiment.num_of_banks
 
     def load(self):
-        """Load experiment data files"""
-        self.load_monitor_data()
-        self.load_detector_data()
+        """Load data files for this scan."""
+        self._load_monitor_data()
+        self._load_detector_data()
 
-    def load_monitor_data(self):
+    def _load_monitor_data(self):
         filename = f"USANS_{self.number}_monitor_scan_ARN.txt"
         filepath = os.path.join(self.experiment.folder, filename)
         xy_data = self.read_xy_file(filepath)
         iq_data = self.convert_xy_to_iq(xy_data)
         self.monitor_data = MonitorData(xy_data=xy_data, iq_data=iq_data, filepath=filepath)
 
-    def load_detector_data(self):
+    def _load_detector_data(self):
         for bank in range(1, self.num_of_banks + 1):
             filename = f"USANS_{self.number}_detector_scan_ARN_peak_{bank}.txt"
             filepath = os.path.join(self.experiment.folder, filename)
@@ -183,14 +208,19 @@ class Sample(BaseModel):
     start_scan_num: int = Field(..., description="Starting number for this sample")
     num_of_scans: int = Field(..., description="Number of scans for this sample")
     scans: list[Scan] = Field(default_factory=list, description="List of scans for this sample")
-    thickness: float = Field(0.1, description="Sample thickness in cm")
-    is_background: bool = Field(False, description="Flag to indicate if this is a background sample")
+    thickness: float = Field(1.0, description="Sample thickness in cm")
+    counts: EventCounts = Field(default_factory=EventCounts, description="Event counts object for this sample")
+    measurement_type: MeasurementType = Field(
+        MeasurementType.SAMPLE, description="Type of measurement (sample, background, or empty cell)"
+    )
     exclude: list[int] = Field(default_factory=list, description="List of scan numbers to exclude")
     # Fields that are initialized in model_post_init and not expected from user input
     detector_data: list[IQData] = Field(default_factory=list, init=False, description="Original detector data")
     data_scaled: list[IQData] = Field(default_factory=list, init=False, description="Data scaled to thickness")
     data_log_binned: IQData = Field(default_factory=IQData, init=False, description="Log-binned data")
     data_bg_subtracted: IQData = Field(default_factory=IQData, init=False, description="Background subtracted data")
+    transmitted: float = Field(0, description="Ratio of transmitted neutrons (for transmission correction)")
+    transmission: float = Field(1.0, description="Transmission coefficient (for transmission correction)")
 
     def model_post_init(self, _context: Any) -> None:  # noqa ANN401
         """Post-validation initializer"""
@@ -201,8 +231,25 @@ class Sample(BaseModel):
                 number=i + self.start_scan_num,
                 experiment=self.experiment,
             )
+            self.counts.monitor += scan.counts.monitor
+            self.counts.detector += scan.counts.detector
+            self.counts.transmission += scan.counts.transmission
             self.scans.append(scan)
         self.num_of_scans = len(self.scans)
+
+        self.transmitted = (
+            (self.counts.detector + self.counts.transmission) / self.counts.monitor if self.counts.monitor > 0 else 0
+        )
+        # Calculate transmission coefficient using the empty cell's transmitted value if available
+        if self.measurement_type in [MeasurementType.SAMPLE, MeasurementType.BACKGROUND]:
+            try:
+                self.transmission = self.transmitted / self.experiment.empty_cell.transmitted
+            except (AttributeError, ZeroDivisionError) as e:
+                logger.warning(
+                    f"Error calculating transmission coefficient for sample {self.name}: {e}."
+                    "Setting transmission to 1.0."
+                )
+                self.transmission = 1.0
 
         # NOTE:
         #  - detector_data: original data after being stitched with another monitor-normalized scan
@@ -268,7 +315,7 @@ class Sample(BaseModel):
         """Dump IQ or XY data to a CSV file."""
         output_dir = os.path.dirname(filepath)
         if output_dir and not os.path.exists(output_dir):
-            logging.info(f"Output directory {output_dir} does not exist; creating it.")
+            logger.info(f"Output directory {output_dir} does not exist; creating it.")
             os.makedirs(output_dir)
 
         data_dict = data.as_dict()
@@ -331,7 +378,7 @@ class Sample(BaseModel):
 
         if log_binned_data:
             if not self.is_log_binned:
-                logging.info(f"Sample {self.name} has not been log-binned; skipping log-binned data dump.")
+                logger.info(f"Sample {self.name} has not been log-binned; skipping log-binned data dump.")
                 return
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_lb.txt")
             self.dump_data_to_csv(filepath, self.data_log_binned)
@@ -345,6 +392,9 @@ class Sample(BaseModel):
 
     def reduce(self):
         """Reduce this sample's scans"""
+        logger.info(f"Starting reduction for sample {self.name} with {len(self.scans)} scans.")
+        logger.info(f"Transmission coefficient for sample {self.name}: {self.transmission:.4f}")
+
         self.normalize_by_monitor()
         self.stitch_scans()
         self.rocking_curve_centering()
@@ -352,16 +402,16 @@ class Sample(BaseModel):
 
         # Only process first detector bank
         data_scaled = self.data_scaled[0]
-        logging.info(f"Only the first bank data is used for sample {self.name}.")
+        logger.info(f"Only the first bank data is used for sample {self.name}.")
 
         # Log-binning is optional
         if self.experiment.log_binning:
             self.data_log_binned = self.log_bin_data(data_scaled)
 
-        if self.experiment.background and not self.is_background:
+        if self.measurement_type == MeasurementType.SAMPLE and self.experiment.background:
             self.subtract_background(self.experiment.background)
 
-        logging.info(f"Data reduction finished for sample {self.name}.")
+        logger.info(f"Data reduction finished for sample {self.name}.")
         return
 
     # TODO: This function should be re-written from scratch
@@ -557,7 +607,7 @@ class Sample(BaseModel):
             self.data_scaled.append(iq_scaled)
 
         q_range = f"{min(self.data_scaled[0].q)} - {max(self.data_scaled[0].q)}"
-        logging.info(f"Rescaled data for sample {self.name}, Q-range: {q_range} 1/angstrom\n")
+        logger.info(f"Rescaled data for sample {self.name}, Q-range: {q_range} 1/angstrom")
         return
 
     def stitch_scans(self):
@@ -626,7 +676,7 @@ class Sample(BaseModel):
                     e=error.tolist(),
                 )
             )
-        logging.info(f"Scans stitched together for sample {self.name}.\n")
+        logger.info(f"Scans stitched together for sample {self.name}.")
 
         theta_to_q = 2 * (math.pi**2.0) * 1.0 / (self.experiment.prim_wave * 3600.0 * 180.0)
         theta_range_msg = ""
@@ -640,8 +690,8 @@ class Sample(BaseModel):
             temp_q = [math.fabs(theta * theta_to_q) for theta in scan.detector_data[0].iq_data.q]
             q_range_msg += f"Q range for scan {scan.number}: {min(temp_q)} - {max(temp_q)} 1/angstrom\n"
 
-        logging.info(theta_range_msg)
-        logging.info(q_range_msg)
+        logger.info(theta_range_msg)
+        logger.info(q_range_msg)
         return
 
     def rocking_curve_centering(self) -> float:
@@ -702,7 +752,7 @@ class Sample(BaseModel):
         for rocking_curve in self.detector_data:
             rocking_curve.q = [float(harmonic_q - q_offset) for harmonic_q in rocking_curve.q]
 
-        logging.info(f"Centered rocking curves for sample {self.name} using offset {q_offset}.")
+        logger.info(f"Centered rocking curves for sample {self.name} using offset {q_offset}.")
         return q_offset
 
     def _match_or_interpolate(
@@ -747,7 +797,7 @@ class Sample(BaseModel):
             assert background.is_log_binned, (
                 f"Background {background.name} must be log-binned before background subtraction."
             )
-            logging.info(
+            logger.info(
                 f"Logbinned data are used for background subtraction. Sample {self.name}, background {background.name}"
             )
             data = self.data_log_binned
@@ -798,7 +848,7 @@ class Sample(BaseModel):
             self.data_bg_subtracted.i = i_subtracted.tolist()
             self.data_bg_subtracted.e = e_subtracted.tolist()
 
-        logging.info(f"Subtracted background {background.name} from sample {self.name}")
+        logger.info(f"Subtracted background {background.name} from sample {self.name}")
         return
 
 
@@ -813,8 +863,8 @@ class CombinedSample(BaseModel):
         Experiment this combined sample belongs to.
     thickness : float
         Sample thickness in cm.
-    is_background : bool
-        Whether this combined sample represents a background measurement.
+    measurement_type : MeasurementType
+        Type of measurement (sample, background, or empty cell).
     combined_samples : list[Sample]
         Individual Sample objects whose scans will be combined.
     combined_scans : list[Scan]
@@ -824,7 +874,9 @@ class CombinedSample(BaseModel):
     name: str = Field(..., description="Combined sample name")
     experiment: "Experiment" = Field(..., description="Experiment associated with this combined sample")
     thickness: float = Field(0.1, description="Sample thickness in cm")
-    is_background: bool = Field(False, description="Whether this is a background sample")
+    measurement_type: MeasurementType = Field(
+        MeasurementType.SAMPLE, description="Type of measurement (sample, background, or empty cell)"
+    )
     combined_samples: list[Sample] = Field(default_factory=list, description="Individual samples to combine")
     combined_scans: list[Scan] = Field(default_factory=list, description="Combined scans (populated by combine)")
 
@@ -852,7 +904,7 @@ class CombinedSample(BaseModel):
         for scan_idx in range(max_scans):
             for sample in self.combined_samples:
                 if scan_idx >= len(sample.scans):
-                    logging.warning(
+                    logger.warning(
                         f"Sample '{sample.name}' contains fewer scans than others "
                         f"(has {len(sample.scans)}, expected at least {scan_idx + 1}). Skipping."
                     )
@@ -899,7 +951,7 @@ class CombinedSample(BaseModel):
                     scan.detector_data[bank_id].xy_data,
                 )
 
-        logging.info(
+        logger.info(
             f"Combined {len(self.combined_samples)} samples into '{self.name}' ({len(self.combined_scans)} scans)."
         )
 
@@ -966,8 +1018,8 @@ class Experiment(BaseModel):
     ----------
     config_file : str
         Path to the configuration file
-    config : ReductionConfig
-        Validated reduction configuration. Populated for both JSON and CSV config files
+    _config : ReductionConfig
+        Validated reduction configuration, always set after construction (private attribute)
     output_dir : str | None
         Output folder for reduced data, default is current folder
     prim_wave : float
@@ -976,6 +1028,16 @@ class Experiment(BaseModel):
         Vertical angle, default is 0.042
     log_binning : bool
         Flag for log-binning, default is False
+    num_of_banks : int
+        Number of detector banks, default is 4 (not expected to change)
+    folder : str
+        Working folder for this experiment, derived from config file path (private attribute)
+    samples : list[Sample]
+        List of samples, populated from config file (private attribute)
+    background : Sample | None
+        Background sample, populated from config file if specified (private attribute)
+    empty_cell : Sample | None
+        Empty cell sample, populated from config file if specified (private attribute)
     """
 
     config_file: str = Field(..., description="Path to the configuration file")
@@ -986,8 +1048,9 @@ class Experiment(BaseModel):
     log_binning: bool = Field(False, description="Flag for log-binning")
     num_of_banks: int = Field(default=4, init=False, description="Number of detector banks")
     folder: str = Field(default="", init=False, description="Working folder for this experiment")
-    background: "Sample | None" = Field(default=None, init=False, description="Background sample")
     samples: list["Sample"] = Field(default_factory=list, init=False, description="List of samples")
+    background: "Sample | None" = Field(default=None, init=False, description="Background sample")
+    empty_cell: "Sample | None" = Field(default=None, init=False, description="Empty cell sample")
 
     @property
     def config(self) -> "ReductionConfig":
@@ -1016,12 +1079,20 @@ class Experiment(BaseModel):
 
         self.log_binning = self.config.binning.log_binning
 
+        ec = self.config.empty_cell
+        if ec is not None:
+            self.empty_cell = Sample(
+                **ec.model_dump(),
+                thickness=1.0,  # ignore any user-provided thickness, used for transmission correction only
+                experiment=self,
+                measurement_type=MeasurementType.EMPTY_CELL,
+            )
+
         background = self.config.background
-        if background is None:
-            logging.info("No background sample defined in the configuration file.")
-            self.background = None
-        else:
-            self.background = Sample(**background.model_dump(), experiment=self)
+        if background is not None:
+            self.background = Sample(
+                **background.model_dump(), experiment=self, measurement_type=MeasurementType.BACKGROUND
+            )
 
         self.samples = [Sample(**s.model_dump(), experiment=self) for s in self.config.samples]
 
@@ -1054,16 +1125,28 @@ class Experiment(BaseModel):
             os.makedirs(self.output_dir)
 
         if self.background:
-            try:
-                self.background.reduce()
-            except Exception as e:  # noqa BLE001
-                logging.exception(f"Cannot reduce background {self.background.name}: {e}")
+            log_fn = Path(self.output_dir) / f"reduction_{self.background.name}.log"
+            with log_to_file(logger, log_fn):
+                try:
+                    self.background.reduce()
+                except Exception as e:  # noqa BLE001
+                    logger.exception(f"Cannot reduce background {self.background.name}: {e}")
+
+        if self.empty_cell:
+            log_fn = Path(self.output_dir) / f"reduction_{self.empty_cell.name}.log"
+            with log_to_file(logger, log_fn):
+                try:
+                    self.empty_cell.reduce()
+                except Exception as e:  # noqa BLE001
+                    logger.exception(f"Cannot reduce empty cell {self.empty_cell.name}: {e}")
 
         for sample in self.samples:
-            try:
-                sample.reduce()
-            except Exception as e:  # noqa BLE001
-                logging.exception(f"Cannot reduce sample {sample.name}: {e}")
+            log_fn = Path(self.output_dir) / f"reduction_{sample.name}.log"
+            with log_to_file(logger, log_fn):
+                try:
+                    sample.reduce()
+                except Exception as e:  # noqa BLE001
+                    logger.exception(f"Cannot reduce sample {sample.name}: {e}")
 
         self.dump_reduced_data()
 
@@ -1104,7 +1187,7 @@ def main():
     experiment.reduce()
     generate_report(config_file_path=args.path, output_dir=experiment.output_dir)
 
-    logging.info("USANS data reduction completed.")
+    logger.info("USANS data reduction completed.")
 
 
 if __name__ == "__main__":

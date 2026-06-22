@@ -50,7 +50,7 @@ def test_get_filenames_from_samples(sample_name, expected_filenames):
         assert get_filenames_from_samples(sample_name) == expected_filenames
 
 
-def test_generate_report_reads_from_output_dir(tmp_path, caplog):
+def test_generate_report_reads_from_output_dir(tmp_path, caplog, monkeypatch):
     """Test that generate_report looks for output files in the output_dir"""
     data_dir = tmp_path / "data"
     output_dir = tmp_path / "output"
@@ -64,6 +64,8 @@ def test_generate_report_reads_from_output_dir(tmp_path, caplog):
     # Place a reduced file in output_dir
     sample_txt = output_dir / "UN_mysample_det_1.txt"
     sample_txt.write_text("0.001,10.0,0.5\n0.002,8.0,0.4\n")
+
+    monkeypatch.setattr(usansred.summary.logger, "propagate", True)
 
     with caplog.at_level(logging.INFO):
         generate_report(str(config), data_dir=str(data_dir), output_dir=str(output_dir))

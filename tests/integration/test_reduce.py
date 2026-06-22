@@ -11,6 +11,8 @@ import pytest
 from usansred.reduce import Experiment
 from usansred.reduce import main as reduce
 
+### Helper functions for tests ###
+
 
 def read_numbers_from_file(filename):
     """
@@ -25,10 +27,7 @@ def read_numbers_from_file(filename):
 
 
 def compare_lines(file1, file2, threshold=0.01):
-    """
-    Compare corresponding numbers in two files line by line.
-    If the relative difference exceeds the threshold, print a warning.
-    """
+    """Compare corresponding numbers in two files line by line."""
     numbers_list1 = read_numbers_from_file(file1)
     numbers_list2 = read_numbers_from_file(file2)
 
@@ -42,17 +41,17 @@ def compare_lines(file1, file2, threshold=0.01):
                 raise ValueError(f"Line {i}, Number {num1:.6f} differs significantly from {num2:.6f}")
 
 
-@mock_patch("usansred.reduce.parse_args")
-def test_main_invalid_file(mock_parse_args):
-    # Setup mock objects
-    mock_args = MagicMock()
-    mock_args.logbin = False
-    mock_args.path = "invalid_path.csv"
-    mock_args.output = ""
-    mock_parse_args.return_value = mock_args
-    with pytest.raises(FileNotFoundError) as error:
-        reduce()
-    assert str(error.value) == f"The file path: {mock_args.path} does not exist"
+def assert_reduction_log_files(output_dir: str | Path, sample_names: list[str]):
+    """Assert per-sample reduction log files exist and include completion messages."""
+    output_path = Path(output_dir)
+    for name in sample_names:
+        logfile = output_path / f"reduction_{name}.log"
+        assert logfile.is_file()
+        content = logfile.read_text(encoding="utf-8")
+        assert f"Data reduction finished for sample {name}." in content
+
+
+### Tests ###
 
 
 @pytest.mark.datarepo
@@ -79,6 +78,21 @@ def test_main(mock_parse_args, data_server, tmp_path):
             output, expected = os.path.join(tmp_path, filename), os.path.join(goldendir, filename)
             if os.path.exists(expected) and os.path.exists(output):  # "UN_EmptyPCell_det_1_lbs.txt" doesn't exist
                 compare_lines(output, expected)
+
+    assert_reduction_log_files(tmp_path, ["S115_pc3", "S115_dry", "EmptyPCell"])
+
+
+@mock_patch("usansred.reduce.parse_args")
+def test_main_invalid_file(mock_parse_args):
+    # Setup mock objects
+    mock_args = MagicMock()
+    mock_args.logbin = False
+    mock_args.path = "invalid_path.csv"
+    mock_args.output = ""
+    mock_parse_args.return_value = mock_args
+    with pytest.raises(FileNotFoundError) as error:
+        reduce()
+    assert str(error.value) == f"The file path: {mock_args.path} does not exist"
 
 
 @pytest.mark.datarepo
@@ -118,6 +132,8 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
             scaled_file = bank_dir / f"UN_{name}.txt"
             assert scaled_file.is_file()
             assert scaled_file.stat().st_size > 0
+
+    assert_reduction_log_files(output_dir, ["S115_pc3", "S115_dry", "EmptyPCell"])
 
 
 @pytest.mark.datarepo

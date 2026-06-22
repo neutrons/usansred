@@ -4,7 +4,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from usansred.model import ReductionConfig
+from usansred.models import ReductionConfig
+from usansred.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _format_validation_error(e: ValidationError) -> str:
@@ -49,8 +52,7 @@ def config_from_csv(csv_path: str) -> ReductionConfig:
                 }
             except Exception as e:  # noqa E722
                 sample = None
-                logging.info(f"Error parsing sample {row}: {e}")
-                # traceback.print_exc()
+                logger.info(f"Error parsing sample {row}: {e}")
 
             if sample is not None:
                 if row[0] == "b":

@@ -21,6 +21,9 @@ from matplotlib import use
 from usansred import reduce
 from usansred.io.save import save_ascii, save_summed_spectra
 from usansred.summary import generate_report
+from usansred.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 use("agg")
 np.seterr(all="ignore")
@@ -36,7 +39,7 @@ def update_sequence_info(out_file, info):
             try:
                 scan_dict_global = json.loads(fd.read())
             except:  # noqa E722
-                logging.error("Could not read json file: creating a new one")
+                logger.error("Could not read json file: creating a new one")
 
     scan_dict_global.update(info)
 
@@ -58,11 +61,11 @@ def get_sequence_info(seq_file):
 def main():
     # check number of arguments
     if len(sys.argv) != 3:
-        print("autoreduction code requires a filename and an output directory")
+        print("Autoreduction code requires a filename and an output directory")
         sys.exit(1)
 
     if not (os.path.isfile(sys.argv[1])):
-        print("data file ", sys.argv[1], " not found")
+        print(f"Data file {sys.argv[1]} not found")
         sys.exit()
     else:
         filename = sys.argv[1]
@@ -177,7 +180,7 @@ def main():
                 sequence_first_run = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:FirstRun").value[-1]
                 sequence_index = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Index").value[-1]
                 meta_wavelength = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Wavelength").value[-1]
-                print("Wavelength: %s [%s]" % (wavelength[main_index], meta_wavelength))
+                print(f"Wavelength: {wavelength[main_index]} [{meta_wavelength}]")
 
                 iq_fd.write("# Experiment %s Run %s\n" % (experiment, run_number))
                 iq_fd.write("# Run start time: %s\n" % start_time)
@@ -232,7 +235,7 @@ def main():
                             try:
                                 from finddata.publish_plot import plot1d
                             except:  # noqa E722
-                                logging.error("Cannot import postprocessing or finddata.")
+                                logger.error("Cannot import postprocessing or finddata.")
 
                         try:
                             plot1d(
@@ -244,7 +247,7 @@ def main():
                                 y_log=True,
                             )
                         except:  # noqa E722
-                            logging.error("Error calling plot1d, no image plotted")
+                            logger.error("Error calling plot1d, no image plotted")
                             traceback.print_exc()
 
                         # Save scan info to use for stitching later

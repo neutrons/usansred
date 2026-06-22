@@ -6,8 +6,10 @@ import math
 import numpy as np
 import pytest
 
+import usansred.reduce
 from tests.test_fixtures import _make_sample, _make_scan, _make_scan_multi_bank
-from usansred.model import XYData
+from usansred.enums import MeasurementType
+from usansred.models import XYData
 from usansred.reduce import CombinedSample
 
 # ===========================================================================
@@ -254,7 +256,7 @@ class TestCombinedSampleCombine:
         # Second scan: only sample1 contributed → Y unchanged
         np.testing.assert_allclose(cs.combined_scans[1].monitor_data.xy_data.y, [10.0])
 
-    def test_combine_mismatched_scan_counts_logs_warning(self, mock_experiment, caplog):
+    def test_combine_mismatched_scan_counts_logs_warning(self, mock_experiment, caplog, monkeypatch):
         """Mismatched scan counts should produce a warning log."""
         xy1 = XYData(x=[1.0], y=[10.0], e=[1.0], t=[])
         scan1a = _make_scan(mock_experiment, xy1, xy1)
@@ -265,6 +267,8 @@ class TestCombinedSampleCombine:
         sample2 = _make_sample(mock_experiment, "s2", [scan2a])
 
         cs = CombinedSample(name="combined", experiment=mock_experiment, combined_samples=[sample1, sample2])
+
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
 
         with caplog.at_level(logging.WARNING):
             cs.combine()
@@ -346,13 +350,15 @@ class TestCombinedSampleCombine:
         assert len(cs.combined_scans[0].monitor_data.iq_data.q) == 1
         assert len(cs.combined_scans[1].monitor_data.iq_data.q) == 1
 
-    def test_combine_logs_info_message(self, mock_experiment, caplog):
+    def test_combine_logs_info_message(self, mock_experiment, caplog, monkeypatch):
         """combine() should log an info message upon completion."""
         xy = XYData(x=[1.0], y=[10.0], e=[1.0], t=[])
         scan = _make_scan(mock_experiment, xy, xy)
         sample = _make_sample(mock_experiment, "s1", [scan])
 
         cs = CombinedSample(name="my_combined", experiment=mock_experiment, combined_samples=[sample])
+
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
 
         with caplog.at_level(logging.INFO):
             cs.combine()
@@ -423,10 +429,10 @@ class TestCombinedSampleDefaults:
         cs = CombinedSample(name="test", experiment=mock_experiment)
         assert cs.thickness == 0.1
 
-    def test_default_is_background(self, mock_experiment):
-        """Default is_background should be False."""
+    def test_default_measurement_type(self, mock_experiment):
+        """Default measurement_type should be SAMPLE."""
         cs = CombinedSample(name="test", experiment=mock_experiment)
-        assert cs.is_background is False
+        assert cs.measurement_type is MeasurementType.SAMPLE
 
     def test_default_combined_samples_empty(self, mock_experiment):
         """Default combined_samples should be empty list."""
@@ -443,10 +449,10 @@ class TestCombinedSampleDefaults:
         cs = CombinedSample(name="test", experiment=mock_experiment, thickness=0.5)
         assert cs.thickness == 0.5
 
-    def test_custom_is_background(self, mock_experiment):
-        """Custom is_background should be stored."""
-        cs = CombinedSample(name="test", experiment=mock_experiment, is_background=True)
-        assert cs.is_background is True
+    def test_custom_measurement_type(self, mock_experiment):
+        """Custom measurement_type should be stored."""
+        cs = CombinedSample(name="test", experiment=mock_experiment, measurement_type=MeasurementType.BACKGROUND)
+        assert cs.measurement_type is MeasurementType.BACKGROUND
 
 
 class TestCombinedSampleCombineResetPath:
