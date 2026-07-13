@@ -229,13 +229,7 @@ def main():
                         #     InputWorkspace="USANS_scan_detector", JsonFilename=json_file_path, PlotName="main_output"
                         # )
 
-                        try:
-                            from postprocessing.publish_plot import plot1d
-                        except ImportError:
-                            try:
-                                from finddata.publish_plot import plot1d
-                            except:  # noqa E722
-                                logger.error("Cannot import postprocessing or finddata.")
+                        from plot_publisher import plot1d
 
                         try:
                             plot1d(

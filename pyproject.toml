@@ -122,7 +122,6 @@ mantidworkbench = ">=6.15.0,<6.16.0"
 pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
-finddata = { version = "=0.10.1", channel = "neutrons" }
 
 # Conda packages (no PyPi) to be enumerated within the conda package to be built.
 [tool.pixi.package.run-dependencies]
@@ -131,7 +130,6 @@ mantidworkbench = ">=6.15.0,<6.16.0"
 pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
-finddata = { version = "=0.10.1", channel = "neutrons" }
 
 [tool.pixi.package]
 name = "usansred"
