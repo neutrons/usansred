@@ -17,6 +17,7 @@ from mantid.simpleapi import (
     mtd,
 )
 from matplotlib import use
+from plot_publisher import plot1d
 
 from usansred import reduce
 from usansred.io.save import save_ascii, save_summed_spectra
@@ -228,8 +229,6 @@ def main():
                         # SavePlot1DAsJson(
                         #     InputWorkspace="USANS_scan_detector", JsonFilename=json_file_path, PlotName="main_output"
                         # )
-
-                        from plot_publisher import plot1d
 
                         try:
                             plot1d(
