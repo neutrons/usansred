@@ -37,7 +37,7 @@ def get_filenames_from_samples(sample_name: str) -> list[str]:
         return [
             "UN_" + sample_name + "_det_1.txt",
             "UN_" + sample_name + "_det_1_lb.txt",
-            "UN_" + sample_name + "_det_1_lbs.txt",
+            "UN_" + sample_name + "_det_1_background_subtracted.txt",
             "UN_" + sample_name + "_det_1_unscaled.txt",
         ]
     else:
@@ -202,7 +202,7 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
         )
 
         # Add data series to the main chartsheets
-        if file.endswith("lbs.txt"):
+        if file.endswith("background_subtracted.txt"):
             main_chart_subtracted.add_series(
                 {
                     "name": f"{wn}",

@@ -3,13 +3,17 @@
 # ===========================================================================
 
 import csv
+import logging
 import os
 import tempfile
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
+import usansred.reduce
 from tests.test_fixtures import _make_sample
+from usansred.enums import MeasurementType
 from usansred.models import IQData, MonitorData, XYData
 from usansred.reduce import ARCSEC_TO_RADIANS, Experiment, Sample, Scan, horizontal_rocking_width
 
@@ -175,11 +179,11 @@ class TestSampleRescaleData:
 
     @staticmethod
     def _expected_rescaled_data(
-        experiment: Experiment, harmonic: int, thickness: float, detector_data: IQData
+        experiment: Experiment, harmonic: int, thickness: float, detector_data: IQData, transmission: float = 1.0
     ) -> tuple[list[float], list[float], list[float]]:
         theta_to_q = ARCSEC_TO_RADIANS * (2 * np.pi / (experiment.prim_wave / harmonic))
         analyzer_solid_angle = experiment.v_angle * (horizontal_rocking_width(harmonic) * ARCSEC_TO_RADIANS)
-        scaling_factor = 1.0 / (analyzer_solid_angle * thickness)
+        scaling_factor = 1.0 / (analyzer_solid_angle * thickness * transmission)
 
         q_scaled = [abs(theta) * theta_to_q for theta in detector_data.q]
         i_scaled = [i * scaling_factor for i in detector_data.i]
@@ -199,6 +203,22 @@ class TestSampleRescaleData:
         np.testing.assert_allclose(sample.data_scaled[0].q, expected_q)
         np.testing.assert_allclose(sample.data_scaled[0].i, expected_i)
         np.testing.assert_allclose(sample.data_scaled[0].e, expected_e)
+
+    def test_scales_by_transmission_coefficient(self, mock_experiment):
+        """Intensities and errors should be divided by the transmission coefficient (Q unchanged)."""
+        detector_data = IQData(q=[0.0, 1.0, 3.0], i=[2.0, 4.0, 6.0], e=[0.2, 0.4, 0.6])
+        sample = self._make_rescale_sample(mock_experiment, [detector_data], thickness=0.4)
+        sample.transmission = 0.5
+
+        sample.rescale_data()
+
+        # A transmission of 0.5 should double intensities and errors w.r.t. the transmission-1 baseline
+        baseline_q, baseline_i, baseline_e = self._expected_rescaled_data(
+            mock_experiment, harmonic=1, thickness=sample.thickness, detector_data=detector_data, transmission=1.0
+        )
+        np.testing.assert_allclose(sample.data_scaled[0].q, baseline_q)
+        np.testing.assert_allclose(sample.data_scaled[0].i, [2.0 * i for i in baseline_i])
+        np.testing.assert_allclose(sample.data_scaled[0].e, [2.0 * e for e in baseline_e])
 
     def test_combines_positive_and_negative_angles_into_sorted_q(self, mock_experiment):
         detector_data = IQData(
@@ -386,6 +406,146 @@ class TestSampleDumpDataToCsv:
             assert rows[0][3] == ""
         finally:
             os.unlink(filepath)
+
+
+class TestDumpBackgroundSubtracted:
+    """Tests for dumping the background-subtracted data file."""
+
+    def test_written_when_subtraction_occurred(self, mock_experiment, tmp_path):
+        mock_experiment.output_dir = str(tmp_path)
+        sample = _make_sample(mock_experiment, "test", [])
+        sample.data_bg_subtracted = IQData(q=[0.1, 0.2], i=[10.0, 20.0], e=[1.0, 2.0])
+
+        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False, log_binned_data=False)
+
+        subtracted_file = tmp_path / "UN_test_det_1_background_subtracted.txt"
+        assert subtracted_file.is_file()
+        assert subtracted_file.stat().st_size > 0
+
+    def test_not_written_when_nothing_subtracted(self, mock_experiment, tmp_path):
+        mock_experiment.output_dir = str(tmp_path)
+        sample = _make_sample(mock_experiment, "test", [])
+
+        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False, log_binned_data=False)
+
+        assert list(tmp_path.iterdir()) == []
+
+
+class TestSampleReduceBranching:
+    """Tests for the background/empty-cell subtraction branching in Sample.reduce."""
+
+    @staticmethod
+    def _run_reduce(sample: Sample) -> list[Sample]:
+        """Run Sample.reduce with the pipeline steps mocked; return the subtracted measurements."""
+        subtracted = []
+
+        def fake_rescale(self):
+            self.data_scaled = [IQData(q=[1.0], i=[1.0], e=[0.1])]
+
+        with (
+            patch.object(Sample, "normalize_by_monitor", autospec=True, return_value=None),
+            patch.object(Sample, "stitch_scans", autospec=True, return_value=None),
+            patch.object(Sample, "rocking_curve_centering", autospec=True, return_value=None),
+            patch.object(Sample, "rescale_data", autospec=True, side_effect=fake_rescale),
+            patch.object(
+                Sample,
+                "subtract_background",
+                autospec=True,
+                side_effect=lambda _self, background: subtracted.append(background),
+            ),
+        ):
+            sample.reduce()
+        return subtracted
+
+    @staticmethod
+    def _add_background_and_empty_cell(
+        experiment: Experiment, background: bool, empty_cell: bool
+    ) -> tuple[Sample | None, Sample | None]:
+        if background:
+            experiment.background = _make_sample(experiment, "bg", [])
+            experiment.background.measurement_type = MeasurementType.BACKGROUND
+        if empty_cell:
+            experiment.empty_cell = _make_sample(experiment, "ec", [])
+            experiment.empty_cell.measurement_type = MeasurementType.EMPTY_CELL
+        return experiment.background, experiment.empty_cell
+
+    def test_background_takes_precedence_over_empty_cell(self, mock_experiment):
+        background, _ = self._add_background_and_empty_cell(mock_experiment, background=True, empty_cell=True)
+        sample = _make_sample(mock_experiment, "test", [])
+
+        subtracted = self._run_reduce(sample)
+
+        assert subtracted == [background]
+
+    def test_empty_cell_subtracted_in_absence_of_background(self, mock_experiment):
+        _, empty_cell = self._add_background_and_empty_cell(mock_experiment, background=False, empty_cell=True)
+        sample = _make_sample(mock_experiment, "test", [])
+
+        subtracted = self._run_reduce(sample)
+
+        assert subtracted == [empty_cell]
+
+    def test_background_subtracted_when_no_empty_cell(self, mock_experiment):
+        background, _ = self._add_background_and_empty_cell(mock_experiment, background=True, empty_cell=False)
+        sample = _make_sample(mock_experiment, "test", [])
+
+        subtracted = self._run_reduce(sample)
+
+        assert subtracted == [background]
+
+    def test_no_subtraction_without_background_or_empty_cell(self, mock_experiment):
+        sample = _make_sample(mock_experiment, "test", [])
+
+        subtracted = self._run_reduce(sample)
+
+        assert subtracted == []
+
+    @pytest.mark.parametrize("measurement_type", [MeasurementType.BACKGROUND, MeasurementType.EMPTY_CELL])
+    def test_no_subtraction_for_non_sample_measurements(self, mock_experiment, measurement_type):
+        self._add_background_and_empty_cell(mock_experiment, background=True, empty_cell=True)
+        sample = _make_sample(mock_experiment, "test", [])
+        sample.measurement_type = measurement_type
+
+        subtracted = self._run_reduce(sample)
+
+        assert subtracted == []
+
+
+class TestSampleLogLabels:
+    """Tests for the measurement-type-aware label used in log messages."""
+
+    @pytest.mark.parametrize(
+        ("measurement_type", "expected_label"),
+        [
+            (MeasurementType.SAMPLE, "sample test"),
+            (MeasurementType.BACKGROUND, "background test"),
+            (MeasurementType.EMPTY_CELL, "empty cell test"),
+        ],
+    )
+    def test_label_spells_out_measurement_type(self, mock_experiment, measurement_type, expected_label):
+        sample = _make_sample(mock_experiment, "test", [])
+        sample.measurement_type = measurement_type
+
+        assert sample.label == expected_label
+
+    @pytest.mark.parametrize(
+        ("measurement_type", "expected_label"),
+        [
+            (MeasurementType.SAMPLE, "sample test"),
+            (MeasurementType.BACKGROUND, "background test"),
+            (MeasurementType.EMPTY_CELL, "empty cell test"),
+        ],
+    )
+    def test_reduce_logs_measurement_type(self, mock_experiment, measurement_type, expected_label, caplog, monkeypatch):
+        sample = _make_sample(mock_experiment, "test", [])
+        sample.measurement_type = measurement_type
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
+
+        with caplog.at_level(logging.INFO):
+            TestSampleReduceBranching._run_reduce(sample)
+
+        assert f"Starting reduction for {expected_label} with 0 scans." in caplog.messages
+        assert f"Data reduction finished for {expected_label}." in caplog.messages
 
 
 # ===========================================================================

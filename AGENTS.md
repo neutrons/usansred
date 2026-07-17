@@ -148,7 +148,8 @@ Output names currently include:
 - `UN_<sample>_det_1_unscaled.txt`
 - `UN_<sample>_det_1.txt`
 - `UN_<sample>_det_1_lb.txt`
-- `UN_<sample>_det_1_lbs.txt`
+- `UN_<sample>_det_1_background_subtracted.txt` (only when a background or
+  empty cell was subtracted)
 - `summary.xlsx`
 
 ## Coding Standards

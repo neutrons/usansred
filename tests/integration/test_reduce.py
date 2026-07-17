@@ -41,14 +41,22 @@ def compare_lines(file1, file2, threshold=0.01):
                 raise ValueError(f"Line {i}, Number {num1:.6f} differs significantly from {num2:.6f}")
 
 
-def assert_reduction_log_files(output_dir: str | Path, sample_names: list[str]):
-    """Assert per-sample reduction log files exist and include completion messages."""
+def assert_reduction_log_files(output_dir: str | Path, measurements: list[tuple[str, str]]):
+    """Assert per-measurement reduction log files exist and include completion messages.
+
+    Parameters
+    ----------
+    output_dir : str | Path
+        Directory containing the ``reduction_<name>.log`` files.
+    measurements : list[tuple[str, str]]
+        Pairs of ``(name, label_prefix)``, e.g. ``("EmptyPCell", "background")``.
+    """
     output_path = Path(output_dir)
-    for name in sample_names:
+    for name, label_prefix in measurements:
         logfile = output_path / f"reduction_{name}.log"
         assert logfile.is_file()
         content = logfile.read_text(encoding="utf-8")
-        assert f"Data reduction finished for sample {name}." in content
+        assert f"Data reduction finished for {label_prefix} {name}." in content
 
 
 ### Tests ###
@@ -71,15 +79,21 @@ def test_main(mock_parse_args, data_server, tmp_path):
             "unscaled data": "_unscaled",
             "scaled data": "",
             "log binned data": "_lb",
-            "log binned and background subtracted": "_lbs",
+            "background subtracted": "_background_subtracted",
         }
         for suffix in file_suffixes.values():
             filename = f"UN_{name}_det_1{suffix}.txt"
             output, expected = os.path.join(tmp_path, filename), os.path.join(goldendir, filename)
-            if os.path.exists(expected) and os.path.exists(output):  # "UN_EmptyPCell_det_1_lbs.txt" doesn't exist
+            if os.path.exists(expected) and os.path.exists(output):
                 compare_lines(output, expected)
 
-    assert_reduction_log_files(tmp_path, ["S115_pc3", "S115_dry", "EmptyPCell"])
+    # The background-subtracted file is written for the samples ...
+    for name in ["S115_pc3", "S115_dry"]:
+        assert os.path.exists(os.path.join(tmp_path, f"UN_{name}_det_1_background_subtracted.txt"))
+    # ... but not for the background itself (nothing is subtracted from it)
+    assert not os.path.exists(os.path.join(tmp_path, "UN_EmptyPCell_det_1_background_subtracted.txt"))
+
+    assert_reduction_log_files(tmp_path, [("S115_pc3", "sample"), ("S115_dry", "sample"), ("EmptyPCell", "background")])
 
 
 @mock_patch("usansred.reduce.parse_args")
@@ -133,7 +147,53 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
             assert scaled_file.is_file()
             assert scaled_file.stat().st_size > 0
 
-    assert_reduction_log_files(output_dir, ["S115_pc3", "S115_dry", "EmptyPCell"])
+    assert_reduction_log_files(
+        output_dir, [("S115_pc3", "sample"), ("S115_dry", "sample"), ("EmptyPCell", "background")]
+    )
+
+
+@pytest.mark.datarepo
+def test_reduce_empty_cell(data_server, tmp_path):
+    """Empty-cell reduction and subtraction in the absence of a background.
+
+    Log binning is disabled by overriding the config in-memory (raw data files are resolved
+    relative to the setup file's folder, so the setup file cannot simply be copied elsewhere).
+    This exercises the interpolation branch of ``Sample.subtract_background``.
+    """
+    config_file = data_server.path_to("setup-empty-cell.json")
+    experiment = Experiment(config_file=config_file, output_dir=str(tmp_path))
+    experiment.log_binning = False
+    experiment.config.binning.log_binning = False
+
+    experiment.reduce()
+
+    # The empty cell was reduced (first, in the absence of a background)
+    assert_reduction_log_files(tmp_path, [("EmptyPCell", "empty cell"), ("S115_pc3", "sample"), ("S115_dry", "sample")])
+
+    # No output files are written for the empty cell
+    assert list(tmp_path.glob("UN_EmptyPCell*")) == []
+
+    # The empty cell was subtracted from each sample
+    for name in ["S115_pc3", "S115_dry"]:
+        subtracted_file = tmp_path / f"UN_{name}_det_1_background_subtracted.txt"
+        assert subtracted_file.is_file()
+        assert subtracted_file.stat().st_size > 0
+        logfile = (tmp_path / f"reduction_{name}.log").read_text(encoding="utf-8")
+        assert f"Subtracted empty cell EmptyPCell from sample {name}" in logfile
+
+    # The scaled data equals the golden result (produced with transmission == 1.0) with
+    # intensities and errors divided by the transmission coefficient. The golden file was
+    # generated from setup.json, whose sample definitions are identical; scaled data is
+    # independent of binning and subtraction.
+    goldendir = os.path.join(os.path.dirname(config_file), "reduced")
+    for sample in experiment.samples:
+        transmission = sample.transmission
+        assert 0.0 < transmission < 1.0
+        golden = np.array(read_numbers_from_file(os.path.join(goldendir, f"UN_{sample.name}_det_1.txt")))
+        output = np.array(read_numbers_from_file(str(tmp_path / f"UN_{sample.name}_det_1.txt")))
+        np.testing.assert_allclose(output[:, 0], golden[:, 0], rtol=1e-6)  # Q (1/angstrom) unchanged
+        np.testing.assert_allclose(output[:, 1], golden[:, 1] / transmission, rtol=1e-6)
+        np.testing.assert_allclose(output[:, 2], golden[:, 2] / transmission, rtol=1e-6)
 
 
 @pytest.mark.datarepo
