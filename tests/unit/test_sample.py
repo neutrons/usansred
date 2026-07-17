@@ -503,10 +503,10 @@ class TestSampleReduceBranching:
     @pytest.mark.parametrize("measurement_type", [MeasurementType.BACKGROUND, MeasurementType.EMPTY_CELL])
     def test_no_subtraction_for_non_sample_measurements(self, mock_experiment, measurement_type):
         self._add_background_and_empty_cell(mock_experiment, background=True, empty_cell=True)
-        sample = _make_sample(mock_experiment, "test", [])
-        sample.measurement_type = measurement_type
+        measurement = _make_sample(mock_experiment, "test", [])
+        measurement.measurement_type = measurement_type
 
-        subtracted = self._run_reduce(sample)
+        subtracted = self._run_reduce(measurement)
 
         assert subtracted == []
 
