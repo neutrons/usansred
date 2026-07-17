@@ -349,7 +349,30 @@ class Sample(BaseModel):
         bg_subtracted_data: bool = True,
         log_binned_data: bool = True,
     ):
-        """Dump reduced data to CSV files based on specified flags."""
+        """Write this measurement's reduced data to CSV text files in the experiment's output directory.
+
+        Each flag enables one category of output file (all default to True; the reduction
+        workflow in ``Experiment.dump_reduced_data`` always uses the defaults). A category
+        is also skipped when its corresponding data is empty.
+
+        Parameters
+        ----------
+        detector_data : bool
+            Write the stitched, monitor-normalized data, ``UN_<name>_det_1_unscaled.txt``.
+            With ``save_all_harmonics``, higher banks go to ``bank_<n>/UN_<name>_unscaled.txt``.
+            Skipped when no detector data is present.
+        scaled_data : bool
+            Write the data rescaled by analyzer solid angle, sample thickness, and transmission,
+            ``UN_<name>_det_1.txt``. With ``save_all_harmonics``, higher banks go to
+            ``bank_<n>/UN_<name>.txt``.
+        bg_subtracted_data : bool
+            Write the background- (or empty-cell-) subtracted data,
+            ``UN_<name>_det_1_background_subtracted.txt``. Only written when a subtraction
+            actually occurred (``is_reduced`` is True).
+        log_binned_data : bool
+            Write the log-binned data, ``UN_<name>_det_1_lb.txt``. Skipped when the
+            measurement has not been log-binned.
+        """
         if detector_data and self.data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_unscaled.txt")
             self.dump_data_to_csv(filepath, self.data)
