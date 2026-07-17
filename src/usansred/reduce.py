@@ -346,7 +346,7 @@ class Sample(BaseModel):
         self,
         detector_data: bool = True,
         scaled_data: bool = True,
-        bg_subtracted_data: bool = True,
+        background_subtracted_data: bool = True,
         log_binned_data: bool = True,
     ):
         """Write this measurement's reduced data to CSV text files in the experiment's output directory.
@@ -365,7 +365,7 @@ class Sample(BaseModel):
             Write the data rescaled by analyzer solid angle, sample thickness, and transmission,
             ``UN_<name>_det_1.txt``. With ``save_all_harmonics``, higher banks go to
             ``bank_<n>/UN_<name>.txt``.
-        bg_subtracted_data : bool
+        background_subtracted_data : bool
             Write the background- (or empty-cell-) subtracted data,
             ``UN_<name>_det_1_background_subtracted.txt``. Only written when a subtraction
             actually occurred (``is_reduced`` is True).
@@ -399,7 +399,7 @@ class Sample(BaseModel):
                     )
                     self.dump_data_to_csv(filepath, self.data_scaled[i])
 
-        if bg_subtracted_data:
+        if background_subtracted_data:
             # Only written when a background or empty cell was actually subtracted
             if self.is_reduced:
                 filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_background_subtracted.txt")
