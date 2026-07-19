@@ -354,7 +354,7 @@ class Sample(BaseModel):
         scaled_data: bool = True,
         background_subtracted_data: bool = True,
         log_binned_data: bool = True,
-    ):
+    ) -> None:
         """Write this measurement's reduced data to CSV text files in the experiment's output directory.
 
         Each flag enables one category of output file (all default to True; the reduction
