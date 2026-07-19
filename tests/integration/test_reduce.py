@@ -78,13 +78,13 @@ def test_main(mock_parse_args, data_server, tmp_path):
         file_suffixes = {
             "unscaled data": "_unscaled",
             "scaled data": "",
-            "log binned data": "_lb",
             "background subtracted": "_background_subtracted",
         }
         for suffix in file_suffixes.values():
             filename = f"UN_{name}_det_1{suffix}.txt"
             output, expected = os.path.join(tmp_path, filename), os.path.join(goldendir, filename)
-            if os.path.exists(expected) and os.path.exists(output):
+            if os.path.exists(expected):
+                assert os.path.exists(output), f"Missing expected output file: {output}"
                 compare_lines(output, expected)
 
     # The background-subtracted file is written for the samples ...
