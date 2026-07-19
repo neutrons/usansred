@@ -1178,13 +1178,17 @@ class Experiment(BaseModel):
                     f"Skipping reduction of {self.empty_cell.label}: a background is present. "
                     "The empty cell is still used to compute transmission coefficients."
                 )
-            else:
+            else:  # reduce the empty cell if no background is present
                 log_fn = Path(self.output_dir) / f"reduction_{self.empty_cell.name}.log"
                 with log_to_file(logger, log_fn):
                     try:
                         self.empty_cell.reduce()
                     except Exception as e:  # noqa BLE001
                         logger.exception(f"Cannot reduce empty cell {self.empty_cell.name}: {e}")
+                        raise RuntimeError(
+                            f"Aborting reduction: empty cell {self.empty_cell.name} failed to reduce "
+                            "and no background is available for subtraction."
+                        ) from e
 
         if self.background:
             log_fn = Path(self.output_dir) / f"reduction_{self.background.name}.log"
@@ -1193,6 +1197,9 @@ class Experiment(BaseModel):
                     self.background.reduce()
                 except Exception as e:  # noqa BLE001
                     logger.exception(f"Cannot reduce background {self.background.name}: {e}")
+                    raise RuntimeError(
+                        f"Aborting reduction: background {self.background.name} failed to reduce."
+                    ) from e
 
         for sample in self.samples:
             log_fn = Path(self.output_dir) / f"reduction_{sample.name}.log"

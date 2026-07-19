@@ -126,6 +126,44 @@ class TestReduceOrderingAndDump:
 
         assert reduced == experiment.samples
 
+    def test_reduce_aborts_when_empty_cell_reduction_fails_without_background(self, tmp_path):
+        experiment = self._make_experiment(tmp_path, {"samples": self.SAMPLES, "empty_cell": self.EMPTY_CELL})
+
+        reduced = []
+
+        def fake_reduce(sample):
+            if sample is experiment.empty_cell:
+                raise ValueError("boom")
+            reduced.append(sample)
+
+        with (
+            patch.object(Sample, "reduce", autospec=True, side_effect=fake_reduce),
+            patch.object(Experiment, "dump_reduced_data", autospec=True, return_value=None),
+            pytest.raises(RuntimeError, match="empty cell"),
+        ):
+            experiment.reduce()
+
+        assert reduced == []
+
+    def test_reduce_aborts_when_background_reduction_fails(self, tmp_path):
+        experiment = self._make_experiment(tmp_path, {"samples": self.SAMPLES, "background": self.BACKGROUND})
+
+        reduced = []
+
+        def fake_reduce(sample):
+            if sample is experiment.background:
+                raise ValueError("boom")
+            reduced.append(sample)
+
+        with (
+            patch.object(Sample, "reduce", autospec=True, side_effect=fake_reduce),
+            patch.object(Experiment, "dump_reduced_data", autospec=True, return_value=None),
+            pytest.raises(RuntimeError, match="background"),
+        ):
+            experiment.reduce()
+
+        assert reduced == []
+
     def test_dump_writes_samples_and_background_but_not_empty_cell(self, tmp_path):
         experiment = self._make_experiment(
             tmp_path, {"samples": self.SAMPLES, "background": self.BACKGROUND, "empty_cell": self.EMPTY_CELL}
