@@ -4,6 +4,7 @@
 
 import csv
 import logging
+import math
 import os
 import tempfile
 from unittest.mock import patch
@@ -14,7 +15,7 @@ import pytest
 import usansred.reduce
 from tests.test_fixtures import _make_sample
 from usansred.enums import MeasurementType
-from usansred.models import IQData, MonitorData, XYData
+from usansred.models import EventCounts, IQData, MonitorData, XYData
 from usansred.reduce import ARCSEC_TO_RADIANS, Experiment, Sample, Scan, horizontal_rocking_width
 
 
@@ -258,6 +259,69 @@ class TestSampleRescaleData:
         np.testing.assert_allclose(sample.data_scaled[1].q, expected_bank_2[0])
         np.testing.assert_allclose(sample.data_scaled[1].i, expected_bank_2[1])
         np.testing.assert_allclose(sample.data_scaled[1].e, expected_bank_2[2])
+
+
+class TestSampleTransmissionValidation:
+    """Tests for the transmission coefficient validation in Sample.model_post_init."""
+
+    @staticmethod
+    def _make_empty_cell(experiment: Experiment, transmitted: float) -> Sample:
+        empty_cell = _make_sample(experiment, "ec", [])
+        empty_cell.transmitted = transmitted
+        return empty_cell
+
+    def test_raises_when_sample_transmitted_counts_are_zero(self, mock_experiment):
+        """Zero transmitted counts for the sample yield transmission == 0, which should raise."""
+        mock_experiment.empty_cell = self._make_empty_cell(mock_experiment, transmitted=2.0)
+
+        with pytest.raises(ValueError, match="Invalid transmission coefficient"):
+            Sample(
+                name="test",
+                experiment=mock_experiment,
+                start_scan_num=0,
+                num_of_scans=0,
+                counts=EventCounts(monitor=100, detector=0, transmission=0),
+            )
+
+    def test_raises_when_transmission_is_non_finite(self, mock_experiment):
+        """A non-finite empty-cell transmitted value yields a non-finite transmission, which should raise."""
+        mock_experiment.empty_cell = self._make_empty_cell(mock_experiment, transmitted=math.nan)
+
+        with pytest.raises(ValueError, match="Invalid transmission coefficient"):
+            Sample(
+                name="test",
+                experiment=mock_experiment,
+                start_scan_num=0,
+                num_of_scans=0,
+                counts=EventCounts(monitor=100, detector=10, transmission=5),
+            )
+
+    def test_raises_when_transmission_is_negative(self, mock_experiment):
+        """A negative empty-cell transmitted value yields a negative transmission, which should raise."""
+        mock_experiment.empty_cell = self._make_empty_cell(mock_experiment, transmitted=-1.0)
+
+        with pytest.raises(ValueError, match="Invalid transmission coefficient"):
+            Sample(
+                name="test",
+                experiment=mock_experiment,
+                start_scan_num=0,
+                num_of_scans=0,
+                counts=EventCounts(monitor=100, detector=10, transmission=5),
+            )
+
+    def test_falls_back_to_unity_when_empty_cell_transmitted_is_zero(self, mock_experiment):
+        """A ZeroDivisionError (empty cell transmitted == 0) should still fall back to 1.0, not raise."""
+        mock_experiment.empty_cell = self._make_empty_cell(mock_experiment, transmitted=0.0)
+
+        sample = Sample(
+            name="test",
+            experiment=mock_experiment,
+            start_scan_num=0,
+            num_of_scans=0,
+            counts=EventCounts(monitor=100, detector=10, transmission=5),
+        )
+
+        assert sample.transmission == 1.0
 
 
 class TestRockingCurveCentering:

@@ -249,6 +249,12 @@ class Sample(BaseModel):
                     f"Error calculating transmission coefficient for {self.label}: {e}.Setting transmission to 1.0."
                 )
                 self.transmission = 1.0
+            else:
+                if self.transmission <= 0 or not math.isfinite(self.transmission):
+                    raise ValueError(
+                        f"Invalid transmission coefficient ({self.transmission}) for {self.label}. "
+                        "Check the transmitted counts for this sample and for the empty cell."
+                    )
 
         # NOTE:
         #  - detector_data: original data after being stitched with another monitor-normalized scan
