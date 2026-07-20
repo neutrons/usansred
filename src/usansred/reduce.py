@@ -246,7 +246,7 @@ class Sample(BaseModel):
                 self.transmission = self.transmitted / self.experiment.empty_cell.transmitted
             except (AttributeError, ZeroDivisionError) as e:
                 logger.warning(
-                    f"Error calculating transmission coefficient for {self.label}: {e}.Setting transmission to 1.0."
+                    f"Error calculating transmission coefficient for {self.label}: {e}. Setting transmission to 1.0."
                 )
                 self.transmission = 1.0
             else:
