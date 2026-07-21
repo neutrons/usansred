@@ -16,9 +16,9 @@ homepage = "https://github.com/neutrons/usansred/"
 [project.scripts]
 reduceUSANS = "usansred.reduce:main"
 
-#####################################
-#  BUILDING FROM SOURCES WITH HATCH
-#####################################
+####################
+### Build config ###
+####################
 
 [build-system]
 build-backend = "hatchling.build"
@@ -43,10 +43,6 @@ artifacts = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/usansred"]
 
-#################
-#  VERSIONINGIT
-#################
-
 [tool.versioningit.vcs]
 method = "git"
 default-tag = "0.0.1"
@@ -61,6 +57,134 @@ distance-dirty = "{next_version}.dev{committer_date:%Y%m%d%H%M%S}"
 
 [tool.versioningit.write]
 file = "src/usansred/_version.py"
+
+###################
+### Pixi config ###
+###################
+
+[tool.pixi.workspace]
+name = "usansred"
+platforms = ["linux-64"]
+channels = [
+  "conda-forge",
+  "mantid/label/main",
+  "neutrons",
+  "https://prefix.dev/pixi-build-backends",
+]
+# Required until the build feature becomes stable
+preview = ["pixi-build"]
+
+### Dependency tables
+
+[tool.pixi.dependencies]
+python = "=3.11"
+mantidworkbench = ">=6.15.0,<6.16.0"
+pandas = "*"
+pydantic = "*"
+xlsxwriter = "*"
+plot-publisher = { version = ">=1.4.0" }
+
+[tool.pixi.pypi-dependencies]
+usansred = { path = ".", editable = true }
+
+### Pixi build configuration
+
+[tool.pixi.package.build]
+backend = { name = "pixi-build-python", version = "0.8.*" }
+
+[tool.pixi.package.host-dependencies]
+python = ">=3.11,<3.12"
+hatchling = "*"
+versioningit = "*"
+
+[tool.pixi.package.build-dependencies]
+hatchling = "*"
+versioningit = "*"
+
+# Conda packages (no PyPi) to be enumerated within the conda package to be built.
+[tool.pixi.package.run-dependencies]
+python = "=3.11"
+mantidworkbench = ">=6.15.0,<6.16.0"
+pandas = "*"
+pydantic = "*"
+xlsxwriter = "*"
+plot-publisher = { version = ">=1.4.0" }
+
+[tool.pixi.package]
+name = "usansred"
+version = "0.0.0" # placeholder, overwritten by sync-version
+
+### Environments and features
+
+[tool.pixi.environments]
+default = { features = [
+  "build",
+  "dev",
+  "docs",
+  "test",
+], solve-group = "default" }
+docs = { features = ["docs"], solve-group = "docs" }
+
+[tool.pixi.feature.build.dependencies]
+versioningit = "*"
+
+[tool.pixi.feature.build.pypi-dependencies]
+toml-cli = "*"
+
+[tool.pixi.feature.dev.dependencies]
+pip = "*"
+pre-commit = "*"
+ruff = "*"
+
+[tool.pixi.feature.docs.dependencies]
+sphinx = "*"
+sphinx_rtd_theme = "*"
+
+
+[tool.pixi.feature.test.dependencies]
+pytest = "*"
+pytest-cov = "*"
+pytest-repeat = "*"
+pytest-xdist = "*"
+
+### Pixi tasks
+
+[tool.pixi.tasks]
+# Documentation
+build-docs = { cmd = 'python scripts/generate_schema.py && sphinx-build -b html docs docs/_build', description = "Build documentation" }
+test-docs = { cmd = "sphinx-build -M doctest docs docs/_build", description = "Test building the documentation" }
+# Testing
+test = { description = "Run the test suite", cmd = "pytest" }
+test-datalight = { description = "Run tests not using the data repo nor the SNS mount", cmd = "COVERAGE_FILE=.coverage.datalight python -m pytest -vv -m \"not datarepo and not sns_mounted\" --cov=src --cov-report=term-missing tests/" }
+test-datarepo = { description = "Run tests using the data repo", cmd = "git submodule update --init && COVERAGE_FILE=.coverage.datarepo python -m pytest -vv -m \"datarepo and not sns_mounted\" --cov=src --cov-report=term-missing tests/" }
+combine-coverage = { description = "Combine coverage reports", cmd = "coverage combine && coverage xml" }
+# Packaging
+conda-build-command = { cmd = "pixi publish --target-channel ./local-channel", description = "Build the conda package command" }
+conda-build = { description = "Build the conda package", depends-on = [
+    "sync-version",
+    "conda-build-command",
+    "reset-version",
+] }
+conda-publish = { cmd = "pixi upload anaconda --owner neutrons *.conda", description = "Publish the .conda package to anaconda.org", depends-on = [
+    "conda-build",
+] }
+# Misc
+clean = { cmd = 'rm -rf .pytest_cache .ruff_cache **/*.egg-info **/dist **/__pycache__ **/_version.py', description = "Clean up various caches and build artifacts" }
+clean-conda = { cmd = "rm -rf ./local-channel", description = "Clean the local .conda build artifacts" }
+clean-docs = { cmd = "rm -rf docs/_build", description = "Clean up documentation build artifacts" }
+clean-all = { description = "Clean all artifacts", depends-on = [
+    "clean",
+    "clean-conda",
+    "clean-docs",
+] }
+# workaround for dynamic versioning
+sync-version = { cmd = 'version=$(python -m versioningit); toml set tool.pixi.package.version "$version" --toml-path pyproject.toml', description = "Sync pyproject.toml version with Git version" }
+backup-toml = { cmd = "cp pyproject.toml pyproject.toml.bak", description = "Backup the pyproject.toml file" }
+reset-version = { cmd = "toml set tool.pixi.package.version \"0.0.0\" --toml-path pyproject.toml", description = "Reset the package version to 0.0.0" }
+
+##############
+### Pytest ###
+##############
 
 [tool.pytest.ini_options]
 pythonpath = [".", "src", "scripts"]
@@ -79,132 +203,21 @@ markers = [
   "sns_mounted: requires the /SNS filesystem",
 ]
 
+############
+### Ruff ###
+############
+
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint]
 # https://beta.ruff.rs/docs/rules/
-lint.select = ["A", "ARG", "BLE", "E", "F", "I", "PT"]
-lint.ignore = [
-  "F403",
-  "F405",
-  "F401", # wild imports and  unknown names
+select = ["A", "ARG", "BLE", "E", "F", "I", "PT"]
+ignore = [
+  "F401", # Unused imports
+  "F403", # Wildcard imports
+  "F405", # Undefined names and wildcard imports
 ]
-
-###################
-### Pixi config ###
-###################
-
-[tool.pixi.workspace]
-name = "usansred"
-preview = ["pixi-build"]
-platforms = ["linux-64"]
-channels = [
-  "conda-forge",
-  "mantid/label/main",
-  "neutrons",
-  "https://prefix.dev/pixi-build-backends",
-]
-
-[tool.pixi.environments]
-default = { features = [
-  "test",
-  "package",
-  "docs",
-  "developer",
-], solve-group = "default" }
-docs = { features = ["docs"], solve-group = "docs" }
-
-[tool.pixi.pypi-dependencies]
-usansred = { path = ".", editable = true }
-
-[tool.pixi.dependencies]
-python = "=3.11"
-mantidworkbench = ">=6.15.0,<6.16.0"
-pandas = "*"
-pydantic = "*"
-xlsxwriter = "*"
-plot-publisher = { version = ">=1.4.0" }
-
-# Conda packages (no PyPi) to be enumerated within the conda package to be built.
-[tool.pixi.package.run-dependencies]
-python = "=3.11"
-mantidworkbench = ">=6.15.0,<6.16.0"
-pandas = "*"
-pydantic = "*"
-xlsxwriter = "*"
-plot-publisher = { version = ">=1.4.0" }
-
-[tool.pixi.package]
-name = "usansred"
-version = "1.0.0" # placeholder, overwritten by sync-version
-
-[tool.pixi.package.build]
-backend = { name = "pixi-build-python", version = "0.6.*" }
-
-[tool.pixi.tasks]
-# Documentation
-build-docs = { cmd = 'python scripts/generate_schema.py && sphinx-build -b html docs docs/_build', description = "Build documentation" }
-test-docs = { cmd = "sphinx-build -M doctest docs docs/_build", description = "Test building the documentation" }
-# Testing
-test = { description = "Run the test suite", cmd = "pytest" }
-test-datalight = { description = "Run tests not using the data repo nor the SNS mount", cmd = "COVERAGE_FILE=.coverage.datalight python -m pytest -vv -m \"not datarepo and not sns_mounted\" --cov=src --cov-report=term-missing tests/" }
-test-datarepo = { description = "Run tests using the data repo", cmd = "git submodule update --init && COVERAGE_FILE=.coverage.datarepo python -m pytest -vv -m \"datarepo and not sns_mounted\" --cov=src --cov-report=term-missing tests/" }
-combine-coverage = { description = "Combine coverage reports", cmd = "coverage combine && coverage xml" }
-# Packaging
-pypi-build = { cmd = "hatch build", description = "Build the package for PyPI" }
-conda-build-command = { cmd = "pixi build", description = "Build the conda package command" }
-conda-build = { description = "Build the conda package", depends-on = [
-  "backup-toml",
-  "sync-version",
-  "conda-build-command",
-  "reset-toml",
-] }
-conda-publish = { cmd = "anaconda upload *.conda", description = "Publish the .conda package to anaconda.org", depends-on = [
-  "conda-build",
-] }
-# Misc
-clean = { cmd = 'rm -rf .pytest_cache .ruff_cache **/*.egg-info **/dist **/__pycache__', description = "Clean up various caches and build artifacts" }
-clean-conda = { cmd = "rm -f *.conda", description = "Clean the local .conda build artifacts" }
-clean-docs = { cmd = "rm -rf docs/_build", description = "Clean up documentation build artifacts" }
-clean-pypi = { cmd = "rm -rf dist", description = "Clean the PyPI build artifacts" }
-clean-all = { description = "Clean all artifacts", depends-on = [
-  "clean",
-  "clean-conda",
-  "clean-docs",
-  "clean-pypi",
-] }
-sync-version = { cmd = 'version=$(python -m versioningit); toml set tool.pixi.package.version "$version" --toml-path pyproject.toml', description = "Sync pyproject.toml version with Git version" }
-backup-toml = { cmd = "cp pyproject.toml pyproject.toml.bak", description = "Backup the pyproject.toml file" }
-reset-toml = { cmd = "cp pyproject.toml.bak pyproject.toml; rm pyproject.toml.bak", description = "Reset the pyproject.toml file to the original state" }
-
-[tool.pixi.feature.test.dependencies]
-pytest = "*"
-pytest-cov = "*"
-pytest-repeat = "*"
-pytest-xdist = "*"
-
-[tool.pixi.feature.package.dependencies]
-anaconda-client = "*"
-twine = ">=6.1.0,<7"
-versioningit = "*"
-hatch = "*"
-python-build = "*"
-
-[tool.pixi.feature.package.pypi-dependencies]
-toml-cli = "*"
-
-[tool.pixi.feature.developer.dependencies]
-pip = "*"
-pre-commit = "*"
-ruff = "*"
-versioningit = "*"
-argcomplete = "*"
-
-[tool.pixi.feature.docs.dependencies]
-sphinx = "*"
-sphinx_rtd_theme = "*"
-
-[tool.pixi.package.host-dependencies]
-hatchling = "*"
-versioningit = "*"
-
-# Add additional 3rd party tool configuration here as needed
