@@ -1243,7 +1243,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse command-line arguments for USANS data reduction."""
+    """Parse command-line arguments for USANS data reduction.
+
+    Parameters
+    ----------
+    argv : list[str] | None, optional
+        Command-line arguments to parse, excluding the program name. When
+        ``None``, arguments are read from ``sys.argv``.
+
+    Returns
+    -------
+    argparse.Namespace
+        Parsed arguments containing the setup-file path, output directory, and
+        log-binning flag.
+    """
     parser = _build_parser()
     argcomplete.autocomplete(parser)
     args = parser.parse_args(argv)
