@@ -230,6 +230,16 @@ Additional CLI options for ``reduceUSANS`` can be viewed in the terminal by runn
      -l, --logbin                 Enable log-binning of data during reduction. Option only valid for CSV files
      -o OUTPUT, --output OUTPUT   Output folder for reduced data (default: current folder)
 
+To enable tab completion for ``reduceUSANS`` and other compatible Python commands in Bash or Zsh,
+activate global Python argument completion once:
+
+.. code-block:: bash
+
+   (usansred) $ activate-global-python-argcomplete --user
+
+Restart the shell after activation. This enables completion for Python command-line tools that include
+the argcomplete marker and completion hook.
+
 Summary
 -------
 
