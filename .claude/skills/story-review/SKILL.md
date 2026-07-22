@@ -86,6 +86,13 @@ If the input is missing information needed to complete a criteria item,
    Stories) is a distinct step from the Task-level breakdown in step 3, and
    is only needed when the total estimate is too large for a single Story.
 
+7. **Save the review to a file.** Write the full `REVIEW` output (see Output
+   format below) to a markdown file:
+   - If the Story number is known (given explicitly, or evident from the
+     input), save to `/tmp/review_<StoryNumber>.md`.
+   - If no Story number is available, save to `/tmp/review_story.md`.
+   - Wrap all lines in the saved file so none exceeds 120 characters.
+
 ## Story point conversion table
 
 | Story points | Hours range |
@@ -129,6 +136,8 @@ Estimate: <N> pts
 
 The `REVIEW` prefix matches the NDP convention for review comments left in a
 work item's discussion field, so this output can be pasted there directly.
+This exact content is also what gets written to the markdown file described
+in Workflow step 7.
 
 ## Rules
 
@@ -140,3 +149,5 @@ work item's discussion field, so this output can be pasted there directly.
 - Keep the criteria list and the point/hour table above as the source of
   truth for this skill; if either changes, update this file deliberately
   rather than drifting from it silently.
+- No line in the saved review file should exceed 120 characters; wrap prose
+  to fit.
