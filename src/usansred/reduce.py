@@ -246,10 +246,15 @@ class Sample(BaseModel):
                 self.transmission = self.transmitted / self.experiment.empty_cell.transmitted
             except (AttributeError, ZeroDivisionError) as e:
                 logger.warning(
-                    f"Error calculating transmission coefficient for sample {self.name}: {e}."
-                    "Setting transmission to 1.0."
+                    f"Error calculating transmission coefficient for {self.label}: {e}. Setting transmission to 1.0."
                 )
                 self.transmission = 1.0
+            else:
+                if self.transmission <= 0 or not math.isfinite(self.transmission):
+                    raise ValueError(
+                        f"Invalid transmission coefficient ({self.transmission}) for {self.label}. "
+                        "Check the transmitted counts for this sample and for the empty cell."
+                    )
 
         # NOTE:
         #  - detector_data: original data after being stitched with another monitor-normalized scan
@@ -294,6 +299,11 @@ class Sample(BaseModel):
     @property
     def config(self):
         return self.experiment.config
+
+    @property
+    def label(self) -> str:
+        """Display label for log messages, e.g. 'sample S115_dry' or 'empty cell EmptyPCell'."""
+        return f"{self.measurement_type.replace('_', ' ')} {self.name}"
 
     @property
     def num_of_banks(self) -> int:
@@ -342,10 +352,33 @@ class Sample(BaseModel):
         self,
         detector_data: bool = True,
         scaled_data: bool = True,
-        bg_subtracted_data: bool = True,
+        background_subtracted_data: bool = True,
         log_binned_data: bool = True,
-    ):
-        """Dump reduced data to CSV files based on specified flags."""
+    ) -> None:
+        """Write this measurement's reduced data to CSV text files in the experiment's output directory.
+
+        Each flag enables one category of output file (all default to True; the reduction
+        workflow in ``Experiment.dump_reduced_data`` always uses the defaults). A category
+        is also skipped when its corresponding data is empty.
+
+        Parameters
+        ----------
+        detector_data : bool
+            Write the stitched, monitor-normalized data, ``UN_<name>_det_1_unscaled.txt``.
+            With ``save_all_harmonics``, higher banks go to ``bank_<n>/UN_<name>_unscaled.txt``.
+            Skipped when no detector data is present.
+        scaled_data : bool
+            Write the data rescaled by analyzer solid angle, sample thickness, and transmission,
+            ``UN_<name>_det_1.txt``. With ``save_all_harmonics``, higher banks go to
+            ``bank_<n>/UN_<name>.txt``.
+        background_subtracted_data : bool
+            Write the background- (or empty-cell-) subtracted data,
+            ``UN_<name>_det_1_background_subtracted.txt``. Only written when a subtraction
+            actually occurred (``is_reduced`` is True).
+        log_binned_data : bool
+            Write the log-binned data, ``UN_<name>_det_1_lb.txt``. Skipped when the
+            measurement has not been log-binned.
+        """
         if detector_data and self.data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_unscaled.txt")
             self.dump_data_to_csv(filepath, self.data)
@@ -372,13 +405,19 @@ class Sample(BaseModel):
                     )
                     self.dump_data_to_csv(filepath, self.data_scaled[i])
 
-        if bg_subtracted_data:
-            filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_lbs.txt")
-            self.dump_data_to_csv(filepath, self.data_bg_subtracted)
+        if background_subtracted_data:
+            # Only written when a background or empty cell was actually subtracted
+            if self.is_reduced:
+                filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_background_subtracted.txt")
+                self.dump_data_to_csv(filepath, self.data_bg_subtracted)
+            else:
+                logger.info(
+                    f"No background or empty cell was subtracted from the {self.label}; skipping that data dump."
+                )
 
         if log_binned_data:
             if not self.is_log_binned:
-                logger.info(f"Sample {self.name} has not been log-binned; skipping log-binned data dump.")
+                logger.info(f"The {self.label} has not been log-binned; skipping log-binned data dump.")
                 return
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_lb.txt")
             self.dump_data_to_csv(filepath, self.data_log_binned)
@@ -391,9 +430,9 @@ class Sample(BaseModel):
             scan.normalize_by_monitor()
 
     def reduce(self):
-        """Reduce this sample's scans"""
-        logger.info(f"Starting reduction for sample {self.name} with {len(self.scans)} scans.")
-        logger.info(f"Transmission coefficient for sample {self.name}: {self.transmission:.4f}")
+        """Reduce this measurement's scans"""
+        logger.info(f"Starting reduction for {self.label} with {len(self.scans)} scans.")
+        logger.info(f"Transmission coefficient for {self.label}: {self.transmission:.4f}")
 
         self.normalize_by_monitor()
         self.stitch_scans()
@@ -402,16 +441,22 @@ class Sample(BaseModel):
 
         # Only process first detector bank
         data_scaled = self.data_scaled[0]
-        logger.info(f"Only the first bank data is used for sample {self.name}.")
+        logger.info(f"Only the first bank data is used for {self.label}.")
 
         # Log-binning is optional
         if self.experiment.log_binning:
             self.data_log_binned = self.log_bin_data(data_scaled)
 
-        if self.measurement_type == MeasurementType.SAMPLE and self.experiment.background:
-            self.subtract_background(self.experiment.background)
+        # The background takes precedence over the empty cell: subtracting the empty cell from
+        # both sample and background would cancel out, since
+        # (sample - empty_cell) - (background - empty_cell) == sample - background
+        if self.measurement_type == MeasurementType.SAMPLE:
+            if self.experiment.background:
+                self.subtract_background(self.experiment.background)
+            elif self.experiment.empty_cell:
+                self.subtract_background(self.experiment.empty_cell)
 
-        logger.info(f"Data reduction finished for sample {self.name}.")
+        logger.info(f"Data reduction finished for {self.label}.")
         return
 
     # TODO: This function should be re-written from scratch
@@ -582,7 +627,8 @@ class Sample(BaseModel):
         return q_cleaned, i_cleaned, e_cleaned
 
     def rescale_data(self) -> None:
-        """Rescale reflected data by the analyzer's solid angle acceptance and by sample thickness."""
+        """Rescale reflected data by the analyzer's solid angle acceptance, by sample thickness,
+        and by the transmission coefficient."""
 
         assert self.size > 0, "No data points to rescale. Please check if the scans have been stitched correctly."
 
@@ -598,7 +644,7 @@ class Sample(BaseModel):
             # negative theta angles do correspond to positive values of the momentum transfer, hence abs()
             iq_data = self.detector_data[harmonic - 1]
             q_scaled = [abs(theta) * theta_to_q for theta in iq_data.q]
-            scaling_factor = 1.0 / (analyzer_solid_angle * self.thickness)
+            scaling_factor = 1.0 / (analyzer_solid_angle * self.thickness * self.transmission)
             i_scaled = [i * scaling_factor for i in iq_data.i]
             e_scaled = [e * scaling_factor for e in iq_data.e]
 
@@ -607,7 +653,7 @@ class Sample(BaseModel):
             self.data_scaled.append(iq_scaled)
 
         q_range = f"{min(self.data_scaled[0].q)} - {max(self.data_scaled[0].q)}"
-        logger.info(f"Rescaled data for sample {self.name}, Q-range: {q_range} 1/angstrom")
+        logger.info(f"Rescaled data for {self.label}, Q-range: {q_range} 1/angstrom")
         return
 
     def stitch_scans(self):
@@ -676,7 +722,7 @@ class Sample(BaseModel):
                     e=error.tolist(),
                 )
             )
-        logger.info(f"Scans stitched together for sample {self.name}.")
+        logger.info(f"Scans stitched together for {self.label}.")
 
         theta_to_q = 2 * (math.pi**2.0) * 1.0 / (self.experiment.prim_wave * 3600.0 * 180.0)
         theta_range_msg = ""
@@ -752,7 +798,7 @@ class Sample(BaseModel):
         for rocking_curve in self.detector_data:
             rocking_curve.q = [float(harmonic_q - q_offset) for harmonic_q in rocking_curve.q]
 
-        logger.info(f"Centered rocking curves for sample {self.name} using offset {q_offset}.")
+        logger.info(f"Centered rocking curves for {self.label} using offset {q_offset}.")
         return q_offset
 
     def _match_or_interpolate(
@@ -784,22 +830,19 @@ class Sample(BaseModel):
         return i_bg_matched, e_bg_matched
 
     def subtract_background(self, background: "Sample") -> None:
-        """Subtract background data from this sample's data.
+        """Subtract background (or empty-cell) data from this sample's data.
 
         Parameters
         ----------
         background : Sample
-            The background sample to subtract. Must be processed (stitched, scaled, and binned).
+            The background or empty-cell sample to subtract.
+            Must be processed (stitched, scaled, and binned).
         """
 
         if self.experiment.log_binning:
-            assert self.is_log_binned, f"Sample {self.name} must be log-binned before background subtraction."
-            assert background.is_log_binned, (
-                f"Background {background.name} must be log-binned before background subtraction."
-            )
-            logger.info(
-                f"Logbinned data are used for background subtraction. Sample {self.name}, background {background.name}"
-            )
+            assert self.is_log_binned, f"The {self.label} must be log-binned before background subtraction."
+            assert background.is_log_binned, f"The {background.label} must be log-binned before background subtraction."
+            logger.info(f"Logbinned data are used for subtracting the {background.label} from the {self.label}.")
             data = self.data_log_binned
             bg_data = background.data_log_binned
 
@@ -848,7 +891,7 @@ class Sample(BaseModel):
             self.data_bg_subtracted.i = i_subtracted.tolist()
             self.data_bg_subtracted.e = e_subtracted.tolist()
 
-        logger.info(f"Subtracted background {background.name} from sample {self.name}")
+        logger.info(f"Subtracted {background.label} from {self.label}")
         return
 
 
@@ -1124,6 +1167,29 @@ class Experiment(BaseModel):
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
+        # The empty cell is reduced first: its reduced curve is subtracted from each sample
+        # when no background is present. When a background is present the empty-cell reduction
+        # is skipped because (sample - empty_cell) - (background - empty_cell) == sample - background.
+        # The empty cell is still used for the transmission coefficients, which are computed
+        # from raw event counts at construction time, independent of reduction.
+        if self.empty_cell:
+            if self.background:
+                logger.info(
+                    f"Skipping reduction of {self.empty_cell.label}: a background is present. "
+                    "The empty cell is still used to compute transmission coefficients."
+                )
+            else:  # reduce the empty cell if no background is present
+                log_fn = Path(self.output_dir) / f"reduction_{self.empty_cell.name}.log"
+                with log_to_file(logger, log_fn):
+                    try:
+                        self.empty_cell.reduce()
+                    except Exception as e:  # noqa BLE001
+                        logger.exception(f"Cannot reduce empty cell {self.empty_cell.name}: {e}")
+                        raise RuntimeError(
+                            f"Aborting reduction: empty cell {self.empty_cell.name} failed to reduce "
+                            "and no background is available for subtraction."
+                        ) from e
+
         if self.background:
             log_fn = Path(self.output_dir) / f"reduction_{self.background.name}.log"
             with log_to_file(logger, log_fn):
@@ -1131,14 +1197,9 @@ class Experiment(BaseModel):
                     self.background.reduce()
                 except Exception as e:  # noqa BLE001
                     logger.exception(f"Cannot reduce background {self.background.name}: {e}")
-
-        if self.empty_cell:
-            log_fn = Path(self.output_dir) / f"reduction_{self.empty_cell.name}.log"
-            with log_to_file(logger, log_fn):
-                try:
-                    self.empty_cell.reduce()
-                except Exception as e:  # noqa BLE001
-                    logger.exception(f"Cannot reduce empty cell {self.empty_cell.name}: {e}")
+                    raise RuntimeError(
+                        f"Aborting reduction: background {self.background.name} failed to reduce."
+                    ) from e
 
         for sample in self.samples:
             log_fn = Path(self.output_dir) / f"reduction_{sample.name}.log"
@@ -1153,7 +1214,10 @@ class Experiment(BaseModel):
         return
 
     def dump_reduced_data(self):
-        """Dump reduced data to txt files"""
+        """Dump reduced data to txt files.
+
+        Output files are written for samples and the background, never for the empty cell.
+        """
         for sample in self.samples:
             sample.dump_reduced_data_to_csv()
 
