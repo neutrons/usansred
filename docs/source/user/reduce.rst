@@ -240,6 +240,9 @@ Once reduction is finished, subdirectory ``result/`` is created containing the f
 - ``summary.xlsx`` containing sketchy plots of the data for a quick review.
 - Reduced data files. For example:
 
+  + ``UN_X5D2_8_det_1_unscaled.txt`` (**_unscaled.txt**) is the stitched,
+    monitor-normalized detector data before scaling. It is written when detector
+    data is present.
   + ``UN_X5D2_8_det_1.txt`` (**.txt**) is the stitched data (scaled).
   + ``UN_X5D2_8_det_1_background_subtracted.txt`` (**_background_subtracted.txt**)
     is the data after background (or empty-cell) subtraction.
