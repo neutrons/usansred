@@ -1045,7 +1045,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     Returns
     -------
     argparse.Namespace
-        Parsed arguments containing the setup-file path and output directory.
+        Parsed arguments containing the setup-file path, output directory, and deprecated
+        ``logbin`` compatibility flag.
     """
     parser = _build_parser()
     argcomplete.autocomplete(parser)
