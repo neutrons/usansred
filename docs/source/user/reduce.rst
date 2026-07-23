@@ -65,11 +65,7 @@ Each background and sample object contains descriptive keys for each field.
        "num_of_scans": "<integer|string>",    // required if empty cell is present; number of scans
        "exclude": ["<integer|string>"]        // scan numbers to skip during reduction; default: []
      },
-     "save_all_harmonics": "<boolean>",        // optional; save reduced data for higher harmonics; default: false
-     "binning": {
-       "log_binning": "<boolean>",             // apply log binning to the reduced data; default: false
-       "steps_per_decade": "<integer>"          // step per decade when log binning; default: 33
-     }
+     "save_all_harmonics": "<boolean>"         // optional; save reduced data for higher harmonics; default: false
    }
 
 For example, create a file named ``setup.json`` with the following content:
@@ -110,11 +106,7 @@ For example, create a file named ``setup.json`` with the following content:
        "num_of_scans": 5,
        "thickness": 0.1
      },
-     "save_all_harmonics": false,
-     "binning": {
-       "log_binning": false,
-       "steps_per_decade": 33
-     }
+     "save_all_harmonics": false
    }
 
 Empty Cell / Empty Beam
@@ -218,7 +210,7 @@ Additional CLI options for ``reduceUSANS`` can be viewed in the terminal by runn
 .. code-block:: bash
 
    (usansred) $ reduceUSANS --help
-   usage: reduceUSANS [-h] [-l] [-o OUTPUT] path
+   usage: reduceUSANS [-h] [-o OUTPUT] path
 
    USANS Data Reduction
 
@@ -227,7 +219,6 @@ Additional CLI options for ``reduceUSANS`` can be viewed in the terminal by runn
 
    options:
      -h, --help                   show this help message and exit
-     -l, --logbin                 Enable log-binning of data during reduction. Option only valid for CSV files
      -o OUTPUT, --output OUTPUT   Output folder for reduced data (default: current folder)
 
 Tab completion for ``reduceUSANS`` is registered automatically when entering
@@ -236,7 +227,7 @@ the Pixi environment in Bash or Zsh:
 .. code-block:: bash
 
    $ pixi shell
-   (usansred) $ reduceUSANS --log<TAB>
+   (usansred) $ reduceUSANS --out<TAB>
 
 If completion does not appear after updating ``usansred``, exit and re-enter
 the Pixi environment.
@@ -250,7 +241,6 @@ Once reduction is finished, subdirectory ``result/`` is created containing the f
 - Reduced data files. For example:
 
   + ``UN_X5D2_8_det_1.txt`` (**.txt**) is the stitched data (scaled).
-  + ``UN_X5D2_8_det_1_lb.txt`` (**_lb.txt**) is the data after log binning.
-  + ``UN_X5D2_8_det_1_background_subtracted.txt`` (**_background_subtracted.txt**, previously **_lbs.txt**)
+  + ``UN_X5D2_8_det_1_background_subtracted.txt`` (**_background_subtracted.txt**)
     is the data after background (or empty-cell) subtraction.
     It is only written when a background or empty cell was actually subtracted.

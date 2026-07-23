@@ -33,7 +33,6 @@ def test_format_sheet_name(input_filename, expected_output):
             "sample1",
             [
                 "UN_sample1_det_1.txt",
-                "UN_sample1_det_1_lb.txt",
                 "UN_sample1_det_1_background_subtracted.txt",
                 "UN_sample1_det_1_unscaled.txt",
             ],

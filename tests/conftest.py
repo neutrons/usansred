@@ -64,12 +64,10 @@ def mock_experiment():
     exp.output_dir = ""
     exp.num_of_banks = 1
     exp.prim_wave = 3.6
-    exp.log_binning = False
     exp.v_angle = 0.042
     exp._config = ReductionConfig.model_validate(
         {
             "save_all_harmonics": False,
-            "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6},
             "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 1, "thickness": 0.1}],
         }
     )
@@ -87,12 +85,10 @@ def mock_experiment_2banks():
     exp.output_dir = ""
     exp.num_of_banks = 2
     exp.prim_wave = 3.6
-    exp.log_binning = False
     exp.v_angle = 0.042
     exp._config = ReductionConfig.model_validate(
         {
             "save_all_harmonics": False,
-            "binning": {"log_binning": False, "steps_per_decade": 33, "q_min": 1e-6},
             "samples": [{"name": "_dummy", "start_scan_num": 0, "num_of_scans": 1, "thickness": 0.1}],
         }
     )

@@ -8,59 +8,45 @@ import usansred.reduce
 from usansred.reduce import Experiment, Sample
 
 
-class TestLogBinning:
+class TestLogBinningDeprecation:
+    """Log binning has been removed. A deprecated ``binning``/``log_binning`` entry in an
+    old JSON setup file must still load, but emit a deprecation warning and be ignored."""
+
     MINIMAL_CONFIG = {
         "samples": [{"name": "s", "start_scan_num": 1, "num_of_scans": 1, "thickness": 0.1}],
     }
 
     @pytest.mark.parametrize(
-        ("config_extra", "expected_log_binning", "expected_steps_per_decade"),
+        "binning",
         [
-            ({"binning": {"log_binning": True, "steps_per_decade": 44}}, True, 44),
-            ({"binning": {"log_binning": 1}}, True, 33),
-            ({"binning": {"log_binning": False}}, False, 33),
-            ({"binning": {"log_binning": 0}}, False, 33),
-            ({"binning": {"log_binning": ""}}, False, 33),
-            ({}, False, 33),  # absent → defaults to False
+            {"log_binning": True, "steps_per_decade": 44},
+            {"log_binning": 1},
+            {"log_binning": False},
+            {},  # a bare binning block with no log_binning key
         ],
     )
-    def test_log_binning_from_json_config(
-        self, tmp_path, config_extra, expected_log_binning, expected_steps_per_decade
-    ):
+    def test_deprecated_binning_block_warns_and_is_ignored(self, tmp_path, caplog, binning):
         config_file = tmp_path / "setup.json"
-        config_file.write_text(json.dumps({**self.MINIMAL_CONFIG, **config_extra}), encoding="utf-8")
+        config_file.write_text(json.dumps({**self.MINIMAL_CONFIG, "binning": binning}), encoding="utf-8")
 
-        with patch.object(Sample, "model_post_init", return_value=None):
-            experiment = Experiment(config_file=str(config_file))
+        with caplog.at_level(logging.WARNING):
+            with patch.object(Sample, "model_post_init", return_value=None):
+                experiment = Experiment(config_file=str(config_file))
 
-        assert experiment.log_binning is expected_log_binning
-        assert experiment.config.binning.steps_per_decade == expected_steps_per_decade
+        # The deprecated entry is stripped: the validated config carries no binning attribute.
+        assert not hasattr(experiment.config, "binning")
+        # A deprecation warning was emitted for the user's benefit.
+        assert any("deprecated" in message and "log binning" in message.lower() for message in caplog.messages)
 
-    def test_cli_logbin_overrides_json_config(self, tmp_path):
-        """CLI --logbin=True takes precedence over binning.log_binning: false in the JSON."""
+    def test_config_without_binning_does_not_warn(self, tmp_path, caplog):
         config_file = tmp_path / "setup.json"
-        config_file.write_text(
-            json.dumps({**self.MINIMAL_CONFIG, "binning": {"log_binning": False, "steps_per_decade": 44}}),
-            encoding="utf-8",
-        )
+        config_file.write_text(json.dumps(self.MINIMAL_CONFIG), encoding="utf-8")
 
-        with patch.object(Sample, "model_post_init", return_value=None):
-            experiment = Experiment(config_file=str(config_file))
-        experiment.amend_log_binning(True)
+        with caplog.at_level(logging.WARNING):
+            with patch.object(Sample, "model_post_init", return_value=None):
+                Experiment(config_file=str(config_file))
 
-        assert experiment.log_binning is True
-        assert experiment.config.binning.steps_per_decade == 44
-
-    def test_json_log_binning_governs_when_cli_not_set(self, tmp_path):
-        """JSON binning.log_binning: true takes effect when CLI --logbin is not passed."""
-        config_file = tmp_path / "setup.json"
-        config_file.write_text(json.dumps({**self.MINIMAL_CONFIG, "binning": {"log_binning": True}}), encoding="utf-8")
-
-        with patch.object(Sample, "model_post_init", return_value=None):
-            experiment = Experiment(config_file=str(config_file), log_binning=False)
-
-        assert experiment.log_binning is True
-        assert experiment.config.binning.steps_per_decade == 33
+        assert not any("log binning" in message.lower() for message in caplog.messages)
 
 
 class TestReduceOrderingAndDump:

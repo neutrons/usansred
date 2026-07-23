@@ -220,7 +220,6 @@ class Sample(BaseModel):
     # Fields that are initialized in model_post_init and not expected from user input
     detector_data: list[IQData] = Field(default_factory=list, init=False, description="Original detector data")
     data_scaled: list[IQData] = Field(default_factory=list, init=False, description="Data scaled to thickness")
-    data_log_binned: IQData = Field(default_factory=IQData, init=False, description="Log-binned data")
     data_bg_subtracted: IQData = Field(default_factory=IQData, init=False, description="Background subtracted data")
     transmitted: float = Field(0, description="Ratio of transmitted neutrons (for transmission correction)")
     transmission: float = Field(1.0, description="Transmission coefficient (for transmission correction)")
@@ -262,11 +261,9 @@ class Sample(BaseModel):
         # NOTE:
         #  - detector_data: original data after being stitched with another monitor-normalized scan
         #  - data_scaled: data after being scaled to thickness
-        #  - data_log_binned: data_scaled after being log-binned
-        #  - data_bg_subtracted: data_log_binned after background subtraction (aliased as self.data_reduced)
+        #  - data_bg_subtracted: data_scaled after background subtraction (aliased as self.data_reduced)
         self.detector_data = []
         self.data_scaled = []
-        self.data_log_binned = IQData()
         self.data_bg_subtracted = IQData()
 
     @property
@@ -283,11 +280,6 @@ class Sample(BaseModel):
     def data_reduced(self):
         """Reduced data, currently an alias for bg_subtracted data"""
         return self.data_bg_subtracted
-
-    @property
-    def is_log_binned(self) -> bool:
-        """Flag to indicate if the sample has been log-binned"""
-        return bool(self.data_log_binned.q)
 
     @property
     def is_reduced(self) -> bool:
@@ -312,11 +304,6 @@ class Sample(BaseModel):
     def num_of_banks(self) -> int:
         """Number of detector banks in the Experiment"""
         return self.experiment.num_of_banks
-
-    @property
-    def num_log_bins(self) -> int:
-        """Size of the log-binned data"""
-        return len(self.data_log_binned.q)
 
     def __eq__(self, other: object) -> bool:
         """Equality comparison based on sample name and start number."""
@@ -356,7 +343,6 @@ class Sample(BaseModel):
         detector_data: bool = True,
         scaled_data: bool = True,
         background_subtracted_data: bool = True,
-        log_binned_data: bool = True,
     ) -> None:
         """Write this measurement's reduced data to CSV text files in the experiment's output directory.
 
@@ -378,9 +364,6 @@ class Sample(BaseModel):
             Write the background- (or empty-cell-) subtracted data,
             ``UN_<name>_det_1_background_subtracted.txt``. Only written when a subtraction
             actually occurred (``is_reduced`` is True).
-        log_binned_data : bool
-            Write the log-binned data, ``UN_<name>_det_1_lb.txt``. Skipped when the
-            measurement has not been log-binned.
         """
         if detector_data and self.data:
             filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_unscaled.txt")
@@ -418,13 +401,6 @@ class Sample(BaseModel):
                     f"No background or empty cell was subtracted from the {self.label}; skipping that data dump."
                 )
 
-        if log_binned_data:
-            if not self.is_log_binned:
-                logger.info(f"The {self.label} has not been log-binned; skipping log-binned data dump.")
-                return
-            filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_lb.txt")
-            self.dump_data_to_csv(filepath, self.data_log_binned)
-
         return
 
     def normalize_by_monitor(self) -> None:
@@ -443,12 +419,7 @@ class Sample(BaseModel):
         self.rescale_data()
 
         # Only process first detector bank
-        data_scaled = self.data_scaled[0]
         logger.info(f"Only the first bank data is used for {self.label}.")
-
-        # Log-binning is optional
-        if self.experiment.log_binning:
-            self.data_log_binned = self.log_bin_data(data_scaled)
 
         # The background takes precedence over the empty cell: subtracting the empty cell from
         # both sample and background would cancel out, since
@@ -461,142 +432,6 @@ class Sample(BaseModel):
 
         logger.info(f"Data reduction finished for {self.label}.")
         return
-
-    # TODO: This function should be re-written from scratch
-    def log_bin_data(self, data: IQData) -> IQData:
-        """Log-bin the I(Q) data."""
-        assert len(data.q) == len(data.i) == len(data.e)
-
-        # Sort by momentum transfer
-        sorted_indices = np.argsort(data.q)
-        q = np.array(data.q)[sorted_indices]
-        i = np.array(data.i)[sorted_indices]
-        e = np.array(data.e)[sorted_indices]
-
-        iq_dict = {"I": list(i), "Q": list(q), "E": list(e)}
-
-        # The resolution in Q, ΔQ=2πΔθ/λ_1, where Δθ is the FWHM of the resolution function at the detector
-        fundamentalStep = 2 * math.pi * horizontal_rocking_width(1) * ARCSEC_TO_RADIANS / self.experiment.prim_wave
-
-        # Step multiplier
-        steps_per_decade = self.experiment.config.binning.steps_per_decade
-        alpha = math.exp(math.log(10) / steps_per_decade)
-        # step relative width
-        kappa = 2.0 * (alpha - 1) / (alpha + 1)
-
-        # floor ((ln((MyQ[InLength-1])/Qmin))/(ln(alpha)))
-        q_min = self.experiment.config.binning.q_min
-        numOfBins = math.floor(math.log(max(iq_dict["Q"]) / q_min) / math.log(alpha))
-
-        logQ = [q_min * (alpha**n) for n in range(numOfBins)]
-        logI = [None] * numOfBins
-        logE = [None] * numOfBins
-        logW = [1] * numOfBins
-
-        origIdx = 0
-
-        k2 = None
-        k3 = None
-        stepmin = None
-        stepmax = None
-
-        testVal = None
-        for lIdx, lq in enumerate(logQ):
-            testVal = kappa * lq
-
-            if testVal <= fundamentalStep:
-                while logI[lIdx] is None:
-                    if origIdx < (len(iq_dict["Q"]) - 1) and iq_dict["Q"][origIdx + 1] > lq:
-                        k2 = iq_dict["Q"][origIdx + 1] - iq_dict["Q"][origIdx]
-                        k3 = lq - iq_dict["Q"][origIdx + 1]
-                        # rtemp[outindex]=((k3/k2)+1)*MyR[inindex+1]-(k3/k2)*MyR[inindex]
-                        logI[lIdx] = ((k3 / k2) + 1) * iq_dict["I"][origIdx + 1] - (k3 / k2) * iq_dict["I"][origIdx]
-                        logE[lIdx] = (((k3 / k2) + 1) ** 2.0) * (iq_dict["E"][origIdx + 1] ** 2.0) + (
-                            (k3 / k2) ** 2.0
-                        ) * (iq_dict["E"][origIdx] ** 2.0)
-                        logW[lIdx] = 1
-                    else:
-                        origIdx += 1
-            else:
-                stepmin = lq - testVal / 2.0
-                stepmax = lq + testVal / 2.0
-                origIdx = 1
-                while origIdx < len(iq_dict["Q"]):
-                    if (iq_dict["Q"][origIdx] + fundamentalStep / 2.0) >= stepmin:
-                        break
-                    origIdx += 1
-
-                while origIdx < len(iq_dict["Q"]):
-                    if (iq_dict["Q"][origIdx] - fundamentalStep / 2.0) <= stepmin:
-                        if logI[lIdx] is None:
-                            # rtemp[outindex]=MyR[Inindex]*((MyQ[inindex]+FunStep/2)-stepmin)/funstep
-                            # wtemp[outindex]=(MyQ[inindex]+FunStep/2-stepmin)/funstep
-                            # stemp[outindex]=(MyS[InIndex]^2)*((MyQ[inindex]+FunStep/2-stepmin)/funstep)^2
-                            logI[lIdx] = (
-                                iq_dict["I"][origIdx]
-                                * ((iq_dict["Q"][origIdx] + fundamentalStep / 2.0) - stepmin)
-                                / fundamentalStep
-                            )
-                            logW[lIdx] = (iq_dict["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
-                            logE[lIdx] = (iq_dict["E"][origIdx] ** 2.0) * (
-                                (iq_dict["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
-                            ) ** 2.0
-                        else:
-                            # rtemp[outindex]+=MyR[Inindex]*((MyQ[inindex]+FunStep/2)-stepmin)/funstep
-                            # wtemp[outindex]+=(MyQ[inindex]+FunStep/2-stepmin)/funstep
-                            # stemp[outindex]+=(MyS[InIndex]^2)*((MyQ[inindex]+FunStep/2-stepmin)/funstep)^2
-                            logI[lIdx] += (
-                                iq_dict["I"][origIdx]
-                                * ((iq_dict["Q"][origIdx] + fundamentalStep / 2.0) - stepmin)
-                                / fundamentalStep
-                            )
-                            logW[lIdx] += (iq_dict["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
-                            logE[lIdx] += (iq_dict["E"][origIdx] ** 2.0) * (
-                                (iq_dict["Q"][origIdx] + fundamentalStep / 2.0 - stepmin) / fundamentalStep
-                            ) ** 2.0
-                    elif (iq_dict["Q"][origIdx] + fundamentalStep / 2.0) > stepmax:
-                        if logI[lIdx] is None:
-                            # rtemp[outindex]=MyR[Inindex]*(stepmax-(MyQ[inindex]-FunStep/2))/funstep
-                            # wtemp[outindex]=(stepmax-(MyQ[inindex]-FunStep/2))/funstep
-                            # stemp[outindex]=(MyS[InIndex]^2)*((stepmax-(MyQ[inindex]-FunStep/2))/funstep)^2
-                            logI[lIdx] = (
-                                iq_dict["I"][origIdx]
-                                * (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0))
-                                / fundamentalStep
-                            )
-                            logW[lIdx] = (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
-                            logE[lIdx] = (iq_dict["E"][origIdx] ** 2.0) * (
-                                (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
-                            ) ** 2.0
-                        else:
-                            logI[lIdx] += (
-                                iq_dict["I"][origIdx]
-                                * (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0))
-                                / fundamentalStep
-                            )
-                            logW[lIdx] += (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
-                            logE[lIdx] += (iq_dict["E"][origIdx] ** 2.0) * (
-                                (stepmax - (iq_dict["Q"][origIdx] - fundamentalStep / 2.0)) / fundamentalStep
-                            ) ** 2.0
-                    else:
-                        if logI[lIdx] is None:
-                            logI[lIdx] = iq_dict["I"][origIdx]
-                            logW[lIdx] = 1.0
-                            logE[lIdx] = iq_dict["E"][origIdx] ** 2.0
-                        else:
-                            logI[lIdx] += iq_dict["I"][origIdx]
-                            logW[lIdx] += 1.0
-                            logE[lIdx] += iq_dict["E"][origIdx] ** 2.0
-
-                    origIdx += 1
-                    if origIdx < len(iq_dict["Q"]) and (iq_dict["Q"][origIdx] - fundamentalStep / 2.0) >= stepmax:
-                        break
-
-        logI = [logI[ii] / logW[ii] for ii in range(numOfBins)]
-        logE = [logE[ii] / (logW[ii] ** 2.0) for ii in range(numOfBins)]
-        logE = [le**0.5 for le in logE]
-
-        return IQData(q=logQ, i=logI, e=logE)
 
     @staticmethod
     def _combine_duplicate_q_points(
@@ -835,64 +670,38 @@ class Sample(BaseModel):
     def subtract_background(self, background: "Sample") -> None:
         """Subtract background (or empty-cell) data from this sample's data.
 
+        The background is matched to the sample's momentum-transfer grid by
+        interpolation (see ``_match_or_interpolate``) before subtraction.
+
         Parameters
         ----------
         background : Sample
             The background or empty-cell sample to subtract.
-            Must be processed (stitched, scaled, and binned).
+            Must be processed (stitched and scaled).
         """
+        # Only process the first detector bank for now
+        data = self.data_scaled[0]
+        bg_data = background.data_scaled[0]
 
-        if self.experiment.log_binning:
-            assert self.is_log_binned, f"The {self.label} must be log-binned before background subtraction."
-            assert background.is_log_binned, f"The {background.label} must be log-binned before background subtraction."
-            logger.info(f"Logbinned data are used for subtracting the {background.label} from the {self.label}.")
-            data = self.data_log_binned
-            bg_data = background.data_log_binned
+        # Convert to numpy arrays for easier manipulation
+        q_data = np.array(data.q)
+        i_data = np.array(data.i)
+        e_data = np.array(data.e)
 
-            sample_num_of_bins = self.num_log_bins
-            bg_num_of_bins = self.num_log_bins
-            # TODO: This should instead be background.num_log_bins, but we need to fix log binning first
-            # bg_num_of_bins = background.num_log_bins
+        q_bg = np.array(bg_data.q)
+        i_bg = np.array(bg_data.i)
+        e_bg = np.array(bg_data.e)
 
-            if sample_num_of_bins < bg_num_of_bins:
-                num_of_bins = sample_num_of_bins
-                momentum_transfer = data.q.copy()
-            else:
-                num_of_bins = bg_num_of_bins
-                momentum_transfer = bg_data.q.copy()
+        # Match/interpolate background data to sample q values
+        i_bg_matched, e_bg_matched = self._match_or_interpolate(q_data, q_bg, i_bg, e_bg)
 
-            intensity = [data.i[i] - bg_data.i[i] for i in range(num_of_bins)]
-            error = [math.sqrt(data.e[i] ** 2.0 + bg_data.e[i] ** 2.0) for i in range(num_of_bins)]
+        # Subtract background
+        i_subtracted = i_data - i_bg_matched
+        e_subtracted = np.sqrt(e_data**2 + e_bg_matched**2)
 
-            self.data_bg_subtracted.q = momentum_transfer
-            self.data_bg_subtracted.i = intensity
-            self.data_bg_subtracted.e = error
-
-        # Use interpolation if log-binning is not applied
-        else:
-            # Only process the first detector bank for now
-            data = self.data_scaled[0]
-            bg_data = background.data_scaled[0]
-
-            # Convert to numpy arrays for easier manipulation
-            q_data = np.array(data.q)
-            i_data = np.array(data.i)
-            e_data = np.array(data.e)
-
-            q_bg = np.array(bg_data.q)
-            i_bg = np.array(bg_data.i)
-            e_bg = np.array(bg_data.e)
-
-            # Match/interpolate background data to sample q values
-            i_bg_matched, e_bg_matched = self._match_or_interpolate(q_data, q_bg, i_bg, e_bg)
-
-            # Subtract background
-            i_subtracted = i_data - i_bg_matched
-            e_subtracted = np.sqrt(e_data**2 + e_bg_matched**2)
-
-            self.data_bg_subtracted.q = q_data.tolist()
-            self.data_bg_subtracted.i = i_subtracted.tolist()
-            self.data_bg_subtracted.e = e_subtracted.tolist()
+        self.data_bg_subtracted.q = q_data.tolist()
+        self.data_bg_subtracted.i = i_subtracted.tolist()
+        self.data_bg_subtracted.e = e_subtracted.tolist()
 
         logger.info(f"Subtracted {background.label} from {self.label}")
         return
@@ -1072,8 +881,6 @@ class Experiment(BaseModel):
         Primary wavelength in Angstroms, default is 3.6
     v_angle : float
         Vertical angle, default is 0.042
-    log_binning : bool
-        Flag for log-binning, default is False
     num_of_banks : int
         Number of detector banks, default is 4 (not expected to change)
     folder : str
@@ -1091,7 +898,6 @@ class Experiment(BaseModel):
     output_dir: str = Field("", description="Output folder for reduced data")
     prim_wave: float = Field(3.6, description="Primary wavelength in Angstroms")
     v_angle: float = Field(0.042, description="Vertical angle")
-    log_binning: bool = Field(False, description="Flag for log-binning")
     num_of_banks: int = Field(default=4, init=False, description="Number of detector banks")
     folder: str = Field(default="", init=False, description="Working folder for this experiment")
     samples: list["Sample"] = Field(default_factory=list, init=False, description="List of samples")
@@ -1123,8 +929,6 @@ class Experiment(BaseModel):
         self.folder = os.path.dirname(self.config_file)
         self._config = read_config(self.config_file)
 
-        self.log_binning = self.config.binning.log_binning
-
         ec = self.config.empty_cell
         if ec is not None:
             self.empty_cell = Sample(
@@ -1141,21 +945,6 @@ class Experiment(BaseModel):
             )
 
         self.samples = [Sample(**s.model_dump(), experiment=self) for s in self.config.samples]
-
-    def amend_log_binning(self, logbin: bool) -> None:
-        """Override the log-binning setting with the command-line --logbin flag.
-
-        For backwards compatibility when user enters a CSV file
-
-        Parameters
-        ----------
-        logbin : bool
-            When True, enables log-binning regardless of what the config file says.
-            When False, the config-file value set during initialisation is preserved.
-        """
-        if logbin:
-            self.log_binning = True
-            self.config.binning.log_binning = True
 
     def reduce(self, output_dir: str | None = None):
         """Reduce the USANS data
@@ -1232,11 +1021,13 @@ def _build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser for USANS data reduction."""
     parser = argparse.ArgumentParser(description="USANS Data Reduction")
     parser.add_argument("path", help="Path to the configuration file")
+    # Deprecated: log binning has been removed from the reduction workflow. The flag is kept
+    # (hidden from --help) so old invocations do not error; passing it only logs a warning.
     parser.add_argument(
         "-l",
         "--logbin",
         action="store_true",
-        help="Enable log-binning of data during reduction. Option only valid for CSV files",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("-o", "--output", default="", help="Output folder for reduced data (default: current folder)")
     return parser
@@ -1254,8 +1045,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     Returns
     -------
     argparse.Namespace
-        Parsed arguments containing the setup-file path, output directory, and
-        log-binning flag.
+        Parsed arguments containing the setup-file path and output directory.
     """
     parser = _build_parser()
     argcomplete.autocomplete(parser)
@@ -1266,10 +1056,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main():
     """Main function to run USANS data reduction"""
     args = parse_args()
+    if args.logbin:
+        logger.warning(
+            "The --logbin option is deprecated and ignored: log binning has been removed "
+            "from the reduction workflow. Plot I(Q) with a logarithmic X axis instead."
+        )
     experiment = Experiment(config_file=args.path, output_dir=args.output)
-    # backwards compatibility for CSV files, which don't have log-binning settings
-    if Path(args.path).suffix.lower() == ".csv":
-        experiment.amend_log_binning(args.logbin)
     experiment.reduce()
     generate_report(config_file_path=args.path, output_dir=experiment.output_dir)
 

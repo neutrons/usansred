@@ -65,7 +65,7 @@ def test_read_config_csv():
 
 
 def test_read_config_csv_applies_schema_defaults(tmp_path):
-    """Schema defaults (save_all_harmonics, binning, exclude) are injected for CSV configs."""
+    """Schema defaults (save_all_harmonics, exclude) are injected for CSV configs."""
 
     csv_file = tmp_path / "setup.csv"
     csv_file.write_text("s,sample1,45306,6,0.1\n", encoding="utf-8")
@@ -73,8 +73,6 @@ def test_read_config_csv_applies_schema_defaults(tmp_path):
     config = read_config(csv_file)
 
     assert config.save_all_harmonics is False
-    assert config.binning.log_binning is False
-    assert config.binning.steps_per_decade == 33
     assert config.samples[0].exclude == []
 
 
@@ -122,8 +120,6 @@ def test_read_config_json_applies_schema_defaults(tmp_path):
     config = read_config(json_file)
 
     assert config.save_all_harmonics is False
-    assert config.binning.log_binning is False
-    assert config.binning.steps_per_decade == 33
     assert config.samples[0].exclude == []
 
 

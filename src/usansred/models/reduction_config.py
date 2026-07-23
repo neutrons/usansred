@@ -2,10 +2,12 @@
 
 from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from usansred.enums import MeasurementType
-from usansred.utils import cast_to_bool
+from usansred.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 ######################################
 ### Reduction input configurations ###
@@ -90,23 +92,6 @@ class EmptyCellConfig(_ScanBase):
     thickness: ClassVar[float] = 1.0  # Empty cell thickness is fixed at 1 cm for correction purposes
 
 
-class BinningConfig(BaseModel):
-    """Q binning settings applied during reduction."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    log_binning: bool = Field(default=False, description="Enable logarithmic Q binning.")
-    steps_per_decade: int = Field(
-        default=33, ge=1, description="Number of Q bins per decade when log binning is enabled."
-    )
-    q_min: Annotated[float, Field(gt=0, description="Minimum Q value in 1/Å for log binning.")] = 1e-6
-
-    @field_validator("log_binning", mode="before")
-    @classmethod
-    def _coerce_log_binning(cls, v):
-        return cast_to_bool(v)
-
-
 class ReductionConfig(BaseModel):
     """Top-level configuration for a USANS reduction run."""
 
@@ -124,4 +109,22 @@ class ReductionConfig(BaseModel):
     save_all_harmonics: bool = Field(
         default=False, description="Save individual harmonic output files in addition to the combined result."
     )
-    binning: BinningConfig = Field(default_factory=BinningConfig, description="Q binning configuration.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_deprecated_binning(cls, data):
+        """Accept but ignore the deprecated ``binning``/``log_binning`` entry.
+
+        Log binning has been removed from the reduction workflow. Older setup files may
+        still carry a ``binning`` block (which held ``log_binning``, ``steps_per_decade``,
+        and ``q_min``). We strip it here before strict validation so those files keep
+        loading, while emitting a deprecation warning for the user's benefit.
+        """
+        if isinstance(data, dict) and "binning" in data:
+            logger.warning(
+                "The 'binning'/'log_binning' setup entry is deprecated and ignored: "
+                "log binning has been removed from the reduction workflow. "
+                "Remove it from your setup file; plot I(Q) with a logarithmic X axis instead."
+            )
+            data = {key: value for key, value in data.items() if key != "binning"}
+        return data
