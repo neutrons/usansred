@@ -1,3 +1,5 @@
+# PYTHON_ARGCOMPLETE_OK
+import argparse
 import copy
 import csv
 import math
@@ -6,6 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import argcomplete
 import numpy as np
 from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
@@ -1225,9 +1228,8 @@ class Experiment(BaseModel):
             self.background.dump_reduced_data_to_csv()
 
 
-def parse_args():
-    import argparse
-
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for USANS data reduction."""
     parser = argparse.ArgumentParser(description="USANS Data Reduction")
     parser.add_argument("path", help="Path to the configuration file")
     parser.add_argument(
@@ -1237,7 +1239,27 @@ def parse_args():
         help="Enable log-binning of data during reduction. Option only valid for CSV files",
     )
     parser.add_argument("-o", "--output", default="", help="Output folder for reduced data (default: current folder)")
-    args = parser.parse_args()
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command-line arguments for USANS data reduction.
+
+    Parameters
+    ----------
+    argv : list[str] | None, optional
+        Command-line arguments to parse, excluding the program name. When
+        ``None``, arguments are read from ``sys.argv``.
+
+    Returns
+    -------
+    argparse.Namespace
+        Parsed arguments containing the setup-file path, output directory, and
+        log-binning flag.
+    """
+    parser = _build_parser()
+    argcomplete.autocomplete(parser)
+    args = parser.parse_args(argv)
     return args
 
 

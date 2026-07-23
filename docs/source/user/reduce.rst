@@ -230,6 +230,17 @@ Additional CLI options for ``reduceUSANS`` can be viewed in the terminal by runn
      -l, --logbin                 Enable log-binning of data during reduction. Option only valid for CSV files
      -o OUTPUT, --output OUTPUT   Output folder for reduced data (default: current folder)
 
+Tab completion for ``reduceUSANS`` is registered automatically when entering
+the Pixi environment in Bash or Zsh:
+
+.. code-block:: bash
+
+   $ pixi shell
+   (usansred) $ reduceUSANS --log<TAB>
+
+If completion does not appear after updating ``usansred``, exit and re-enter
+the Pixi environment.
+
 Summary
 -------
 

@@ -43,6 +43,11 @@ artifacts = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/usansred"]
 
+# Install the argcomplete activation hook into built conda packages so deployed
+# usansred environments register completion for the generated reduceUSANS entry point.
+[tool.hatch.build.targets.wheel.shared-data]
+"scripts/activate_reduceUSANS_argcomplete.sh" = "etc/conda/activate.d/usansred_argcomplete.sh"
+
 [tool.versioningit.vcs]
 method = "git"
 default-tag = "0.0.1"
@@ -79,6 +84,7 @@ preview = ["pixi-build"]
 [tool.pixi.dependencies]
 python = "=3.11"
 mantidworkbench = ">=6.15.0,<6.16.0"
+argcomplete = "*"
 pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
@@ -105,6 +111,7 @@ versioningit = "*"
 [tool.pixi.package.run-dependencies]
 python = "=3.11"
 mantidworkbench = ">=6.15.0,<6.16.0"
+argcomplete = "*"
 pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
@@ -124,6 +131,10 @@ default = { features = [
   "test",
 ], solve-group = "default" }
 docs = { features = ["docs"], solve-group = "docs" }
+
+# Run the same argcomplete activation hook in local Pixi dev environments.
+[tool.pixi.target.unix.activation]
+scripts = ["scripts/activate_reduceUSANS_argcomplete.sh"]
 
 [tool.pixi.feature.build.dependencies]
 versioningit = "*"
