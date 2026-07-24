@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import random
 from pathlib import Path
@@ -109,6 +110,23 @@ def test_main_invalid_file(mock_parse_args):
     assert str(error.value) == f"The file path: {mock_args.path} does not exist"
 
 
+@mock_patch("usansred.reduce.parse_args")
+def test_main_logbin_deprecation_warning(mock_parse_args, caplog):
+    """Passing the removed --logbin flag logs a deprecation warning and is otherwise ignored."""
+    mock_args = MagicMock()
+    mock_args.logbin = True
+    mock_args.path = "invalid_path.csv"
+    mock_args.output = ""
+    mock_parse_args.return_value = mock_args
+
+    with caplog.at_level(logging.WARNING):
+        # main() emits the deprecation warning before it fails on the missing setup file
+        with pytest.raises(FileNotFoundError):
+            reduce()
+
+    assert any("--logbin" in message and "deprecated" in message for message in caplog.messages)
+
+
 @pytest.mark.datarepo
 @mock_patch("usansred.reduce.parse_args")
 def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
@@ -156,14 +174,10 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
 def test_reduce_empty_cell(data_server, tmp_path):
     """Empty-cell reduction and subtraction in the absence of a background.
 
-    Log binning is disabled by overriding the config in-memory (raw data files are resolved
-    relative to the setup file's folder, so the setup file cannot simply be copied elsewhere).
     This exercises the interpolation branch of ``Sample.subtract_background``.
     """
     config_file = data_server.path_to("setup-empty-cell.json")
     experiment = Experiment(config_file=config_file, output_dir=str(tmp_path))
-    experiment.log_binning = False
-    experiment.config.binning.log_binning = False
 
     experiment.reduce()
 
@@ -202,7 +216,7 @@ def test_sample_match_or_interpolate(data_server, tmp_path):
     # Create new Experiment instance
     csvpath = data_server.path_to("setup.csv")
     tmpoutput = str(tmp_path)
-    exp = Experiment(config_file=csvpath, log_binning=False, output_dir=tmpoutput)
+    exp = Experiment(config_file=csvpath, output_dir=tmpoutput)
 
     # Genearte testing data
     qq = np.array([dd * 1e-5 for dd in range(1, 100)])

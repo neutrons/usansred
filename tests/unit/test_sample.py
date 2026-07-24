@@ -52,17 +52,6 @@ class TestSampleProperties:
         sample.data_bg_subtracted = bg
         assert sample.data_reduced is bg
 
-    def test_is_log_binned_false(self, mock_experiment):
-        """is_log_binned should be False when data_log_binned.q is empty."""
-        sample = _make_sample(mock_experiment, "test", [])
-        assert sample.is_log_binned is False
-
-    def test_is_log_binned_true(self, mock_experiment):
-        """is_log_binned should be True when data_log_binned.q has values."""
-        sample = _make_sample(mock_experiment, "test", [])
-        sample.data_log_binned = IQData(q=[1.0], i=[10.0], e=[1.0])
-        assert sample.is_log_binned is True
-
     def test_is_reduced_false(self, mock_experiment):
         """is_reduced should be False when data_bg_subtracted.q is empty."""
         sample = _make_sample(mock_experiment, "test", [])
@@ -84,12 +73,6 @@ class TestSampleProperties:
         """size_reduced should be 0 when no bg_subtracted data."""
         sample = _make_sample(mock_experiment, "test", [])
         assert sample.size_reduced == 0
-
-    def test_num_log_bins(self, mock_experiment):
-        """num_log_bins should return length of data_log_binned.q."""
-        sample = _make_sample(mock_experiment, "test", [])
-        sample.data_log_binned = IQData(q=[1.0, 2.0, 3.0], i=[10.0, 20.0, 30.0], e=[1.0, 2.0, 3.0])
-        assert sample.num_log_bins == 3
 
     def test_num_of_banks_property(self, mock_experiment):
         """num_of_banks should delegate to experiment."""
@@ -480,7 +463,7 @@ class TestDumpBackgroundSubtracted:
         sample = _make_sample(mock_experiment, "test", [])
         sample.data_bg_subtracted = IQData(q=[0.1, 0.2], i=[10.0, 20.0], e=[1.0, 2.0])
 
-        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False, log_binned_data=False)
+        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
 
         subtracted_file = tmp_path / "UN_test_det_1_background_subtracted.txt"
         assert subtracted_file.is_file()
@@ -490,7 +473,7 @@ class TestDumpBackgroundSubtracted:
         mock_experiment.output_dir = str(tmp_path)
         sample = _make_sample(mock_experiment, "test", [])
 
-        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False, log_binned_data=False)
+        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
 
         assert list(tmp_path.iterdir()) == []
 

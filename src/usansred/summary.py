@@ -36,7 +36,6 @@ def get_filenames_from_samples(sample_name: str) -> list[str]:
     if sample_name:
         return [
             "UN_" + sample_name + "_det_1.txt",
-            "UN_" + sample_name + "_det_1_lb.txt",
             "UN_" + sample_name + "_det_1_background_subtracted.txt",
             "UN_" + sample_name + "_det_1_unscaled.txt",
         ]
@@ -89,11 +88,7 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
     chartsheet_orig = workbook.add_chartsheet("Original")
     main_chart_orig = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
-    # log binned data
-    chartsheet_log_binned = workbook.add_chartsheet("Log Binned")
-    main_chart_log_binned = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
-
-    # log binned data with background removed
+    # data with background removed
     chartsheet_subtracted = workbook.add_chartsheet("BG Subtracted")
     main_chart_subtracted = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
@@ -106,12 +101,6 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
 
     main_chart_orig.set_y_axis({"name": "I (1/cn)", "log_base": 10})
     main_chart_orig.set_title({"name": "Original Data"})
-
-    main_chart_log_binned.set_x_axis({"name": "Q (1/A)", "log_base": 10})
-
-    main_chart_log_binned.set_y_axis({"name": "I (1/cn)", "log_base": 10})
-
-    main_chart_log_binned.set_title({"name": "Log Binned"})
 
     main_chart_subtracted.set_x_axis({"name": "Q (1/A)", "log_base": 10})
 
@@ -210,14 +199,6 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
                     "values": f"={wn}!$E$2:$E$100",
                 }
             )
-        elif file.endswith("lb.txt"):
-            main_chart_log_binned.add_series(
-                {
-                    "name": f"{wn}",
-                    "categories": f"={wn}!$D$2:$D$100",
-                    "values": f"={wn}!$E$2:$E$100",
-                }
-            )
         elif file.endswith("unscaled.txt"):
             main_chart_unscaled.add_series(
                 {
@@ -244,9 +225,6 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
 
     if main_chart_orig.series:
         chartsheet_orig.set_chart(main_chart_orig)
-
-    if main_chart_log_binned.series:
-        chartsheet_log_binned.set_chart(main_chart_log_binned)
 
     if main_chart_subtracted.series:
         chartsheet_subtracted.set_chart(main_chart_subtracted)

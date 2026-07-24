@@ -111,7 +111,6 @@ As an example, consider the data files used in
 .. code-block:: bash
 
    tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
-   tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_lb.txt
    tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_unscaled.txt
    ...
 
@@ -122,7 +121,7 @@ located inside the temporary directory ``tmp_path`` that is automatically create
 .. code-block:: bash
 
    $ cp /path/to/new/UN_EmptyPCell_det_1.txt tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
-   $ cp /path/to/new/UN_EmptyPCell_det_1_lb.txt tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_lb.txt
+   $ cp /path/to/new/UN_EmptyPCell_det_1_unscaled.txt tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_unscaled.txt
 
 Assuming we only wish to modify these two files, the next step is to commit these changes in our local repository
 *usansred-data* and then push the changes to the remote repository.
@@ -131,7 +130,7 @@ Assuming we only wish to modify these two files, the next step is to commit thes
 
    $ cd /path/to/usansred/tests/usansred-data
    $ git add IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
-   $ git add IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_lb.txt
+   $ git add IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_unscaled.txt
    $ git commit -m "Updated data files for test_reduce.py::test_main()"
    $ git push origin
 
