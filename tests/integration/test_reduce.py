@@ -152,18 +152,20 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
 
     reduce()
 
-    for bank in range(2, 5):
-        bank_dir = output_dir / f"bank_{bank}"
-        assert bank_dir.is_dir()
+    # Higher harmonics are written flat in the output directory as ``_det_<n>``, alongside
+    # the first-harmonic ``_det_1`` files; no per-bank subdirectories are created.
+    for harmonic in range(2, 5):
         for name in ["EmptyPCell", "S115_dry", "S115_pc3"]:
-            harmonic_file = bank_dir / f"UN_{name}_unscaled.txt"
+            harmonic_file = output_dir / f"UN_{name}_det_{harmonic}_unscaled.txt"
             assert harmonic_file.is_file()
             assert harmonic_file.stat().st_size > 0
             assert len(harmonic_file.read_text(encoding="utf-8").splitlines()) == 65
 
-            scaled_file = bank_dir / f"UN_{name}.txt"
+            scaled_file = output_dir / f"UN_{name}_det_{harmonic}.txt"
             assert scaled_file.is_file()
             assert scaled_file.stat().st_size > 0
+
+    assert not list(output_dir.glob("bank_*")), "per-bank subdirectories should no longer be created"
 
     assert_reduction_log_files(
         output_dir, [("S115_pc3", "sample"), ("S115_dry", "sample"), ("EmptyPCell", "background")]

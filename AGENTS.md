@@ -147,9 +147,11 @@ Output names currently include:
 
 - `UN_<sample>_det_1_unscaled.txt`
 - `UN_<sample>_det_1.txt`
-- `UN_<sample>_det_1_lb.txt`
+- `UN_<sample>_det_<n>_unscaled.txt` and `UN_<sample>_det_<n>.txt` for harmonics
+  `n = 2..4`, only when `save_all_harmonics` is enabled. These are written flat in
+  the output directory, not in per-bank subdirectories.
 - `UN_<sample>_det_1_background_subtracted.txt` (only when a background or
-  empty cell was subtracted)
+  empty cell was subtracted; first harmonic only)
 - `summary.xlsx`
 
 ## Coding Standards

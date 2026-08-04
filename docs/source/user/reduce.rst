@@ -247,3 +247,18 @@ Once reduction is finished, subdirectory ``result/`` is created containing the f
   + ``UN_X5D2_8_det_1_background_subtracted.txt`` (**_background_subtracted.txt**)
     is the data after background (or empty-cell) subtraction.
     It is only written when a background or empty cell was actually subtracted.
+
+The ``_det_1`` infix denotes the first harmonic (first detector bank), the only one written
+by default. When ``save_all_harmonics`` is enabled in the JSON setup file, the unscaled and
+scaled files are written for every harmonic, using the same names with the harmonic number
+in place of the ``1``:
+
+.. code-block:: text
+
+   UN_X5D2_8_det_1_unscaled.txt   UN_X5D2_8_det_1.txt
+   UN_X5D2_8_det_2_unscaled.txt   UN_X5D2_8_det_2.txt
+   UN_X5D2_8_det_3_unscaled.txt   UN_X5D2_8_det_3.txt
+   UN_X5D2_8_det_4_unscaled.txt   UN_X5D2_8_det_4.txt
+
+Background subtraction is currently applied to the first harmonic only, so
+``_det_1_background_subtracted.txt`` has no counterpart for the higher harmonics.
