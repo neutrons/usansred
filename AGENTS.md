@@ -141,7 +141,7 @@ The main reduction model is in `src/usansred/reduce.py`.
   `USANS_<run>_monitor_scan_ARN.txt` and
   `USANS_<run>_detector_scan_ARN_peak_<bank>.txt`.
 - `CombinedSample` combines raw scan data from multiple samples before reduction.
-- `XYData`, `IQData`, and `MonitorData` live in `src/usansred/model.py`.
+- `XYData`, `IQData`, and `MonitorData` live in `src/usansred/models/data.py`.
 
 Output names currently include:
 
