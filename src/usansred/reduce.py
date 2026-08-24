@@ -347,25 +347,29 @@ class Sample(BaseModel):
         """Write this measurement's reduced data to CSV text files in the experiment's output directory.
 
         Each flag enables one category of output file (all default to True; the reduction
-        workflow in ``Experiment.dump_reduced_data`` always uses the defaults). A category
-        is also skipped when its corresponding data is empty.
+        workflow in ``Experiment.dump_reduced_data`` always uses the defaults). Higher
+        harmonics with no data are skipped with a warning, but the first harmonic is
+        required for the ``detector_data`` and ``scaled_data`` categories.
 
         Parameters
         ----------
         detector_data : bool
             Write the stitched, monitor-normalized data, ``UN_<name>_det_1_unscaled.txt``.
             With ``save_all_harmonics``, higher harmonics go to ``UN_<name>_det_<n>_unscaled.txt``.
-            Higher harmonics are skipped when their data is not present. The first harmonic is
-            required and raises ``RuntimeError`` when missing.
         scaled_data : bool
             Write the data rescaled by analyzer solid angle, sample thickness, and transmission,
             ``UN_<name>_det_1.txt``. With ``save_all_harmonics``, higher harmonics go to
-            ``UN_<name>_det_<n>.txt``. Higher harmonics are skipped when their data is not present;
-            the first harmonic is required and raises ``RuntimeError`` when missing.
+            ``UN_<name>_det_<n>.txt``.
         background_subtracted_data : bool
             Write the background- (or empty-cell-) subtracted data,
             ``UN_<name>_det_1_background_subtracted.txt``. Only written when a subtraction
             actually occurred (``is_reduced`` is True).
+
+        Raises
+        ------
+        RuntimeError
+            If ``detector_data`` or ``scaled_data`` is requested but the first harmonic of
+            the corresponding data is missing or empty.
         """
         # Harmonic (detector bank) n is written to ``_det_<n>``; only the first harmonic is
         # written unless ``save_all_harmonics`` is set.
