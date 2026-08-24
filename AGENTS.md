@@ -141,15 +141,17 @@ The main reduction model is in `src/usansred/reduce.py`.
   `USANS_<run>_monitor_scan_ARN.txt` and
   `USANS_<run>_detector_scan_ARN_peak_<bank>.txt`.
 - `CombinedSample` combines raw scan data from multiple samples before reduction.
-- `XYData`, `IQData`, and `MonitorData` live in `src/usansred/model.py`.
+- `XYData`, `IQData`, and `MonitorData` live in `src/usansred/models/data.py`.
 
 Output names currently include:
 
 - `UN_<sample>_det_1_unscaled.txt`
 - `UN_<sample>_det_1.txt`
-- `UN_<sample>_det_1_lb.txt`
+- `UN_<sample>_det_<n>_unscaled.txt` and `UN_<sample>_det_<n>.txt` for harmonics
+  `n = 2..4`, only when `save_all_harmonics` is enabled. These are written flat in
+  the output directory, not in per-bank subdirectories.
 - `UN_<sample>_det_1_background_subtracted.txt` (only when a background or
-  empty cell was subtracted)
+  empty cell was subtracted; first harmonic only)
 - `summary.xlsx`
 
 ## Coding Standards

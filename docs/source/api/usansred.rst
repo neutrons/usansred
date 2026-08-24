@@ -24,10 +24,18 @@ usansred.io.save
    :undoc-members:
    :show-inheritance:
 
-usansred.model
---------------
+usansred.models.data
+--------------------
 
-.. automodule:: usansred.model
+.. automodule:: usansred.models.data
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+usansred.models.reduction\_config
+---------------------------------
+
+.. automodule:: usansred.models.reduction_config
    :members:
    :undoc-members:
    :show-inheritance:

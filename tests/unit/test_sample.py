@@ -455,6 +455,98 @@ class TestSampleDumpDataToCsv:
             os.unlink(filepath)
 
 
+class TestDumpAllHarmonics:
+    """Tests for the ``save_all_harmonics`` output files of Sample.dump_reduced_data_to_csv."""
+
+    @staticmethod
+    def _make_two_bank_sample(experiment: Experiment, save_all_harmonics: bool, tmp_path) -> Sample:
+        experiment.output_dir = str(tmp_path)
+        experiment._config.save_all_harmonics = save_all_harmonics
+        sample = _make_sample(experiment, "test", [])
+        # One (Q,I,E) curve per detector bank, both for the unscaled and the rescaled data
+        sample.detector_data = [
+            IQData(q=[0.1, 0.2], i=[100.0, 200.0], e=[10.0, 14.0]),
+            IQData(q=[0.3, 0.4], i=[300.0, 400.0], e=[17.0, 20.0]),
+        ]
+        sample.data_scaled = [
+            IQData(q=[0.1, 0.2], i=[1.0, 2.0], e=[0.1, 0.2]),
+            IQData(q=[0.3, 0.4], i=[3.0, 4.0], e=[0.3, 0.4]),
+        ]
+        return sample
+
+    def test_writes_one_file_per_harmonic(self, mock_experiment_2banks, tmp_path):
+        """With save_all_harmonics, each bank is written flat as ``_det_<n>``."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+
+        sample.dump_reduced_data_to_csv(background_subtracted_data=False)
+
+        for harmonic in (1, 2):
+            assert (tmp_path / f"UN_test_det_{harmonic}_unscaled.txt").is_file()
+            assert (tmp_path / f"UN_test_det_{harmonic}.txt").is_file()
+        assert not list(tmp_path.glob("bank_*")), "no per-bank subdirectories should be created"
+
+    def test_higher_harmonics_hold_their_own_bank_data(self, mock_experiment_2banks, tmp_path):
+        """The ``_det_2`` files hold bank 2's curve, not a copy of bank 1's."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+
+        sample.dump_reduced_data_to_csv(background_subtracted_data=False)
+
+        rows = list(csv.reader((tmp_path / "UN_test_det_2_unscaled.txt").read_text().splitlines()))
+        assert [float(row[0]) for row in rows] == [0.3, 0.4]
+        assert [float(row[1]) for row in rows] == [300.0, 400.0]
+
+    def test_only_first_harmonic_without_the_flag(self, mock_experiment_2banks, tmp_path):
+        """Without save_all_harmonics, only the first harmonic is written."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, False, tmp_path)
+
+        sample.dump_reduced_data_to_csv(background_subtracted_data=False)
+
+        assert (tmp_path / "UN_test_det_1_unscaled.txt").is_file()
+        assert (tmp_path / "UN_test_det_1.txt").is_file()
+        assert not (tmp_path / "UN_test_det_2_unscaled.txt").exists()
+        assert not (tmp_path / "UN_test_det_2.txt").exists()
+
+    def test_missing_first_detector_harmonic_aborts_output(self, mock_experiment_2banks, tmp_path):
+        """Missing first-harmonic detector data must abort output generation."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+        sample.detector_data = []
+
+        with pytest.raises(RuntimeError, match="first harmonic data is missing"):
+            sample.dump_reduced_data_to_csv(scaled_data=False, background_subtracted_data=False)
+
+    def test_missing_first_scaled_harmonic_aborts_output(self, mock_experiment_2banks, tmp_path):
+        """Missing first-harmonic scaled data must abort output generation."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+        sample.data_scaled = []
+
+        with pytest.raises(RuntimeError, match="first harmonic data is missing"):
+            sample.dump_reduced_data_to_csv(detector_data=False, background_subtracted_data=False)
+
+    def test_missing_higher_harmonics_warns_and_skips_files(self, mock_experiment_2banks, tmp_path, caplog):
+        """Missing higher harmonics should be warned about and skipped."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+        sample.detector_data = sample.detector_data[:1]
+        sample.data_scaled = sample.data_scaled[:1]
+
+        with caplog.at_level(logging.WARNING):
+            sample.dump_reduced_data_to_csv(background_subtracted_data=False)
+
+        assert (tmp_path / "UN_test_det_1_unscaled.txt").is_file()
+        assert (tmp_path / "UN_test_det_1.txt").is_file()
+        assert not (tmp_path / "UN_test_det_2_unscaled.txt").exists()
+        assert not (tmp_path / "UN_test_det_2.txt").exists()
+        assert "No detector data is available" in caplog.text
+        assert "No scaled data is available" in caplog.text
+
+    def test_empty_first_scaled_harmonic_aborts_output(self, mock_experiment_2banks, tmp_path):
+        """An empty first-harmonic scaled curve must abort output generation."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+        sample.data_scaled[0] = IQData()
+
+        with pytest.raises(RuntimeError, match="first harmonic data is missing"):
+            sample.dump_reduced_data_to_csv(detector_data=False, background_subtracted_data=False)
+
+
 class TestDumpBackgroundSubtracted:
     """Tests for dumping the background-subtracted data file."""
 
