@@ -7196,7 +7196,7 @@ packages:
   timestamp: 1773346670047
 - pypi: ./
   name: usansred
-  requires_python: '>=3.12'
+  requires_python: '>=3.12,<3.13'
 - pypi: https://files.pythonhosted.org/packages/13/bc/8c13eb66537dce1d2bd3a57132902f38d0e7f5bb46fa9f4daed9fe9d76ee/tomlkit-0.15.1-py3-none-any.whl
   name: tomlkit
   version: 0.15.1
