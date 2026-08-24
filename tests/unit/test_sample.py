@@ -506,6 +506,46 @@ class TestDumpAllHarmonics:
         assert not (tmp_path / "UN_test_det_2_unscaled.txt").exists()
         assert not (tmp_path / "UN_test_det_2.txt").exists()
 
+    def test_missing_first_detector_harmonic_aborts_output(self, mock_experiment_2banks, tmp_path):
+        """Missing first-harmonic detector data must abort output generation."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+        sample.detector_data = []
+
+        with pytest.raises(RuntimeError, match="first harmonic data is missing"):
+            sample.dump_reduced_data_to_csv(scaled_data=False, background_subtracted_data=False)
+
+    def test_missing_first_scaled_harmonic_aborts_output(self, mock_experiment_2banks, tmp_path):
+        """Missing first-harmonic scaled data must abort output generation."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+        sample.data_scaled = []
+
+        with pytest.raises(RuntimeError, match="first harmonic data is missing"):
+            sample.dump_reduced_data_to_csv(detector_data=False, background_subtracted_data=False)
+
+    def test_missing_higher_harmonics_warns_and_skips_files(self, mock_experiment_2banks, tmp_path, caplog):
+        """Missing higher harmonics should be warned about and skipped."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+        sample.detector_data = sample.detector_data[:1]
+        sample.data_scaled = sample.data_scaled[:1]
+
+        with caplog.at_level(logging.WARNING):
+            sample.dump_reduced_data_to_csv(background_subtracted_data=False)
+
+        assert (tmp_path / "UN_test_det_1_unscaled.txt").is_file()
+        assert (tmp_path / "UN_test_det_1.txt").is_file()
+        assert not (tmp_path / "UN_test_det_2_unscaled.txt").exists()
+        assert not (tmp_path / "UN_test_det_2.txt").exists()
+        assert "No detector data is available" in caplog.text
+        assert "No scaled data is available" in caplog.text
+
+    def test_empty_first_scaled_harmonic_aborts_output(self, mock_experiment_2banks, tmp_path):
+        """An empty first-harmonic scaled curve must abort output generation."""
+        sample = self._make_two_bank_sample(mock_experiment_2banks, True, tmp_path)
+        sample.data_scaled[0] = IQData()
+
+        with pytest.raises(RuntimeError, match="first harmonic data is missing"):
+            sample.dump_reduced_data_to_csv(detector_data=False, background_subtracted_data=False)
+
 
 class TestDumpBackgroundSubtracted:
     """Tests for dumping the background-subtracted data file."""

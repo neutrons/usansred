@@ -355,11 +355,13 @@ class Sample(BaseModel):
         detector_data : bool
             Write the stitched, monitor-normalized data, ``UN_<name>_det_1_unscaled.txt``.
             With ``save_all_harmonics``, higher harmonics go to ``UN_<name>_det_<n>_unscaled.txt``.
-            Skipped when no detector data is present.
+            Higher harmonics are skipped when their data is not present. The first harmonic is
+            required and raises ``RuntimeError`` when missing.
         scaled_data : bool
             Write the data rescaled by analyzer solid angle, sample thickness, and transmission,
             ``UN_<name>_det_1.txt``. With ``save_all_harmonics``, higher harmonics go to
-            ``UN_<name>_det_<n>.txt``.
+            ``UN_<name>_det_<n>.txt``. Higher harmonics are skipped when their data is not present;
+            the first harmonic is required and raises ``RuntimeError`` when missing.
         background_subtracted_data : bool
             Write the background- (or empty-cell-) subtracted data,
             ``UN_<name>_det_1_background_subtracted.txt``. Only written when a subtraction
@@ -369,15 +371,44 @@ class Sample(BaseModel):
         # written unless ``save_all_harmonics`` is set.
         num_of_harmonics = self.num_of_banks if self.config.save_all_harmonics else 1
 
-        if detector_data and self.data:
-            for harmonic in range(1, num_of_harmonics + 1):
+        def has_data(data: IQData) -> bool:
+            return any((data.q, data.i, data.e, data.t))
+
+        if detector_data and (not self.detector_data or not has_data(self.detector_data[0])):
+            raise RuntimeError(f"Cannot write detector data for {self.label}: first harmonic data is missing.")
+
+        if scaled_data and (not self.data_scaled or not has_data(self.data_scaled[0])):
+            raise RuntimeError(f"Cannot write scaled data for {self.label}: first harmonic data is missing.")
+
+        if detector_data:
+            missing_harmonics = []
+            for harmonic in range(1, min(num_of_harmonics, len(self.detector_data)) + 1):
+                if not has_data(self.detector_data[harmonic - 1]):
+                    missing_harmonics.append(harmonic)
+                    continue
                 filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_{harmonic}_unscaled.txt")
                 self.dump_data_to_csv(filepath, self.detector_data[harmonic - 1])
+            missing_harmonics.extend(range(len(self.detector_data) + 1, num_of_harmonics + 1))
+            if missing_harmonics:
+                logger.warning(
+                    f"No detector data is available for {self.label} for harmonics {missing_harmonics}; "
+                    "skipping those data dumps."
+                )
 
         if scaled_data:
-            for harmonic in range(1, num_of_harmonics + 1):
+            missing_harmonics = []
+            for harmonic in range(1, min(num_of_harmonics, len(self.data_scaled)) + 1):
+                if not has_data(self.data_scaled[harmonic - 1]):
+                    missing_harmonics.append(harmonic)
+                    continue
                 filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_{harmonic}.txt")
                 self.dump_data_to_csv(filepath, self.data_scaled[harmonic - 1])
+            missing_harmonics.extend(range(len(self.data_scaled) + 1, num_of_harmonics + 1))
+            if missing_harmonics:
+                logger.warning(
+                    f"No scaled data is available for {self.label} for harmonics {missing_harmonics}; "
+                    "skipping those data dumps."
+                )
 
         if background_subtracted_data:
             # Only written when a background or empty cell was actually subtracted
