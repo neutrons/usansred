@@ -7,7 +7,7 @@ authors = [
   { name = "Glass Elsarboukh" },
 ]
 dynamic = ["version"]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 
 [project.urls]
@@ -82,8 +82,8 @@ preview = ["pixi-build"]
 ### Dependency tables
 
 [tool.pixi.dependencies]
-python = "=3.11"
-mantidworkbench = ">=6.15.0,<6.16.0"
+python = "=3.12"
+mantidworkbench = ">=6.16.0,<6.17.0"
 argcomplete = "*"
 pandas = "*"
 pydantic = "*"
@@ -99,7 +99,7 @@ usansred = { path = ".", editable = true }
 backend = { name = "pixi-build-python", version = "0.8.*" }
 
 [tool.pixi.package.host-dependencies]
-python = ">=3.11,<3.12"
+python = ">=3.12,<3.13"
 hatchling = "*"
 versioningit = "*"
 
@@ -109,8 +109,8 @@ versioningit = "*"
 
 # Conda packages (no PyPi) to be enumerated within the conda package to be built.
 [tool.pixi.package.run-dependencies]
-python = "=3.11"
-mantidworkbench = ">=6.15.0,<6.16.0"
+python = "=3.12"
+mantidworkbench = ">=6.16.0,<6.17.0"
 argcomplete = "*"
 pandas = "*"
 pydantic = "*"
