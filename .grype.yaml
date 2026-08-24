@@ -1,16 +1,16 @@
 ignore:
   - package:
       name: python
-      version: "3.11.*"
-    reason: "version pinned by Mantid 6.15.0"
+      version: "3.12.*"
+    reason: "version pinned by Mantid 6.16.0"
 
   - package:
       name: gstreamer
       version: "1.26.11"
       type: conda
-    reason: "version pinned by Mantid 6.15.*"
+    reason: "version pinned by Mantid 6.16.*"
 
   - package:
       name: pillow
       version: "11.3.0"
-    reason: "version pinned by Mantid 6.15.*"
+    reason: "version pinned by Mantid 6.16.*"
