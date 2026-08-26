@@ -79,7 +79,7 @@ def _make_sample(experiment: Experiment, name: str, scans: list[Scan]) -> Sample
     sample.scans = scans
     sample.detector_data = []
     sample.data_scaled = []
-    sample.data_bg_subtracted = IQData()
+    sample.data_bg_subtracted = []
     return sample
 
 

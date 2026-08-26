@@ -46,27 +46,38 @@ class TestSampleProperties:
         assert sample.size == 0
 
     def test_data_reduced_property(self, mock_experiment):
-        """data_reduced should return data_bg_subtracted."""
+        """data_reduced should return the first harmonic of data_bg_subtracted."""
         sample = _make_sample(mock_experiment, "test", [])
         bg = IQData(q=[1.0], i=[5.0], e=[0.5])
-        sample.data_bg_subtracted = bg
+        sample.data_bg_subtracted = [bg, IQData(q=[2.0], i=[6.0], e=[0.6])]
         assert sample.data_reduced is bg
 
+    def test_data_reduced_property_no_data(self, mock_experiment):
+        """data_reduced should be None when no subtraction has happened."""
+        sample = _make_sample(mock_experiment, "test", [])
+        assert sample.data_reduced is None
+
     def test_is_reduced_false(self, mock_experiment):
-        """is_reduced should be False when data_bg_subtracted.q is empty."""
+        """is_reduced should be False when data_bg_subtracted is empty."""
         sample = _make_sample(mock_experiment, "test", [])
         assert sample.is_reduced is False
 
-    def test_is_reduced_true(self, mock_experiment):
-        """is_reduced should be True when data_bg_subtracted.q has values."""
+    def test_is_reduced_false_empty_first_harmonic(self, mock_experiment):
+        """is_reduced should be False when the first harmonic carries no points."""
         sample = _make_sample(mock_experiment, "test", [])
-        sample.data_bg_subtracted = IQData(q=[1.0], i=[10.0], e=[1.0])
+        sample.data_bg_subtracted = [IQData()]
+        assert sample.is_reduced is False
+
+    def test_is_reduced_true(self, mock_experiment):
+        """is_reduced should be True when the first harmonic has values."""
+        sample = _make_sample(mock_experiment, "test", [])
+        sample.data_bg_subtracted = [IQData(q=[1.0], i=[10.0], e=[1.0])]
         assert sample.is_reduced is True
 
     def test_size_reduced(self, mock_experiment):
-        """size_reduced should return length of bg_subtracted q."""
+        """size_reduced should return length of the first harmonic's q."""
         sample = _make_sample(mock_experiment, "test", [])
-        sample.data_bg_subtracted = IQData(q=[1.0, 2.0], i=[10.0, 20.0], e=[1.0, 2.0])
+        sample.data_bg_subtracted = [IQData(q=[1.0, 2.0], i=[10.0, 20.0], e=[1.0, 2.0])]
         assert sample.size_reduced == 2
 
     def test_size_reduced_empty(self, mock_experiment):
@@ -553,7 +564,7 @@ class TestDumpBackgroundSubtracted:
     def test_written_when_subtraction_occurred(self, mock_experiment, tmp_path):
         mock_experiment.output_dir = str(tmp_path)
         sample = _make_sample(mock_experiment, "test", [])
-        sample.data_bg_subtracted = IQData(q=[0.1, 0.2], i=[10.0, 20.0], e=[1.0, 2.0])
+        sample.data_bg_subtracted = [IQData(q=[0.1, 0.2], i=[10.0, 20.0], e=[1.0, 2.0])]
 
         sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
 
@@ -568,6 +579,143 @@ class TestDumpBackgroundSubtracted:
         sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
 
         assert list(tmp_path.iterdir()) == []
+
+    @staticmethod
+    def _two_harmonic_sample(experiment: Experiment, save_all_harmonics: bool, tmp_path) -> Sample:
+        experiment.output_dir = str(tmp_path)
+        experiment._config.save_all_harmonics = save_all_harmonics
+        sample = _make_sample(experiment, "test", [])
+        sample.data_bg_subtracted = [
+            IQData(q=[0.1, 0.2], i=[1.0, 2.0], e=[0.1, 0.2]),
+            IQData(q=[0.3, 0.4], i=[3.0, 4.0], e=[0.3, 0.4]),
+        ]
+        return sample
+
+    def test_higher_harmonics_written_with_save_all_harmonics(self, mock_experiment_2banks, tmp_path):
+        """With save_all_harmonics, every harmonic gets its own subtracted file."""
+        sample = self._two_harmonic_sample(mock_experiment_2banks, True, tmp_path)
+
+        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
+
+        for harmonic in (1, 2):
+            assert (tmp_path / f"UN_test_det_{harmonic}_background_subtracted.txt").is_file()
+
+    def test_higher_harmonics_hold_their_own_data(self, mock_experiment_2banks, tmp_path):
+        """The ``_det_2`` subtracted file holds harmonic 2's curve, not a copy of harmonic 1's."""
+        sample = self._two_harmonic_sample(mock_experiment_2banks, True, tmp_path)
+
+        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
+
+        contents = (tmp_path / "UN_test_det_2_background_subtracted.txt").read_text()
+        assert "0.3" in contents
+        assert "0.4" in contents
+        assert "0.1" not in contents
+
+    def test_higher_harmonics_skipped_without_save_all_harmonics(self, mock_experiment_2banks, tmp_path):
+        """Without save_all_harmonics, only the first harmonic is written."""
+        sample = self._two_harmonic_sample(mock_experiment_2banks, False, tmp_path)
+
+        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
+
+        assert (tmp_path / "UN_test_det_1_background_subtracted.txt").is_file()
+        assert not (tmp_path / "UN_test_det_2_background_subtracted.txt").exists()
+
+    def test_empty_higher_harmonic_is_skipped(self, mock_experiment_2banks, tmp_path):
+        """A placeholder harmonic produces no file, and does not block the first harmonic."""
+        sample = self._two_harmonic_sample(mock_experiment_2banks, True, tmp_path)
+        sample.data_bg_subtracted[1] = IQData()
+
+        sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
+
+        assert (tmp_path / "UN_test_det_1_background_subtracted.txt").is_file()
+        assert not (tmp_path / "UN_test_det_2_background_subtracted.txt").exists()
+
+
+class TestSubtractBackground:
+    """Tests for the per-harmonic arithmetic of Sample.subtract_background."""
+
+    @staticmethod
+    def _pair(experiment: Experiment) -> tuple[Sample, Sample]:
+        """A sample and a background sharing a Q grid, with distinct intensities per harmonic."""
+        sample = _make_sample(experiment, "test", [])
+        background = _make_sample(experiment, "bg", [])
+        # Distinct intensities per harmonic, so subtracting the wrong harmonic would be detected
+        sample.data_scaled = [
+            IQData(q=[0.1, 0.2], i=[10.0, 20.0], e=[1.0, 2.0]),
+            IQData(q=[0.1, 0.2], i=[30.0, 40.0], e=[3.0, 4.0]),
+        ]
+        background.data_scaled = [
+            IQData(q=[0.1, 0.2], i=[1.0, 2.0], e=[0.5, 0.5]),
+            IQData(q=[0.1, 0.2], i=[3.0, 4.0], e=[0.5, 0.5]),
+        ]
+        return sample, background
+
+    def test_all_harmonics_subtracted(self, mock_experiment_2banks):
+        """Every harmonic is subtracted, harmonic n from harmonic n."""
+        sample, background = self._pair(mock_experiment_2banks)
+
+        sample.subtract_background(background)
+
+        assert len(sample.data_bg_subtracted) == 2
+        assert sample.data_bg_subtracted[0].i == pytest.approx([9.0, 18.0])
+        assert sample.data_bg_subtracted[1].i == pytest.approx([27.0, 36.0])
+
+    def test_errors_propagated_in_quadrature(self, mock_experiment_2banks):
+        """Uncertainties add in quadrature for each harmonic."""
+        sample, background = self._pair(mock_experiment_2banks)
+
+        sample.subtract_background(background)
+
+        assert sample.data_bg_subtracted[0].e == pytest.approx([math.hypot(1.0, 0.5), math.hypot(2.0, 0.5)])
+        assert sample.data_bg_subtracted[1].e == pytest.approx([math.hypot(3.0, 0.5), math.hypot(4.0, 0.5)])
+
+    def test_q_grid_preserved(self, mock_experiment_2banks):
+        """The subtracted curve keeps the sample's momentum-transfer grid, in 1/angstrom."""
+        sample, background = self._pair(mock_experiment_2banks)
+
+        sample.subtract_background(background)
+
+        for harmonic in (0, 1):
+            assert sample.data_bg_subtracted[harmonic].q == pytest.approx([0.1, 0.2])
+
+    def test_missing_higher_harmonic_yields_placeholder(self, mock_experiment_2banks):
+        """A missing background harmonic leaves an empty placeholder without aborting the rest."""
+        sample, background = self._pair(mock_experiment_2banks)
+        background.data_scaled[1] = IQData()
+
+        sample.subtract_background(background)
+
+        assert len(sample.data_bg_subtracted) == 2
+        assert sample.data_bg_subtracted[0].i == pytest.approx([9.0, 18.0])
+        assert sample.data_bg_subtracted[1].q == []
+        assert sample.is_reduced is True
+
+    def test_repeated_calls_do_not_accumulate(self, mock_experiment_2banks):
+        """Calling twice replaces the results instead of appending to them."""
+        sample, background = self._pair(mock_experiment_2banks)
+
+        sample.subtract_background(background)
+        sample.subtract_background(background)
+
+        assert len(sample.data_bg_subtracted) == 2
+
+    def test_missing_first_harmonic_raises(self, mock_experiment_2banks):
+        """The first harmonic is required for both the sample and the background."""
+        sample, background = self._pair(mock_experiment_2banks)
+        background.data_scaled[0] = IQData()
+
+        with pytest.raises(RuntimeError, match="first-harmonic scaled data is missing"):
+            sample.subtract_background(background)
+
+    def test_interpolates_background_onto_sample_grid(self, mock_experiment_2banks):
+        """A background measured on a different grid is interpolated before subtraction."""
+        sample, background = self._pair(mock_experiment_2banks)
+        # Background sampled at the midpoint only; interp clamps to 2.0 at both sample Q values
+        background.data_scaled[0] = IQData(q=[0.15], i=[2.0], e=[0.5])
+
+        sample.subtract_background(background)
+
+        assert sample.data_bg_subtracted[0].i == pytest.approx([8.0, 18.0])
 
 
 class TestSampleReduceBranching:

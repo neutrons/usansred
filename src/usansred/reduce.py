@@ -220,7 +220,9 @@ class Sample(BaseModel):
     # Fields that are initialized in model_post_init and not expected from user input
     detector_data: list[IQData] = Field(default_factory=list, init=False, description="Original detector data")
     data_scaled: list[IQData] = Field(default_factory=list, init=False, description="Data scaled to thickness")
-    data_bg_subtracted: IQData = Field(default_factory=IQData, init=False, description="Background subtracted data")
+    data_bg_subtracted: list[IQData] = Field(
+        default_factory=list, init=False, description="Background subtracted data, one entry per harmonic"
+    )
     transmitted: float = Field(0, description="Ratio of transmitted neutrons (for transmission correction)")
     transmission: float = Field(1.0, description="Transmission coefficient (for transmission correction)")
 
@@ -261,10 +263,12 @@ class Sample(BaseModel):
         # NOTE:
         #  - detector_data: original data after being stitched with another monitor-normalized scan
         #  - data_scaled: data after being scaled to thickness
-        #  - data_bg_subtracted: data_scaled after background subtraction (aliased as self.data_reduced)
+        #  - data_bg_subtracted: data_scaled after background subtraction, one entry per harmonic,
+        #    positionally aligned with data_scaled (harmonic n is entry n-1). The first harmonic
+        #    is aliased as self.data_reduced.
         self.detector_data = []
         self.data_scaled = []
-        self.data_bg_subtracted = IQData()
+        self.data_bg_subtracted = []
 
     @property
     def data(self):
@@ -278,18 +282,18 @@ class Sample(BaseModel):
 
     @property
     def data_reduced(self):
-        """Reduced data, currently an alias for bg_subtracted data"""
-        return self.data_bg_subtracted
+        """Reduced data, currently an alias for the first harmonic of the bg_subtracted data"""
+        return self.data_bg_subtracted[0] if self.data_bg_subtracted else None
 
     @property
     def is_reduced(self) -> bool:
         """Flag to indicate if the sample has been reduced"""
-        return bool(self.data_bg_subtracted.q)
+        return bool(self.data_reduced and self.data_reduced.q)
 
     @property
     def size_reduced(self) -> int:
-        """Number of reduced data points"""
-        return len(self.data_reduced.q)
+        """Number of reduced data points in the first harmonic"""
+        return len(self.data_reduced.q) if self.data_reduced else 0
 
     @property
     def config(self):
@@ -362,8 +366,9 @@ class Sample(BaseModel):
             ``UN_<name>_det_<n>.txt``.
         background_subtracted_data : bool
             Write the background- (or empty-cell-) subtracted data,
-            ``UN_<name>_det_1_background_subtracted.txt``. Only written when a subtraction
-            actually occurred (``is_reduced`` is True).
+            ``UN_<name>_det_1_background_subtracted.txt``. With ``save_all_harmonics``, higher
+            harmonics go to ``UN_<name>_det_<n>_background_subtracted.txt``. Only written when a
+            subtraction actually occurred (``is_reduced`` is True).
 
         Raises
         ------
@@ -417,8 +422,21 @@ class Sample(BaseModel):
         if background_subtracted_data:
             # Only written when a background or empty cell was actually subtracted
             if self.is_reduced:
-                filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_1_background_subtracted.txt")
-                self.dump_data_to_csv(filepath, self.data_bg_subtracted)
+                missing_harmonics = []
+                for harmonic in range(1, min(num_of_harmonics, len(self.data_bg_subtracted)) + 1):
+                    if not has_data(self.data_bg_subtracted[harmonic - 1]):
+                        missing_harmonics.append(harmonic)
+                        continue
+                    filepath = os.path.join(
+                        self.experiment.output_dir, f"UN_{self.name}_det_{harmonic}_background_subtracted.txt"
+                    )
+                    self.dump_data_to_csv(filepath, self.data_bg_subtracted[harmonic - 1])
+                missing_harmonics.extend(range(len(self.data_bg_subtracted) + 1, num_of_harmonics + 1))
+                if missing_harmonics:
+                    logger.warning(
+                        f"No background-subtracted data is available for {self.label} for harmonics "
+                        f"{missing_harmonics}; skipping those data dumps."
+                    )
             else:
                 logger.info(
                     f"No background or empty cell was subtracted from the {self.label}; skipping that data dump."
@@ -440,9 +458,6 @@ class Sample(BaseModel):
         self.stitch_scans()
         self.rocking_curve_centering()
         self.rescale_data()
-
-        # Only process first detector bank
-        logger.info(f"Only the first bank data is used for {self.label}.")
 
         # The background takes precedence over the empty cell: subtracting the empty cell from
         # both sample and background would cancel out, since
@@ -690,22 +705,26 @@ class Sample(BaseModel):
 
         return i_bg_matched, e_bg_matched
 
-    def subtract_background(self, background: "Sample") -> None:
-        """Subtract background (or empty-cell) data from this sample's data.
+    def _subtract_harmonic(self, data: IQData, bg_data: IQData) -> IQData:
+        """Subtract one background harmonic from the matching sample harmonic.
 
-        The background is matched to the sample's momentum-transfer grid by
-        interpolation (see ``_match_or_interpolate``) before subtraction.
+        The background intensities are matched to the sample's momentum-transfer grid by
+        interpolation (see ``_match_or_interpolate``) before subtraction. Uncertainties are
+        propagated in quadrature, treating the sample and background measurements as
+        independent.
 
         Parameters
         ----------
-        background : Sample
-            The background or empty-cell sample to subtract.
-            Must be processed (stitched and scaled).
-        """
-        # Only process the first detector bank for now
-        data = self.data_scaled[0]
-        bg_data = background.data_scaled[0]
+        data : IQData
+            Scaled sample data for one harmonic.
+        bg_data : IQData
+            Scaled background (or empty-cell) data for the same harmonic.
 
+        Returns
+        -------
+        IQData
+            The subtracted curve on the sample's momentum-transfer grid, in ``1/angstrom``.
+        """
         # Convert to numpy arrays for easier manipulation
         q_data = np.array(data.q)
         i_data = np.array(data.i)
@@ -722,11 +741,61 @@ class Sample(BaseModel):
         i_subtracted = i_data - i_bg_matched
         e_subtracted = np.sqrt(e_data**2 + e_bg_matched**2)
 
-        self.data_bg_subtracted.q = q_data.tolist()
-        self.data_bg_subtracted.i = i_subtracted.tolist()
-        self.data_bg_subtracted.e = e_subtracted.tolist()
+        return IQData(q=q_data.tolist(), i=i_subtracted.tolist(), e=e_subtracted.tolist(), t=[])
 
-        logger.info(f"Subtracted {background.label} from {self.label}")
+    def subtract_background(self, background: "Sample") -> None:
+        """Subtract background (or empty-cell) data from this sample's data, harmonic by harmonic.
+
+        Harmonic ``n`` of the background is subtracted from harmonic ``n`` of the sample, and
+        never from a different harmonic: ``rescale_data`` applies the order-dependent
+        angle-to-Q factor ``2 * pi * n / wavelength`` to sample and background alike, and
+        ``rocking_curve_centering`` applies a single fitted motor-angle offset to every
+        harmonic, so only same-order curves share a comparable momentum-transfer axis.
+
+        Results are stored in ``self.data_bg_subtracted``, positionally aligned with
+        ``self.data_scaled``: harmonic ``n`` is entry ``n - 1``. A harmonic that cannot be
+        subtracted gets an empty ``IQData`` placeholder so the indices never shift.
+
+        Parameters
+        ----------
+        background : Sample
+            The background or empty-cell sample to subtract.
+            Must be processed (stitched and scaled).
+
+        Raises
+        ------
+        RuntimeError
+            If the first harmonic is missing or empty for either this sample or the background.
+        """
+
+        def has_data(harmonic: int, data_scaled: list[IQData]) -> bool:
+            return harmonic <= len(data_scaled) and bool(data_scaled[harmonic - 1].q)
+
+        if not has_data(1, self.data_scaled):
+            raise RuntimeError(f"Cannot subtract from {self.label}: first-harmonic scaled data is missing.")
+        if not has_data(1, background.data_scaled):
+            raise RuntimeError(f"Cannot subtract {background.label}: first-harmonic scaled data is missing.")
+
+        self.data_bg_subtracted = []
+        subtracted_harmonics, skipped_harmonics = [], []
+
+        for harmonic in range(1, self.num_of_banks + 1):
+            if not (has_data(harmonic, self.data_scaled) and has_data(harmonic, background.data_scaled)):
+                # Placeholder keeps harmonic n at entry n - 1
+                self.data_bg_subtracted.append(IQData())
+                skipped_harmonics.append(harmonic)
+                continue
+            self.data_bg_subtracted.append(
+                self._subtract_harmonic(self.data_scaled[harmonic - 1], background.data_scaled[harmonic - 1])
+            )
+            subtracted_harmonics.append(harmonic)
+
+        if skipped_harmonics:
+            logger.warning(
+                f"No scaled data for {self.label} or {background.label} for harmonics {skipped_harmonics}; "
+                "skipping those subtractions."
+            )
+        logger.info(f"Subtracted {background.label} from {self.label} for harmonics {subtracted_harmonics}")
         return
 
 

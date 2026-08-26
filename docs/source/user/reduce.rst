@@ -154,7 +154,8 @@ The empty cell is still used to compute the transmission coefficients in that ca
 **Output files.** Reduced output files (``UN_*_det_1*.txt``) are written for the samples and for
 the background, but never for the empty cell. The background-subtracted file
 (``UN_*_det_1_background_subtracted.txt``) is only written for measurements from which a
-background or empty cell was actually subtracted.
+background or empty cell was actually subtracted. Higher harmonics are written only when
+``save_all_harmonics`` is enabled.
 
 JSON Schema
 -----------
@@ -249,16 +250,19 @@ Once reduction is finished, subdirectory ``result/`` is created containing the f
     It is only written when a background or empty cell was actually subtracted.
 
 The ``_det_1`` infix denotes the first harmonic (first detector bank), the only one written
-by default. When ``save_all_harmonics`` is enabled in the JSON setup file, the unscaled and
-scaled files are written for every harmonic, using the same names with the harmonic number
-in place of the ``1``:
+by default. When ``save_all_harmonics`` is enabled in the JSON setup file, all three
+categories of file are written for every harmonic, using the same names with the harmonic
+number in place of the ``1``:
 
 .. code-block:: text
 
-   UN_X5D2_8_det_1_unscaled.txt   UN_X5D2_8_det_1.txt
-   UN_X5D2_8_det_2_unscaled.txt   UN_X5D2_8_det_2.txt
-   UN_X5D2_8_det_3_unscaled.txt   UN_X5D2_8_det_3.txt
-   UN_X5D2_8_det_4_unscaled.txt   UN_X5D2_8_det_4.txt
+   UN_X5D2_8_det_1_unscaled.txt   UN_X5D2_8_det_1.txt   UN_X5D2_8_det_1_background_subtracted.txt
+   UN_X5D2_8_det_2_unscaled.txt   UN_X5D2_8_det_2.txt   UN_X5D2_8_det_2_background_subtracted.txt
+   UN_X5D2_8_det_3_unscaled.txt   UN_X5D2_8_det_3.txt   UN_X5D2_8_det_3_background_subtracted.txt
+   UN_X5D2_8_det_4_unscaled.txt   UN_X5D2_8_det_4.txt   UN_X5D2_8_det_4_background_subtracted.txt
 
-Background subtraction is currently applied to the first harmonic only, so
-``_det_1_background_subtracted.txt`` has no counterpart for the higher harmonics.
+Background subtraction is performed harmonic by harmonic: harmonic *n* of the background (or
+empty cell) is subtracted from harmonic *n* of the sample, never from a different harmonic,
+because only same-order curves share a comparable momentum-transfer axis.
+
+The ``summary.xlsx`` report covers the first-harmonic files only.
