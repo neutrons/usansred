@@ -281,8 +281,15 @@ class Sample(BaseModel):
         return len(self.data.q) if self.data else 0
 
     @property
-    def data_reduced(self):
-        """Reduced data, currently an alias for the first harmonic of the bg_subtracted data"""
+    def data_reduced(self) -> IQData | None:
+        """Reduced data, currently an alias for the first harmonic of the bg_subtracted data
+
+        Returns
+        -------
+        IQData | None
+            The background-subtracted first harmonic, or ``None`` when no subtraction has
+            been performed for this measurement.
+        """
         return self.data_bg_subtracted[0] if self.data_bg_subtracted else None
 
     @property
@@ -449,8 +456,14 @@ class Sample(BaseModel):
         for scan in self.scans:
             scan.normalize_by_monitor()
 
-    def reduce(self):
-        """Reduce this measurement's scans"""
+    def reduce(self) -> None:
+        """Reduce this measurement's scans.
+
+        Normalize each scan by its monitor counts, stitch the scans into one rocking curve per
+        harmonic, center the curves on the analyzer motor angle of the unscattered beam, and
+        rescale to momentum transfer in ``1/angstrom``. For samples, the background (or, in its
+        absence, the empty cell) is then subtracted from every harmonic.
+        """
         logger.info(f"Starting reduction for {self.label} with {len(self.scans)} scans.")
         logger.info(f"Transmission coefficient for {self.label}: {self.transmission:.4f}")
 

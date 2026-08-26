@@ -251,8 +251,8 @@ Once reduction is finished, subdirectory ``result/`` is created containing the f
 
 The ``_det_1`` infix denotes the first harmonic (first detector bank), the only one written
 by default. When ``save_all_harmonics`` is enabled in the JSON setup file, all three
-categories of file are written for every harmonic, using the same names with the harmonic
-number in place of the ``1``:
+categories of file are written for every harmonic that has data, using the same names with
+the harmonic number in place of the ``1``:
 
 .. code-block:: text
 
