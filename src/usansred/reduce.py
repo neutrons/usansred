@@ -246,19 +246,26 @@ class Sample(BaseModel):
         )
         # Calculate transmission coefficient using the empty cell's transmitted value if available
         if self.measurement_type in [MeasurementType.SAMPLE, MeasurementType.BACKGROUND]:
-            try:
-                self.transmission = self.transmitted / self.experiment.empty_cell.transmitted
-            except (AttributeError, ZeroDivisionError) as e:
-                logger.warning(
-                    f"Error calculating transmission coefficient for {self.label}: {e}. Setting transmission to 1.0."
-                )
+            empty_cell = self.experiment.empty_cell
+            if empty_cell is None:
+                # No empty cell configured, so transmission correction is skipped. The Experiment
+                # logs this once, hence no message here that would repeat for every sample.
                 self.transmission = 1.0
             else:
-                if self.transmission <= 0 or not math.isfinite(self.transmission):
-                    raise ValueError(
-                        f"Invalid transmission coefficient ({self.transmission}) for {self.label}. "
-                        "Check the transmitted counts for this sample and for the empty cell."
+                try:
+                    self.transmission = self.transmitted / empty_cell.transmitted
+                except ZeroDivisionError:
+                    logger.warning(
+                        f"The {empty_cell.label} has zero transmitted counts, so the transmission "
+                        f"coefficient for {self.label} cannot be computed. Setting transmission to 1.0."
                     )
+                    self.transmission = 1.0
+                else:
+                    if self.transmission <= 0 or not math.isfinite(self.transmission):
+                        raise ValueError(
+                            f"Invalid transmission coefficient ({self.transmission}) for {self.label}. "
+                            "Check the transmitted counts for this sample and for the empty cell."
+                        )
 
         # NOTE:
         #  - detector_data: original data after being stitched with another monitor-normalized scan
@@ -1041,6 +1048,11 @@ class Experiment(BaseModel):
                 thickness=1.0,  # ignore any user-provided thickness, used for transmission correction only
                 experiment=self,
                 measurement_type=MeasurementType.EMPTY_CELL,
+            )
+        else:
+            logger.info(
+                "No empty cell in the setup file, so transmission correction is skipped "
+                "(transmission = 1.0 for all samples and for the background)."
             )
 
         background = self.config.background

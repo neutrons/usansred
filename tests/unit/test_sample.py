@@ -303,19 +303,40 @@ class TestSampleTransmissionValidation:
                 counts=EventCounts(monitor=100, detector=10, transmission=5),
             )
 
-    def test_falls_back_to_unity_when_empty_cell_transmitted_is_zero(self, mock_experiment):
+    def test_falls_back_to_unity_when_empty_cell_transmitted_is_zero(self, mock_experiment, caplog):
         """A ZeroDivisionError (empty cell transmitted == 0) should still fall back to 1.0, not raise."""
         mock_experiment.empty_cell = self._make_empty_cell(mock_experiment, transmitted=0.0)
 
-        sample = Sample(
-            name="test",
-            experiment=mock_experiment,
-            start_scan_num=0,
-            num_of_scans=0,
-            counts=EventCounts(monitor=100, detector=10, transmission=5),
-        )
+        with caplog.at_level(logging.WARNING, logger="usansred.reduce"):
+            sample = Sample(
+                name="test",
+                experiment=mock_experiment,
+                start_scan_num=0,
+                num_of_scans=0,
+                counts=EventCounts(monitor=100, detector=10, transmission=5),
+            )
 
         assert sample.transmission == 1.0
+        warnings = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "zero transmitted counts" in warnings[0]
+        assert "NoneType" not in warnings[0]
+
+    def test_falls_back_to_unity_when_no_empty_cell_is_configured(self, mock_experiment, caplog):
+        """Without an empty cell the correction is skipped silently; the Experiment logs it once."""
+        assert mock_experiment.empty_cell is None
+
+        with caplog.at_level(logging.WARNING, logger="usansred.reduce"):
+            sample = Sample(
+                name="test",
+                experiment=mock_experiment,
+                start_scan_num=0,
+                num_of_scans=0,
+                counts=EventCounts(monitor=100, detector=10, transmission=5),
+            )
+
+        assert sample.transmission == 1.0
+        assert [record.message for record in caplog.records if record.levelno == logging.WARNING] == []
 
 
 class TestRockingCurveCentering:
