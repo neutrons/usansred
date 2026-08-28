@@ -725,7 +725,25 @@ class TestSubtractBackground:
         sample, background = self._pair(mock_experiment_2banks)
         background.data_scaled[0] = IQData()
 
-        with pytest.raises(RuntimeError, match="first-harmonic scaled data is missing"):
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "Cannot subtract sample bg from sample test: the first-harmonic scaled data of sample bg is missing"
+            ),
+        ):
+            sample.subtract_background(background)
+
+    def test_missing_sample_first_harmonic_raises(self, mock_experiment_2banks):
+        """A missing sample first harmonic identifies the sample in the error."""
+        sample, background = self._pair(mock_experiment_2banks)
+        sample.data_scaled[0] = IQData()
+
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "Cannot subtract sample bg from sample test: the first-harmonic scaled data of sample test is missing"
+            ),
+        ):
             sample.subtract_background(background)
 
     def test_interpolates_background_onto_sample_grid(self, mock_experiment_2banks):

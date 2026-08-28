@@ -260,12 +260,11 @@ class Sample(BaseModel):
                         f"coefficient for {self.label} cannot be computed. Setting transmission to 1.0."
                     )
                     self.transmission = 1.0
-                else:
-                    if self.transmission <= 0 or not math.isfinite(self.transmission):
-                        raise ValueError(
-                            f"Invalid transmission coefficient ({self.transmission}) for {self.label}. "
-                            "Check the transmitted counts for this sample and for the empty cell."
-                        )
+                if self.transmission <= 0 or not math.isfinite(self.transmission):
+                    raise ValueError(
+                        f"Invalid transmission coefficient ({self.transmission}) for {self.label}. "
+                        "Check the transmitted counts for this sample and for the empty cell."
+                    )
 
         # NOTE:
         #  - detector_data: original data after being stitched with another monitor-normalized scan
@@ -792,9 +791,15 @@ class Sample(BaseModel):
             return harmonic <= len(data_scaled) and bool(data_scaled[harmonic - 1].q)
 
         if not has_data(1, self.data_scaled):
-            raise RuntimeError(f"Cannot subtract from {self.label}: first-harmonic scaled data is missing.")
+            raise RuntimeError(
+                f"Cannot subtract {background.label} from {self.label}: "
+                f"the first-harmonic scaled data of {self.label} is missing."
+            )
         if not has_data(1, background.data_scaled):
-            raise RuntimeError(f"Cannot subtract {background.label}: first-harmonic scaled data is missing.")
+            raise RuntimeError(
+                f"Cannot subtract {background.label} from {self.label}: "
+                f"the first-harmonic scaled data of {background.label} is missing."
+            )
 
         self.data_bg_subtracted = []
         subtracted_harmonics, skipped_harmonics = [], []
