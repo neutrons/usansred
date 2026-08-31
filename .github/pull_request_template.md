@@ -2,10 +2,10 @@
 
 
 Check all that apply:
-- [ ] updated documentation
-- [ ] Source added/refactored
-- [ ] Added unit tests
-- [ ] Added integration tests
+- [ ] documentation updated
+- [ ] source added/refactored
+- [ ] unit tests added/refactored
+- [ ] integration tests added/refactored
 - [ ] ~Verified that tests requiring the /SNS and /HFIR filesystems pass without fail~ (not yet implemented)
 
 **References:**

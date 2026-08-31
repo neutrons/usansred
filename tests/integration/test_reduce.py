@@ -165,6 +165,15 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
             assert scaled_file.is_file()
             assert scaled_file.stat().st_size > 0
 
+    # Background subtraction is performed for every harmonic, for the samples only
+    for harmonic in range(1, 5):
+        for name in ["S115_dry", "S115_pc3"]:
+            subtracted_file = output_dir / f"UN_{name}_det_{harmonic}_background_subtracted.txt"
+            assert subtracted_file.is_file()
+            assert subtracted_file.stat().st_size > 0
+        # Nothing is subtracted from the background itself
+        assert not (output_dir / f"UN_EmptyPCell_det_{harmonic}_background_subtracted.txt").exists()
+
     assert not list(output_dir.glob("bank_*")), "per-bank subdirectories should no longer be created"
 
     assert_reduction_log_files(
@@ -189,13 +198,14 @@ def test_reduce_empty_cell(data_server, tmp_path):
     # No output files are written for the empty cell
     assert list(tmp_path.glob("UN_EmptyPCell*")) == []
 
-    # The empty cell was subtracted from each sample
+    # The empty cell was subtracted from each sample, for every harmonic
     for name in ["S115_pc3", "S115_dry"]:
-        subtracted_file = tmp_path / f"UN_{name}_det_1_background_subtracted.txt"
-        assert subtracted_file.is_file()
-        assert subtracted_file.stat().st_size > 0
+        for harmonic in range(1, 5):
+            subtracted_file = tmp_path / f"UN_{name}_det_{harmonic}_background_subtracted.txt"
+            assert subtracted_file.is_file()
+            assert subtracted_file.stat().st_size > 0
         logfile = (tmp_path / f"reduction_{name}.log").read_text(encoding="utf-8")
-        assert f"Subtracted empty cell EmptyPCell from sample {name}" in logfile
+        assert f"Subtracted empty cell EmptyPCell from sample {name} for harmonics [1, 2, 3, 4]" in logfile
 
     # The scaled data equals the golden result (produced with transmission == 1.0) with
     # intensities and errors divided by the transmission coefficient. The golden file was
