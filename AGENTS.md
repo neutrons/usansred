@@ -211,13 +211,11 @@ import pytest
 
 
 @pytest.mark.datarepo
-def test_reduces_reference_dataset(data_server):
-    ...
+def test_reduces_reference_dataset(data_server): ...
 
 
 @pytest.mark.sns_mounted
-def test_reads_sns_filesystem_data():
-    ...
+def test_reads_sns_filesystem_data(): ...
 ```
 
 Testing expectations:
