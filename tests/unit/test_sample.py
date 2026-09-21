@@ -909,7 +909,56 @@ class TestMatchOrInterpolate:
 
         # Linear interpolation at midpoint: (10 + 20) / 2 = 15
         np.testing.assert_allclose(i_matched, [15.0])
-        np.testing.assert_allclose(e_matched, [1.5])
+        # Uncertainties combine in quadrature with squared weights:
+        # sqrt((0.5 * 1.0)**2 + (0.5 * 2.0)**2) = 1.118034
+        np.testing.assert_allclose(e_matched, [np.sqrt(0.5**2 + 1.0**2)])
+
+    def test_interpolated_error_is_propagated_in_quadrature(self, mock_experiment):
+        """Interpolated uncertainties combine in quadrature, not linearly (issue #87)."""
+        sample = _make_sample(mock_experiment, "test", [])
+
+        q_data = np.array([1.5])  # midpoint between 1.0 and 2.0
+        q_bg = np.array([1.0, 2.0])
+        i_bg = np.array([10.0, 20.0])
+        e_bg = np.array([1.0, 3.0])
+
+        _, e_matched = sample._match_or_interpolate(q_data, q_bg, i_bg, e_bg)
+
+        # sqrt((0.5 * 1.0)**2 + (0.5 * 3.0)**2) = 1.5811388
+        np.testing.assert_allclose(e_matched, [np.sqrt(0.5**2 + 1.5**2)])
+        # Not the linear interpolation of sigma, which overestimates the uncertainty
+        assert not np.isclose(e_matched[0], 2.0)
+        # Nor the variance interpolated with unsquared weights
+        assert not np.isclose(e_matched[0], np.sqrt(0.5 * 1.0**2 + 0.5 * 3.0**2))
+
+    def test_interpolated_error_with_unequal_weights(self, mock_experiment):
+        """Away from the midpoint the two endpoint uncertainties carry different weights."""
+        sample = _make_sample(mock_experiment, "test", [])
+
+        q_data = np.array([1.25])  # weight 0.25 towards the upper background point
+        q_bg = np.array([1.0, 2.0])
+        i_bg = np.array([10.0, 20.0])
+        e_bg = np.array([1.0, 3.0])
+
+        i_matched, e_matched = sample._match_or_interpolate(q_data, q_bg, i_bg, e_bg)
+
+        np.testing.assert_allclose(i_matched, [12.5])
+        # sqrt((0.75 * 1.0)**2 + (0.25 * 3.0)**2) = 1.0606602
+        np.testing.assert_allclose(e_matched, [np.sqrt(0.75**2 + 0.75**2)])
+
+    def test_interpolated_error_outside_background_range(self, mock_experiment):
+        """Outside the background range, clamp to the nearest endpoint like ``np.interp`` does."""
+        sample = _make_sample(mock_experiment, "test", [])
+
+        q_data = np.array([0.5, 2.5])  # below q_bg[0] and above q_bg[-1]
+        q_bg = np.array([1.0, 2.0])
+        i_bg = np.array([10.0, 20.0])
+        e_bg = np.array([1.0, 3.0])
+
+        i_matched, e_matched = sample._match_or_interpolate(q_data, q_bg, i_bg, e_bg)
+
+        np.testing.assert_allclose(i_matched, [10.0, 20.0])
+        np.testing.assert_allclose(e_matched, [1.0, 3.0])
 
     def test_close_match_within_tolerance(self, mock_experiment):
         """Values within tolerance should be matched directly, not interpolated."""
