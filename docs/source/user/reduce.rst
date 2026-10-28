@@ -11,12 +11,14 @@ After the experiment, the raw data should be stored in your experiment folder:
    $ cd /SNS/USANS/IPTS-XXXXXX/shared/autoreduce/
    $ usansred
 
-The measurement types handled by the reduction are described in the following pages:
+The steps of the reduction and the normalizations applied to the data are described in the
+following pages:
 
 .. toctree::
    :maxdepth: 2
 
-   measurement_types
+   reduction_workflow
+   normalizations
 
 
 Activating the Environment
@@ -229,3 +231,35 @@ empty cell) is subtracted from harmonic *n* of the sample, never from a differen
 because only same-order curves share a comparable momentum-transfer axis.
 
 The ``summary.xlsx`` report covers the first-harmonic files only.
+
+.. _units-of-reduced-data:
+
+Units of the Reduced Data
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``usansred`` does not yet put the reduced intensities on an absolute scale. Obtaining the
+scattering cross section per unit volume in :math:`\text{cm}^{-1} \, \text{sr}^{-1}` also requires
+dividing by the beam intensity measured at the detector, :math:`\varepsilon I_{beam}`, where
+:math:`\varepsilon` is the detector efficiency (Eq. 11 in [NIST2008]_). This factor is not
+applied. The units of the output files are therefore:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 30 30
+
+   * - File
+     - First column
+     - Intensity and uncertainty
+   * - ``UN_<name>_det_<n>_unscaled.txt``
+     - centered analyzer angle :math:`\theta - \theta_0`, in arcsec
+     - detector counts per monitor count
+   * - ``UN_<name>_det_<n>.txt``
+     - :math:`Q_n`, in ``1/angstrom``
+     - detector counts per monitor count, per cm per sr
+   * - ``UN_<name>_det_<n>_background_subtracted.txt``
+     - :math:`Q_n`, in ``1/angstrom``
+     - detector counts per monitor count, per cm per sr
+
+The reduced data are also slit-smeared: they are the scattering cross section integrated over the
+vertical acceptance of the analyzer, not the cross section itself (Section 6 of [NIST2008]_;
+[Agamalian2018]_). ``usansred`` does not desmear the data.

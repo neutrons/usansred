@@ -14,6 +14,11 @@ User Guide
 .. toctree::
    :maxdepth: 2
 
+   /source/user/measurement_types
+
+.. toctree::
+   :maxdepth: 2
+
    /source/user/reduce
 
 
