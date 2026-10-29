@@ -13,4 +13,5 @@ build:
       - pixi install
     build:
       html:
+        - pixi run python scripts/generate_schema.py
         - pixi run sphinx-build -T -b html docs $READTHEDOCS_OUTPUT/html
