@@ -3,6 +3,18 @@
 Release Notes
 =============
 
+Unreleased
+----------
+
+**Of interest to the User:**
+
+- The transmission coefficient of each sample and of the background is now applied to the reduced
+  intensities when the setup file has an ``empty_cell`` entry. Previous versions computed it but did
+  not apply it, so reduced intensities obtained with such setup files differ from those of previous
+  versions. See :ref:`transmission coefficient <transmission-coefficient>`.
+- New documentation pages describe the measurement types, the reduction workflow, and the
+  normalizations, including the transmission coefficient.
+
 1.1.0
 -----
 (2025-04-01)

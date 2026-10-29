@@ -5,7 +5,7 @@ Sample
 
 A *sample* is the measurement of interest. A setup file must contain at least one sample.
 
-Setup-file entry
+Setup-File Entry
 ----------------
 
 In the JSON setup file, samples are listed under the required ``samples`` key:
@@ -50,7 +50,7 @@ Subtraction is performed harmonic by harmonic: harmonic *n* of the background (o
 subtracted from harmonic *n* of the sample, never from a different harmonic, because only
 same-order curves share a comparable momentum-transfer axis.
 
-Output files
+Output Files
 ------------
 
 For a sample named ``<sample>``, the following files are written to the output folder for the

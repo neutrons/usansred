@@ -6,7 +6,7 @@ Background
 A *background* is an optional measurement, for example of the solvent or buffer in the sample
 cell, that is subtracted from every sample. A setup file contains at most one background.
 
-Setup-file entry
+Setup-File Entry
 ----------------
 
 In the JSON setup file, the background is the optional ``background`` key. It takes the same
@@ -44,7 +44,7 @@ Nothing is subtracted from the background itself. In particular, the empty cell 
 subtracted from the background, because its contribution would cancel out when the background is
 subtracted from the samples (see :doc:`empty_cell`).
 
-Subtraction from the samples
+Subtraction from the Samples
 ----------------------------
 
 When a background is present, it is subtracted from every sample, and it takes precedence over
@@ -58,7 +58,7 @@ the empty cell. For each harmonic:
 
 Harmonic *n* of the background is only subtracted from harmonic *n* of the sample.
 
-Output files
+Output Files
 ------------
 
 For a background named ``<background>``, the following files are written to the output folder for

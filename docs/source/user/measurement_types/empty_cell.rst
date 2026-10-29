@@ -19,24 +19,10 @@ Note that the ``empty_cell`` entry has no ``thickness`` key because there is no 
      }
    }
 
-**Transmission coefficients.** When an ``empty_cell`` entry is present, the transmission
-coefficient of each sample (and of the background, if present) is computed from the raw event
-counts as
-
-.. math::
-
-   T = \frac{\text{transmitted counts of the sample}}{\text{transmitted counts of the empty cell}}
-
-and the reduced intensity is scaled by :math:`1 / (\Delta\Omega \cdot t \cdot T)`, where
-:math:`\Delta\Omega` is the analyzer solid-angle acceptance and :math:`t` is the sample
-thickness in cm. Without an ``empty_cell`` entry, the transmission coefficient defaults to 1.
-
-.. warning::
-
-   Older versions of ``usansred`` computed the transmission coefficient but did not apply it.
-   For setup files that include an ``empty_cell`` entry, reduced intensities therefore change
-   with respect to results obtained with older versions. Setup files without an ``empty_cell``
-   entry are unaffected.
+**Transmission coefficients.** The empty cell is the reference for the transmission coefficients
+of the samples and of the background (see
+:ref:`transmission coefficient <transmission-coefficient>`). Without an ``empty_cell`` entry, the
+transmission coefficient is 1 for every measurement.
 
 **Empty-cell subtraction.** In the absence of a ``background`` entry, the empty cell is itself
 reduced (before any of the samples) and its reduced curve is subtracted from each sample, using

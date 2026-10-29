@@ -60,7 +60,7 @@ The table below summarizes how each type is configured and treated:
    measurement_types/background
    measurement_types/empty_cell
 
-Order of reduction
+Order of Reduction
 ------------------
 
 The measurements are reduced in the following order:

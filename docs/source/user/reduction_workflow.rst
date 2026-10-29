@@ -26,7 +26,7 @@ the following steps, applied to every harmonic:
 The units of the resulting output files are described in
 :ref:`units of the reduced data <units-of-reduced-data>`.
 
-Counting uncertainties
+Counting Uncertainties
 ----------------------
 
 The uncertainty of a number of counts :math:`N` is computed as
@@ -69,7 +69,7 @@ restricted to the symmetric angle range :math:`[\theta_{min}, -\theta_{min}]`, w
 :math:`\theta_0` is used: it is subtracted from the angles of every harmonic, so that all
 rocking curves of the measurement share the same zero.
 
-Conversion to momentum transfer
+Conversion to Momentum Transfer
 -------------------------------
 
 For the very small scattering angles measured on the USANS, the momentum transfer is
@@ -84,7 +84,7 @@ with the angles converted from arcsec to radians (:math:`1'' = \pi / 648000` rad
 :math:`Q_n` in ``1/angstrom``. Negative and positive angles of the same magnitude map to the same
 :math:`Q_n`.
 
-Points at the same momentum transfer
+Points at the Same Momentum Transfer
 ------------------------------------
 
 When a negative and a positive analyzer angle map to the same :math:`Q_n`, the :math:`N` points

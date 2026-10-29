@@ -1,7 +1,7 @@
 .. using_reduce_script
 
 
-Reducing One (or more) Experiments
+Reducing One (or More) Experiments
 ==================================
 
 After the experiment, the raw data should be stored in your experiment folder:
