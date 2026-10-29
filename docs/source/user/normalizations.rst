@@ -3,6 +3,13 @@
 Normalizations
 ==============
 
+.. rubric:: Contents
+
+- `Monitor normalization`_
+- `Analyzer solid angle`_
+- `Sample thickness`_
+- `Transmission coefficient`_
+
 The intensity measured on the detector depends not only on the scattering from the sample, but
 also on the number of neutrons incident on the sample, on the solid angle accepted by the
 analyzer, on the sample thickness, and on the attenuation of the beam by the sample
