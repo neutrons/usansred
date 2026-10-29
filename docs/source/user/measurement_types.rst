@@ -72,4 +72,4 @@ The measurements are reduced in the following order:
 If the reduction of the empty cell or of the background fails, the whole reduction stops,
 because the samples cannot be corrected without them. If the reduction of a sample fails, the
 error is written to that sample's log file and the reduction continues with the next sample.
-Each measurement writes its log to ``reduction_<name>.log`` in the output folder.
+Each reduced measurement writes its log to ``reduction_<name>.log`` in the output folder.

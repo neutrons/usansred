@@ -188,7 +188,7 @@ detector receives almost no neutrons.
      - 0.985
      - 0.981
 
-Using both detectors, the coefficient stays between 0.98 and 1.00 in every scan. Using the
+Using both detectors, the coefficient stays between 0.984 and 1.003 in every scan. Using the
 transmission detector alone, it ranges from 0.97 to 1.13, with values above 1 in the scans that
 cross the direct beam: the sample scatters neutrons out of the narrow acceptance of the analyzer,
 so fewer reach the main detector and more reach the transmission detector. Summed over the four

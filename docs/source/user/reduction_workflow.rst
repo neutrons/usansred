@@ -9,8 +9,8 @@ separately for each harmonic :math:`n = 1, \ldots, 4`, of wavelength :math:`\lam
 with :math:`\lambda_1 = 3.6` angstrom (Table 1 in [Agamalian2018]_), so each scan provides one
 rocking curve per harmonic.
 
-Each measurement (sample, background, or empty cell, see :doc:`measurement_types`) is reduced in
-the following steps, applied to every harmonic:
+Each measurement (sample, background, or empty cell, see :doc:`measurement_types`) is reduced (the
+empty cell only when no background is present) in the following steps, applied to every harmonic:
 
 1. `Counting uncertainties`_ are assigned to the detector and monitor counts of every scan.
 2. The detector counts of every scan are divided by the monitor counts

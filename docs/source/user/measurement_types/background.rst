@@ -62,7 +62,8 @@ Output Files
 ------------
 
 For a background named ``<background>``, the following files are written to the output folder for
-the first harmonic, and for harmonics 2 to 4 when ``save_all_harmonics`` is enabled:
+the first harmonic, and, when ``save_all_harmonics`` is enabled, for each higher harmonic (2 to 4)
+that has data:
 
 - ``UN_<background>_det_<n>_unscaled.txt``: stitched, monitor-normalized detector data before
   scaling.
