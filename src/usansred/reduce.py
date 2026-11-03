@@ -16,7 +16,7 @@ from scipy.optimize import curve_fit
 from usansred.enums import MeasurementType
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
-from usansred.stitch import interpolate_error
+from usansred.stitch import apply_stitch, interpolate_error, stitch_profiles
 from usansred.summary import generate_report
 from usansred.utils.logging import get_logger, log_to_file, set_log_config
 
@@ -224,6 +224,20 @@ class Sample(BaseModel):
     data_bg_subtracted: list[IQData] = Field(
         default_factory=list, init=False, description="Background subtracted data, one entry per harmonic"
     )
+    data_stitched: IQData = Field(
+        default_factory=IQData, init=False, description="Scaled data of all harmonics stitched into one profile"
+    )
+    data_bg_subtracted_stitched: IQData = Field(
+        default_factory=IQData,
+        init=False,
+        description="Background subtracted data of all harmonics stitched into one profile",
+    )
+    stitched_orders: list[int] = Field(
+        default_factory=list, init=False, description="Harmonics included in the stitched profiles"
+    )
+    stitch_scale_factors: list[float] = Field(
+        default_factory=list, init=False, description="Scale factor applied to each harmonic in stitched_orders"
+    )
     transmitted: float = Field(0, description="Ratio of transmitted neutrons (for transmission correction)")
     transmission: float = Field(1.0, description="Transmission coefficient (for transmission correction)")
 
@@ -273,9 +287,15 @@ class Sample(BaseModel):
         #  - data_bg_subtracted: data_scaled after background subtraction, one entry per harmonic,
         #    positionally aligned with data_scaled (harmonic n is entry n-1). The first harmonic
         #    is aliased as self.data_reduced.
+        #  - data_stitched, data_bg_subtracted_stitched: data_scaled and data_bg_subtracted with
+        #    all harmonics stitched into one profile (only with save_all_harmonics)
         self.detector_data = []
         self.data_scaled = []
         self.data_bg_subtracted = []
+        self.data_stitched = IQData()
+        self.data_bg_subtracted_stitched = IQData()
+        self.stitched_orders = []
+        self.stitch_scale_factors = []
 
     @property
     def data(self):
@@ -384,6 +404,12 @@ class Sample(BaseModel):
             harmonics go to ``UN_<name>_det_<n>_background_subtracted.txt``. Only written when a
             subtraction actually occurred (``is_reduced`` is True).
 
+        With ``save_all_harmonics``, the profiles with all harmonics stitched together (see
+        ``stitch_orders``) are also written: ``UN_<name>_det_stitched.txt`` with the
+        ``scaled_data`` category, and ``UN_<name>_det_background_subtracted_stitched.txt`` with
+        the ``background_subtracted_data`` category. Each is skipped when its stitched profile
+        is empty, i.e. when not even harmonics 1 and 2 could be stitched.
+
         Raises
         ------
         RuntimeError
@@ -432,6 +458,8 @@ class Sample(BaseModel):
                     f"No scaled data is available for {self.label} for harmonics {missing_harmonics}; "
                     "skipping those data dumps."
                 )
+            if self.config.save_all_harmonics:
+                self._dump_stitched(self.data_stitched, "det_stitched", "stitched")
 
         if background_subtracted_data:
             # Only written when a background or empty cell was actually subtracted
@@ -451,12 +479,36 @@ class Sample(BaseModel):
                         f"No background-subtracted data is available for {self.label} for harmonics "
                         f"{missing_harmonics}; skipping those data dumps."
                     )
+                if self.config.save_all_harmonics:
+                    self._dump_stitched(
+                        self.data_bg_subtracted_stitched,
+                        "det_background_subtracted_stitched",
+                        "stitched background-subtracted",
+                    )
             else:
                 logger.info(
                     f"No background or empty cell was subtracted from the {self.label}; skipping that data dump."
                 )
 
         return
+
+    def _dump_stitched(self, data: IQData, suffix: str, description: str) -> None:
+        """Write a stitched profile to ``UN_<name>_<suffix>.txt``, or log why it is skipped.
+
+        Parameters
+        ----------
+        data : IQData
+            The stitched profile.
+        suffix : str
+            File-name suffix after the measurement name, e.g. ``det_stitched``.
+        description : str
+            Description of the profile, used in log messages.
+        """
+        if not data.q:
+            logger.info(f"No {description} profile is available for {self.label}; skipping that data dump.")
+            return
+        filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_{suffix}.txt")
+        self.dump_data_to_csv(filepath, data)
 
     def normalize_by_monitor(self) -> None:
         """Normalize detector intensities by monitor counts for all scans."""
@@ -469,7 +521,9 @@ class Sample(BaseModel):
         Normalize each scan by its monitor counts, stitch the scans into one rocking curve per
         harmonic, center the curves on the analyzer motor angle of the unscattered beam, and
         rescale to momentum transfer in ``1/angstrom``. For samples, the background (or, in its
-        absence, the empty cell) is then subtracted from every harmonic.
+        absence, the empty cell) is then subtracted from every harmonic. With
+        ``save_all_harmonics``, the harmonics are finally stitched into one profile (see
+        ``stitch_orders``).
         """
         logger.info(f"Starting reduction for {self.label} with {len(self.scans)} scans.")
         logger.info(f"Transmission coefficient for {self.label}: {self.transmission:.4f}")
@@ -488,8 +542,65 @@ class Sample(BaseModel):
             elif self.experiment.empty_cell:
                 self.subtract_background(self.experiment.empty_cell)
 
+        # Stitching comes last, since it needs the background-subtracted data of every harmonic
+        if self.config.save_all_harmonics:
+            self.stitch_orders()
+
         logger.info(f"Data reduction finished for {self.label}.")
         return
+
+    def stitch_orders(self) -> None:
+        """Stitch the scaled and background-subtracted harmonics into one profile each.
+
+        The scaled harmonics are stitched with ``usansred.stitch.stitch_profiles``: harmonic 1 is
+        the fixed reference, and each higher harmonic is scaled onto the profile stitched so far,
+        over the Q range where the two overlap. The background-subtracted harmonics, if a
+        subtraction occurred, are stitched with the same scale factors, zero-count masks, and
+        overlaps (``usansred.stitch.apply_stitch``).
+
+        A stitched profile is kept only when at least harmonics 1 and 2 were joined; otherwise it
+        is left empty and no stitched file is written. Stitching never halts the reduction:
+        failed joins are logged by ``usansred.stitch``, and any unexpected exception is logged
+        here and leaves the stitched profiles empty.
+
+        Results are stored in ``data_stitched``, ``data_bg_subtracted_stitched``,
+        ``stitched_orders``, and ``stitch_scale_factors``.
+        """
+        self.data_stitched = IQData()
+        self.data_bg_subtracted_stitched = IQData()
+        self.stitched_orders = []
+        self.stitch_scale_factors = []
+
+        if not self.data_scaled:
+            logger.warning(f"No scaled data for {self.label}; skipping the stitching of orders.")
+            return
+
+        try:
+            result = stitch_profiles(self.data_scaled, label=self.label)
+            if len(result.joined_orders) < 2:
+                logger.warning(
+                    f"Orders 1 and 2 of {self.label} could not be stitched; no stitched profile is produced."
+                )
+                return
+            self.data_stitched = result.profile
+            self.stitched_orders = result.joined_orders
+            self.stitch_scale_factors = result.scale_factors
+
+            if self.is_reduced:
+                applied = apply_stitch(self.data_bg_subtracted, result, label=self.label)
+                if len(applied.joined_orders) < 2:
+                    logger.warning(
+                        f"Background-subtracted orders 1 and 2 of {self.label} could not be stitched; "
+                        "no stitched background-subtracted profile is produced."
+                    )
+                else:
+                    self.data_bg_subtracted_stitched = applied.profile
+        except Exception as e:  # noqa BLE001
+            logger.exception(f"Cannot stitch the orders of {self.label}: {e}")
+            self.data_stitched = IQData()
+            self.data_bg_subtracted_stitched = IQData()
+            self.stitched_orders = []
+            self.stitch_scale_factors = []
 
     @staticmethod
     def _combine_duplicate_q_points(

@@ -315,7 +315,50 @@ class TestStitchProfiles:
         assert result.joined_orders == [1]
         assert result.scale_factors == [1.0]
         assert "Cannot join order 2" in caplog.text
-        assert "order 3" not in caplog.text
+        assert "the stitched profile contains orders [1], and orders [2, 3] are left out" in caplog.text
+        assert "Cannot join order 3" not in caplog.text
+
+    def test_order_not_extending_q_range_stops_with_warning(self, caplog):
+        """An order above 2 that does not reach beyond the stitched profile stops the stitching.
+
+        Order 3 has zero counts above 1.5e-3 1/angstrom, below the highest Q of order 2
+        (2.0e-3 1/angstrom). Merging it would discard the order-2 points above 1.5e-3, so the
+        join is rejected. This is the usual outcome for weak higher orders, so it is logged as
+        a warning, and orders 3 and 4 are named as left out.
+        """
+        order3 = make_profile(Q3, scale=0.4)
+        order3.i = [i if q <= 1.5e-3 else 0.0 for q, i in zip(order3.q, order3.i)]
+        profiles = [make_profile(Q1), make_profile(Q2, scale=2.5), order3, make_profile(4 * Q1, scale=0.1)]
+
+        with caplog.at_level(logging.WARNING):
+            result = stitch_profiles(profiles, label="sample S1")
+
+        assert result.joined_orders == [1, 2]
+        assert result.profile.q[-1] == Q2[-1]
+        [record] = [r for r in caplog.records if "Cannot join" in r.getMessage()]
+        assert record.levelno == logging.WARNING
+        message = record.getMessage()
+        assert "Cannot join order 3 onto the stitched profile of sample S1" in message
+        assert "order 3 does not extend the stitched profile to higher Q" in message
+        assert f"reaches {Q2[-1]:.6g} 1/angstrom" in message
+        assert "the stitched profile contains orders [1, 2], and orders [3, 4] are left out" in message
+
+    def test_order_2_not_extending_q_range_is_an_error(self, caplog):
+        """When order 2 does not reach beyond order 1, the failure is logged as an error.
+
+        Without order 2 no stitched profile can be produced, so this case is not downgraded
+        to a warning like it is for higher orders.
+        """
+        order2 = make_profile(Q2, scale=2.5)
+        order2.i = [i if q <= 8.0e-4 else 0.0 for q, i in zip(order2.q, order2.i)]
+
+        with caplog.at_level(logging.WARNING):
+            result = stitch_profiles([make_profile(Q1), order2])
+
+        assert result.joined_orders == [1]
+        [record] = [r for r in caplog.records if "Cannot join" in r.getMessage()]
+        assert record.levelno == logging.ERROR
+        assert "order 2 does not extend the stitched profile to higher Q" in record.getMessage()
 
     def test_invalid_first_order_returns_empty_result(self, caplog):
         """When order 1 has no valid points, nothing can be stitched and the result is empty."""
@@ -349,8 +392,12 @@ class TestApplyStitch:
         backgrounds = [1.0, 0.4, 2.5]
         subtracted = [IQData(q=p.q, i=(np.array(p.i) - b).tolist(), e=p.e, t=[]) for p, b in zip(scaled, backgrounds)]
 
-        stitched = apply_stitch(subtracted, result)
+        applied = apply_stitch(subtracted, result)
 
+        assert applied.joined_orders == result.joined_orders
+        assert applied.scale_factors == result.scale_factors
+        assert applied.overlaps == result.overlaps
+        stitched = applied.profile
         assert stitched.q == result.profile.q
         # A background of b on order n becomes s_n * b after scaling, i.e. 1.0 for every order here
         np.testing.assert_allclose(np.array(result.profile.i) - np.array(stitched.i), 1.0, rtol=1e-9)
@@ -367,7 +414,7 @@ class TestApplyStitch:
         result = stitch_profiles(scaled)
         subtracted = [IQData(q=p.q, i=(np.array(p.i) - 1.0).tolist(), e=p.e, t=[]) for p in scaled]
 
-        stitched = apply_stitch(subtracted, result)
+        stitched = apply_stitch(subtracted, result).profile
 
         assert Q2[5] not in stitched.q
         assert len(stitched.q) == len(result.profile.q)
@@ -379,11 +426,15 @@ class TestApplyStitch:
         subtracted = [scaled[0], IQData()]
 
         with caplog.at_level(logging.ERROR):
-            stitched = apply_stitch(subtracted, result, label="sample S1")
+            applied = apply_stitch(subtracted, result, label="sample S1")
 
-        assert stitched.q == Q1.tolist()
+        assert applied.profile.q == Q1.tolist()
+        assert applied.joined_orders == [1]
         assert "Cannot join order 2 onto the stitched profile of sample S1" in caplog.text
 
     def test_empty_result_gives_empty_profile(self):
         """When the scaled profiles could not be stitched, the background-subtracted result is empty."""
-        assert apply_stitch([make_profile(Q1)], stitch_profiles([IQData()])).q == []
+        applied = apply_stitch([make_profile(Q1)], stitch_profiles([IQData()]))
+
+        assert applied.profile.q == []
+        assert applied.joined_orders == []

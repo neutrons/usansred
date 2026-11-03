@@ -973,3 +973,276 @@ class TestMatchOrInterpolate:
 
         np.testing.assert_allclose(i_matched, [10.0])
         np.testing.assert_allclose(e_matched, [1.0])
+
+
+# ===========================================================================
+# Tests for Sample.stitch_orders and the stitched output files
+# ===========================================================================
+
+
+class TestStitchOrders:
+    """Tests for stitching the harmonics of a Sample and writing the stitched profiles."""
+
+    # Harmonic n spans a Q range n times wider than harmonic 1, on its own Q grid (1/angstrom)
+    Q1 = np.linspace(1.0e-5, 1.0e-3, 20)
+    Q2 = np.linspace(2.0e-5, 2.0e-3, 17)
+    SCALE = 2.5  # factor that scales harmonic 2 onto harmonic 1
+    BACKGROUND = 0.4  # constant background of harmonic 2, i.e. SCALE * BACKGROUND = 1.0 after stitching
+
+    @staticmethod
+    def _profile(q: np.ndarray, scale: float = 1.0, offset: float = 0.0) -> IQData:
+        """Synthetic profile ``(10 - 2000 q) / scale - offset``, linear in Q so interpolation is exact.
+
+        Parameters
+        ----------
+        q : np.ndarray
+            Momentum transfer in ``1/angstrom``.
+        scale : float
+            Factor that stitching must apply to the profile to match harmonic 1.
+        offset : float
+            Constant subtracted from the intensity, standing in for a subtracted background.
+
+        Returns
+        -------
+        IQData
+            The synthetic profile, with 5 % relative uncertainties before the offset.
+        """
+        i = (10.0 - 2000.0 * q) / scale
+        return IQData(q=q.tolist(), i=(i - offset).tolist(), e=(0.05 * i).tolist(), t=[])
+
+    @classmethod
+    def _sample(cls, experiment: Experiment, tmp_path, save_all_harmonics: bool = True, subtracted: bool = True):
+        """Two-harmonic sample with scaled data and, optionally, background-subtracted data.
+
+        Parameters
+        ----------
+        experiment : Experiment
+            The ``mock_experiment_2banks`` fixture.
+        tmp_path : pathlib.Path
+            Output directory.
+        save_all_harmonics : bool
+            Value of the ``save_all_harmonics`` setup flag.
+        subtracted : bool
+            Whether a background subtraction took place.
+
+        Returns
+        -------
+        Sample
+            The sample, ready for ``stitch_orders`` and ``dump_reduced_data_to_csv``.
+        """
+        experiment.output_dir = str(tmp_path)
+        experiment._config.save_all_harmonics = save_all_harmonics
+        sample = _make_sample(experiment, "test", [])
+        sample.detector_data = [cls._profile(cls.Q1), cls._profile(cls.Q2)]
+        sample.data_scaled = [cls._profile(cls.Q1), cls._profile(cls.Q2, scale=cls.SCALE)]
+        if subtracted:
+            sample.data_bg_subtracted = [
+                cls._profile(cls.Q1, offset=1.0),
+                cls._profile(cls.Q2, scale=cls.SCALE, offset=cls.BACKGROUND),
+            ]
+        return sample
+
+    @staticmethod
+    def _read(path) -> list[list[float]]:
+        """Read the Q, I, and E columns of an output file.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Output file written by ``Sample.dump_data_to_csv``.
+
+        Returns
+        -------
+        list[list[float]]
+            One ``[Q, I, E]`` row per line.
+        """
+        return [[float(value) for value in row[:3]] for row in csv.reader(path.read_text().splitlines())]
+
+    def test_stitches_scaled_data(self, mock_experiment_2banks, tmp_path):
+        """The scaled harmonics are stitched, with harmonic 2 scaled by the known factor."""
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+
+        sample.stitch_orders()
+
+        assert sample.stitched_orders == [1, 2]
+        assert sample.stitch_scale_factors == pytest.approx([1.0, self.SCALE], rel=1e-9)
+        q = np.array(sample.data_stitched.q)
+        assert np.all(np.diff(q) >= 0)
+        np.testing.assert_allclose(sample.data_stitched.i, 10.0 - 2000.0 * q, rtol=1e-9)
+
+    def test_background_subtracted_data_reuses_scale_factors(self, mock_experiment_2banks, tmp_path):
+        """The background-subtracted harmonics are stitched with the factors of the scaled data.
+
+        The background of harmonic 2 becomes SCALE * BACKGROUND = 1.0 after scaling, the same as
+        that of harmonic 1, so the stitched background-subtracted profile is the stitched scaled
+        profile minus 1 on the same Q points.
+        """
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+
+        sample.stitch_orders()
+
+        assert sample.data_bg_subtracted_stitched.q == sample.data_stitched.q
+        difference = np.array(sample.data_stitched.i) - np.array(sample.data_bg_subtracted_stitched.i)
+        np.testing.assert_allclose(difference, 1.0, rtol=1e-9)
+
+    def test_nothing_subtracted_leaves_background_subtracted_profile_empty(self, mock_experiment_2banks, tmp_path):
+        """Without a background subtraction, only the scaled data are stitched."""
+        sample = self._sample(mock_experiment_2banks, tmp_path, subtracted=False)
+
+        sample.stitch_orders()
+
+        assert sample.data_stitched.q
+        assert sample.data_bg_subtracted_stitched.q == []
+
+    def test_failed_join_of_harmonic_2_produces_no_profile(self, mock_experiment_2banks, tmp_path, caplog):
+        """When harmonics 1 and 2 cannot be stitched, both stitched profiles stay empty.
+
+        Harmonic 2 is shifted to Q values beyond harmonic 1, so the two do not overlap.
+        """
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+        sample.data_scaled[1] = self._profile(self.Q2 + 1.0e-2)
+
+        with caplog.at_level(logging.WARNING):
+            sample.stitch_orders()
+
+        assert sample.data_stitched.q == []
+        assert sample.data_bg_subtracted_stitched.q == []
+        assert sample.stitched_orders == []
+        assert "do not overlap" in caplog.text
+        assert "Orders 1 and 2 of sample test could not be stitched" in caplog.text
+
+    def test_mismatched_background_subtracted_harmonic_2_produces_no_profile(
+        self, mock_experiment_2banks, tmp_path, caplog
+    ):
+        """A background-subtracted harmonic 2 that does not match its scaled data is not stitched.
+
+        The scaled profile is still stitched; only the background-subtracted one stays empty.
+        """
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+        sample.data_bg_subtracted[1] = IQData()
+
+        with caplog.at_level(logging.WARNING):
+            sample.stitch_orders()
+
+        assert sample.stitched_orders == [1, 2]
+        assert sample.data_bg_subtracted_stitched.q == []
+        assert "Background-subtracted orders 1 and 2 of sample test could not be stitched" in caplog.text
+
+    def test_unexpected_exception_is_logged_and_does_not_propagate(
+        self, mock_experiment_2banks, tmp_path, caplog, monkeypatch
+    ):
+        """An unexpected exception during stitching is logged, and the stitched profiles stay empty."""
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
+
+        def broken_stitch(*_args, **_kwargs):
+            raise ZeroDivisionError("synthetic failure")
+
+        monkeypatch.setattr(usansred.reduce, "stitch_profiles", broken_stitch)
+
+        with caplog.at_level(logging.ERROR):
+            sample.stitch_orders()
+
+        assert sample.data_stitched.q == []
+        assert sample.stitch_scale_factors == []
+        assert "Cannot stitch the orders of sample test: synthetic failure" in caplog.text
+
+    def test_reduce_stitches_after_background_subtraction(self, mock_experiment_2banks):
+        """Sample.reduce calls stitch_orders after subtract_background when save_all_harmonics is set."""
+        mock_experiment_2banks._config.save_all_harmonics = True
+        mock_experiment_2banks.background = _make_sample(mock_experiment_2banks, "bg", [])
+        sample = _make_sample(mock_experiment_2banks, "test", [])
+        calls = []
+
+        with (
+            patch.object(Sample, "normalize_by_monitor", autospec=True, return_value=None),
+            patch.object(Sample, "stitch_scans", autospec=True, return_value=None),
+            patch.object(Sample, "rocking_curve_centering", autospec=True, return_value=None),
+            patch.object(Sample, "rescale_data", autospec=True, return_value=None),
+            patch.object(Sample, "subtract_background", autospec=True, side_effect=lambda *_: calls.append("subtract")),
+            patch.object(Sample, "stitch_orders", autospec=True, side_effect=lambda *_: calls.append("stitch")),
+        ):
+            sample.reduce()
+
+        assert calls == ["subtract", "stitch"]
+
+    def test_reduce_does_not_stitch_without_save_all_harmonics(self, mock_experiment_2banks):
+        """Without save_all_harmonics, Sample.reduce does not stitch the harmonics."""
+        sample = _make_sample(mock_experiment_2banks, "test", [])
+
+        with (
+            patch.object(Sample, "normalize_by_monitor", autospec=True, return_value=None),
+            patch.object(Sample, "stitch_scans", autospec=True, return_value=None),
+            patch.object(Sample, "rocking_curve_centering", autospec=True, return_value=None),
+            patch.object(Sample, "rescale_data", autospec=True, return_value=None),
+            patch.object(Sample, "stitch_orders", autospec=True) as stitch_orders,
+        ):
+            sample.reduce()
+
+        stitch_orders.assert_not_called()
+
+    def test_writes_stitched_files(self, mock_experiment_2banks, tmp_path):
+        """With save_all_harmonics, both stitched files are written and hold the stitched profiles."""
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+        sample.stitch_orders()
+
+        sample.dump_reduced_data_to_csv()
+
+        stitched = self._read(tmp_path / "UN_test_det_stitched.txt")
+        assert [row[0] for row in stitched] == pytest.approx(sample.data_stitched.q)
+        assert [row[1] for row in stitched] == pytest.approx(sample.data_stitched.i)
+        assert [row[2] for row in stitched] == pytest.approx(sample.data_stitched.e)
+        subtracted = self._read(tmp_path / "UN_test_det_background_subtracted_stitched.txt")
+        assert [row[1] for row in subtracted] == pytest.approx(sample.data_bg_subtracted_stitched.i)
+
+    def test_per_harmonic_files_unchanged_by_stitching(self, mock_experiment_2banks, tmp_path):
+        """The ``_det_<n>`` files are identical whether or not the harmonics were stitched."""
+        unstitched_dir = tmp_path / "unstitched"
+        stitched_dir = tmp_path / "stitched"
+        self._sample(mock_experiment_2banks, unstitched_dir).dump_reduced_data_to_csv()
+        sample = self._sample(mock_experiment_2banks, stitched_dir)
+        sample.stitch_orders()
+
+        sample.dump_reduced_data_to_csv()
+
+        per_harmonic = sorted(path.name for path in unstitched_dir.iterdir())
+        assert len(per_harmonic) == 6  # unscaled, scaled, and subtracted for harmonics 1 and 2
+        for name in per_harmonic:
+            assert (stitched_dir / name).read_bytes() == (unstitched_dir / name).read_bytes()
+        assert sorted(path.name for path in stitched_dir.iterdir()) == sorted(
+            [*per_harmonic, "UN_test_det_stitched.txt", "UN_test_det_background_subtracted_stitched.txt"]
+        )
+
+    def test_no_stitched_files_without_save_all_harmonics(self, mock_experiment_2banks, tmp_path):
+        """Without save_all_harmonics, no stitched file is written, even if profiles were stitched."""
+        sample = self._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+        sample.stitch_orders()
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not list(tmp_path.glob("*stitched*"))
+
+    def test_no_stitched_files_when_harmonic_2_fails(self, mock_experiment_2banks, tmp_path):
+        """When harmonics 1 and 2 cannot be stitched, no stitched file is written."""
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+        sample.data_scaled[1] = self._profile(self.Q2 + 1.0e-2)
+        sample.stitch_orders()
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not list(tmp_path.glob("*stitched*"))
+        assert (tmp_path / "UN_test_det_2.txt").is_file()
+
+    def test_no_background_subtracted_stitched_file_when_nothing_subtracted(self, mock_experiment_2banks, tmp_path):
+        """Without a background subtraction, only ``UN_<name>_det_stitched.txt`` is written.
+
+        This is the case of the background measurement itself.
+        """
+        sample = self._sample(mock_experiment_2banks, tmp_path, subtracted=False)
+        sample.measurement_type = MeasurementType.BACKGROUND
+        sample.stitch_orders()
+
+        sample.dump_reduced_data_to_csv()
+
+        assert (tmp_path / "UN_test_det_stitched.txt").is_file()
+        assert not (tmp_path / "UN_test_det_background_subtracted_stitched.txt").exists()

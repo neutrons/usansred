@@ -12,6 +12,7 @@ error-weighted least-squares fit (see ``scale_factor``) instead of the drtsans r
 Momentum transfer Q is in ``1/angstrom`` throughout.
 """
 
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -20,6 +21,7 @@ from usansred.models import IQData
 from usansred.utils.logging import get_logger
 
 __all__ = [
+    "QRangeNotExtendedError",
     "StitchError",
     "StitchResult",
     "apply_stitch",
@@ -36,7 +38,26 @@ logger = get_logger(__name__)
 
 
 class StitchError(ValueError):
-    """Raised when a profile cannot be joined onto the stitched profile."""
+    """Raised when a profile cannot be joined onto the stitched profile.
+
+    Attributes
+    ----------
+    log_level : int
+        Level at which ``stitch_profiles`` logs the failure, ``logging.ERROR`` by default.
+    """
+
+    log_level: int = logging.ERROR
+
+
+class QRangeNotExtendedError(StitchError):
+    """Raised when an order does not extend the stitched profile to higher Q.
+
+    Higher orders are often too weak to carry counts at high Q, so this is an expected outcome
+    rather than a fault in the data, and it is logged as a warning (except for order 2, see
+    ``stitch_profiles``).
+    """
+
+    log_level: int = logging.WARNING
 
 
 @dataclass
@@ -401,12 +422,22 @@ def _join(current: IQData, profile: IQData, order: int) -> tuple[IQData, float, 
         If ``profile`` has fewer than two valid points, the profiles do not overlap, the overlap
         holds fewer than two points of ``current``, interpolation would extrapolate, or the
         scale factor is invalid.
+    QRangeNotExtendedError
+        If the highest valid Q of ``profile`` does not exceed the highest Q of ``current``.
     """
     valid, mask = _valid_profile(profile, order)
     q_n, i_n, e_n = (np.asarray(v) for v in (valid.q, valid.i, valid.e))
     q_ref, i_ref, e_ref = (np.asarray(v) for v in (current.q, current.i, current.e))
 
     q_min, q_max = overlap_range(q_ref, q_n)
+    # The merge keeps the stitched profile only below the overlap end, so an order that ends
+    # at or below the stitched profile would discard the stitched points above its last point
+    if q_n[-1] <= q_ref[-1]:
+        raise QRangeNotExtendedError(
+            f"order {order} does not extend the stitched profile to higher Q (its highest "
+            f"non-zero-count point is at {q_n[-1]:.6g} 1/angstrom, while the stitched profile "
+            f"reaches {q_ref[-1]:.6g} 1/angstrom)"
+        )
     in_overlap = (q_ref >= q_min) & (q_ref <= q_max)
     num_points = int(np.count_nonzero(in_overlap))
     if num_points < 2:
@@ -426,6 +457,35 @@ def _join(current: IQData, profile: IQData, order: int) -> tuple[IQData, float, 
     return merge_profiles(current, scaled, q_min, q_max), s, (q_min, q_max), mask
 
 
+def _stop_message(label: str, order: int, err: StitchError, joined_orders: list[int], num_orders: int) -> str:
+    """Compose the log message for a failed join, which stops the stitching.
+
+    Parameters
+    ----------
+    label : str
+        Description of the measurement.
+    order : int
+        Order (1-based) whose join failed.
+    err : StitchError
+        Reason for the failure.
+    joined_orders : list[int]
+        Orders already in the stitched profile.
+    num_orders : int
+        Total number of orders given for stitching.
+
+    Returns
+    -------
+    str
+        The message, naming the orders in the stitched profile and those left out.
+    """
+    left_out = [n for n in range(1, num_orders + 1) if n not in joined_orders]
+    return (
+        f"Cannot join order {order} onto the stitched profile of {label}: {err}. "
+        f"Stitching stops; the stitched profile contains orders {joined_orders}, "
+        f"and orders {left_out} are left out."
+    )
+
+
 def stitch_profiles(profiles: list[IQData], label: str = "profile") -> StitchResult:
     """Stitch the scaled profiles of orders 1, 2, ... into a single profile.
 
@@ -438,10 +498,16 @@ def stitch_profiles(profiles: list[IQData], label: str = "profile") -> StitchRes
        scaled by the factor from ``scale_factor``. Uncertainties are scaled by the same factor.
     4. The two are merged with ``merge_profiles``.
 
-    A join fails when the profiles do not overlap, when the overlap holds fewer than two points
-    of the stitched profile, when the order has fewer than two valid points, when interpolation
-    would extrapolate, or when the scale factor is zero, negative, or not finite. Stitching then
-    stops with a logged error, and the result holds the orders joined up to that point.
+    A join fails when the order has fewer than two valid points, when the profiles do not
+    overlap, when the order does not extend the stitched profile to higher Q, when the overlap
+    holds fewer than two points of the stitched profile, when interpolation would extrapolate,
+    or when the scale factor is zero, negative, or not finite. Stitching then stops, and the
+    result holds the orders joined up to that point.
+
+    Each failure is logged as an error, except an order above 2 that does not extend the
+    stitched profile to higher Q: higher orders are often too weak to carry counts at high Q,
+    so that case is logged as a warning. For order 2 it is still an error, since no stitched
+    profile can be produced without order 2.
 
     Parameters
     ----------
@@ -477,10 +543,8 @@ def stitch_profiles(profiles: list[IQData], label: str = "profile") -> StitchRes
         try:
             current, s, overlap, mask = _join(current, profile, order)
         except StitchError as err:
-            logger.error(
-                f"Cannot join order {order} onto the stitched profile of {label}: {err}. "
-                f"Stitching stops; the stitched profile contains orders {result.joined_orders}."
-            )
+            level = err.log_level if order > 2 else logging.ERROR
+            logger.log(level, _stop_message(label, order, err, result.joined_orders, len(profiles)))
             break
         result.profile = current
         result.joined_orders.append(order)
@@ -495,7 +559,7 @@ def stitch_profiles(profiles: list[IQData], label: str = "profile") -> StitchRes
     return result
 
 
-def apply_stitch(profiles: list[IQData], result: StitchResult, label: str = "profile") -> IQData:
+def apply_stitch(profiles: list[IQData], result: StitchResult, label: str = "profile") -> StitchResult:
     """Stitch other profiles with the scale factors, masks, and overlaps of an earlier stitch.
 
     Used for the background-subtracted profiles: the scale factors are computed once, from the
@@ -515,11 +579,13 @@ def apply_stitch(profiles: list[IQData], result: StitchResult, label: str = "pro
 
     Returns
     -------
-    IQData
-        The stitched profile, holding the orders in ``result.joined_orders`` up to the first one
-        whose profile does not match its mask. Empty when ``result`` holds no orders.
+    StitchResult
+        The stitched profile with the orders, scale factors, overlaps, and masks of ``result``
+        that were used. These are the orders of ``result.joined_orders`` up to, and not
+        including, the first one whose profile does not match its mask. The profile is empty
+        when ``result`` holds no orders.
     """
-    current = IQData()
+    applied = StitchResult()
     for k, (order, s, mask) in enumerate(zip(result.joined_orders, result.scale_factors, result.masks)):
         profile = profiles[order - 1] if order <= len(profiles) else IQData()
         try:
@@ -527,11 +593,15 @@ def apply_stitch(profiles: list[IQData], result: StitchResult, label: str = "pro
             if len(q) != len(mask):
                 raise StitchError(f"order {order} has {len(q)} points, but its scaled profile has {len(mask)} points")
         except StitchError as err:
-            logger.error(
-                f"Cannot join order {order} onto the stitched profile of {label}: {err}. "
-                f"Stitching stops; the stitched profile contains orders {result.joined_orders[:k]}."
-            )
+            logger.error(_stop_message(label, order, err, applied.joined_orders, len(profiles)))
             break
         scaled = IQData(q=q[mask].tolist(), i=(s * i[mask]).tolist(), e=(s * e[mask]).tolist(), t=[])
-        current = scaled if k == 0 else merge_profiles(current, scaled, *result.overlaps[k - 1])
-    return current
+        if k == 0:
+            applied.profile = scaled
+        else:
+            applied.profile = merge_profiles(applied.profile, scaled, *result.overlaps[k - 1])
+            applied.overlaps.append(result.overlaps[k - 1])
+        applied.joined_orders.append(order)
+        applied.scale_factors.append(s)
+        applied.masks.append(mask)
+    return applied
