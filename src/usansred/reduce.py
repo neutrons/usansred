@@ -16,6 +16,7 @@ from scipy.optimize import curve_fit
 from usansred.enums import MeasurementType
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
+from usansred.stitch import interpolate_error
 from usansred.summary import generate_report
 from usansred.utils.logging import get_logger, log_to_file, set_log_config
 
@@ -696,56 +697,6 @@ class Sample(BaseModel):
         logger.info(f"Centered rocking curves for {self.label} using offset {q_offset}.")
         return q_offset
 
-    @staticmethod
-    def _interpolate_error(q: float, q_bg: np.ndarray, e_bg: np.ndarray) -> float:
-        """Interpolate a background uncertainty at ``q`` by propagating variances in quadrature.
-
-        Linear interpolation of the intensity between the two bracketing background points is
-        ``I = (1 - w) * I0 + w * I1``, with ``w`` the fractional position of ``q`` in the interval.
-        Treating the two background measurements as statistically independent, the uncertainty of
-        that combination is
-
-        .. math::
-
-            \\sigma = \\sqrt{\\left[(1 - w)\\,\\sigma_0\\right]^2 + \\left[w\\,\\sigma_1\\right]^2}
-
-        The interpolation weights must be squared. Interpolating the variance with the plain
-        weights, ``sqrt((1 - w) * e0**2 + w * e1**2)``, is a different and also incorrect result.
-        Note that the correct value can fall below both endpoint uncertainties; combining two
-        independent measurements does reduce the variance.
-
-        Outside the background range the nearest endpoint uncertainty is returned, which matches
-        how ``numpy.interp`` clamps the intensity and is the ``w = 0`` / ``w = 1`` limit of the
-        formula above.
-
-        Parameters
-        ----------
-        q : float
-            Momentum transfer at which the uncertainty is needed, in ``1/angstrom``.
-        q_bg : np.ndarray
-            Background momentum-transfer values in ``1/angstrom``, sorted in ascending order.
-        e_bg : np.ndarray
-            Background uncertainties, one per entry of ``q_bg``.
-
-        Returns
-        -------
-        float
-            The interpolated uncertainty at ``q``.
-        """
-        hi = int(np.searchsorted(q_bg, q))
-        if hi == 0:  # q below the background range
-            return float(e_bg[0])
-        if hi == len(q_bg):  # q above the background range
-            return float(e_bg[-1])
-
-        lo = hi - 1
-        interval = q_bg[hi] - q_bg[lo]
-        if interval == 0:  # duplicate background q values, nothing to interpolate over
-            return float(e_bg[lo])
-
-        weight = (q - q_bg[lo]) / interval
-        return float(np.sqrt(((1.0 - weight) * e_bg[lo]) ** 2 + (weight * e_bg[hi]) ** 2))
-
     def _match_or_interpolate(
         self,
         q_data: np.ndarray,
@@ -758,10 +709,30 @@ class Sample(BaseModel):
 
         Used for background subtraction. Intensities are interpolated linearly, while
         uncertainties are interpolated in variance with squared weights (see
-        ``_interpolate_error``) because the background points are independent measurements.
+        ``usansred.stitch.interpolate_error``) because the background points are independent
+        measurements.
 
-        ``q_bg`` is assumed sorted in ascending order, as required by ``numpy.interp`` and by the
-        bracketing search in ``_interpolate_error``."""
+        Parameters
+        ----------
+        q_data : np.ndarray
+            Momentum-transfer values of the sample, in ``1/angstrom``.
+        q_bg : np.ndarray
+            Momentum-transfer values of the background, in ``1/angstrom``, sorted in ascending
+            order, as required by ``numpy.interp`` and by the bracketing search in
+            ``usansred.stitch.interpolate_error``.
+        i_bg : np.ndarray
+            Background intensities.
+        e_bg : np.ndarray
+            Background uncertainties.
+        tolerance : float
+            Relative tolerance for matching a background Q value to a sample Q value directly.
+            The absolute tolerance is ``max(tolerance * q, 1e-6)`` in ``1/angstrom``.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Background intensities and uncertainties, one per entry of ``q_data``.
+        """
         i_bg_matched = np.zeros_like(q_data)
         e_bg_matched = np.zeros_like(q_data)
 
@@ -775,7 +746,7 @@ class Sample(BaseModel):
             else:
                 # Otherwise, interpolate
                 i_bg_matched[i] = np.interp(q, q_bg, i_bg)
-                e_bg_matched[i] = self._interpolate_error(q, q_bg, e_bg)
+                e_bg_matched[i] = interpolate_error(q, q_bg, e_bg)
 
         return i_bg_matched, e_bg_matched
 
