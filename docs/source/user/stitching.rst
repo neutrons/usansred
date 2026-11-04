@@ -114,6 +114,15 @@ keeps the Q points of the sample, so both sets of data share the same points. Ze
 are identified on the scaled data, since background-subtracted intensities can be zero or
 negative after subtraction.
 
+The scale factors are fitted before the subtraction for two reasons. First, the fit is better
+conditioned: the scaled intensities are positive and have smaller uncertainties, whereas some
+background-subtracted points in the fit range are zero or negative. Second, with the same factors
+the two stitched profiles are consistent with each other: at every point, their difference is the
+background of the corresponding harmonic multiplied by the same scale factor as the sample. For
+the reference dataset, fitting the factors again on the background-subtracted harmonics changes
+them by less than two standard deviations of their statistical uncertainty, estimated by
+repeating both fits on data perturbed within their uncertainties.
+
 For sample ``S115_dry`` of the reference dataset, all four harmonics are joined:
 
 .. figure:: media/stitching_S115_dry.png
