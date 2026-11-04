@@ -14,14 +14,6 @@ from usansred.summary import (
 )
 
 
-@pytest.fixture(autouse=True)
-def reset_sheet_name_suffix(monkeypatch):
-    """Reset the global suffix counter before each test.
-
-    This ensures that tests are independent and do not affect each other's results."""
-    monkeypatch.setattr(usansred.summary, "suffix", 0)
-
-
 @pytest.mark.parametrize(
     ("input_filename", "expected_output"),
     [
@@ -101,6 +93,19 @@ def test_format_sheet_name_makes_names_unique():
     assert len(second) <= SHEET_NAME_MAX_LENGTH
     assert clash.lower() != "original"
     assert {first.lower(), second.lower(), clash.lower()} <= used_names
+
+
+def test_format_sheet_name_counter_does_not_depend_on_earlier_calls():
+    """The counter starts at 1 for every name, so repeated reports give the same sheet names."""
+    long_name = "UN_a_very_long_measurement_name_det_background_subtracted_stitched.txt"
+    other_long_name = "UN_another_very_long_measurement_name_det_1_background_subtracted.txt"
+
+    first_report = [format_sheet_name(name, set()) for name in (other_long_name, long_name)]
+    used_names = set()
+    second_report = [format_sheet_name(name, used_names) for name in (other_long_name, long_name, long_name)]
+
+    assert first_report == ["another_very_long_measurement_1", "a_very_long_measurement_name_b1"]
+    assert second_report == [*first_report, "a_very_long_measurement_name_b2"]
 
 
 @pytest.mark.parametrize(

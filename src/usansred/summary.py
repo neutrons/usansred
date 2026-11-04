@@ -14,8 +14,6 @@ __author__ = "Yingrui Shang"
 __copyright__ = "Copyright 2021, NSD, ORNL"
 __all__ = ["generate_report"]
 
-suffix = 0
-
 logger = get_logger(__name__)
 
 # Excel limits worksheet names to 31 characters
@@ -46,7 +44,9 @@ def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
        They apply only to the part of the name from the last ``_det_`` onward, so that the
        measurement name is never altered.
     4. If the name is still too long, or already in ``used_names``, it is cut and a counter is
-       appended, so that it ends at no more than 31 characters and is unique.
+       appended, so that it ends at no more than 31 characters and is unique. The counter is
+       the smallest integer, starting at 1, that gives a name not in ``used_names``, so the
+       result depends only on ``filename`` and ``used_names``.
 
     For example, ``UN_S115_pc3_det_background_subtracted_stitched.txt`` becomes
     ``S115_pc3_bkgr_subtracted_stitch``.
@@ -65,7 +65,6 @@ def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
     str
         The worksheet name.
     """
-    global suffix
     name = filename.removesuffix(".txt").removeprefix("UN_")
     for character in INVALID_SHEET_NAME_CHARACTERS:
         name = name.replace(character, "_")
@@ -87,14 +86,15 @@ def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
     def is_taken(candidate: str) -> bool:
         return used_names is not None and candidate.lower() in used_names
 
+    # The counter starts at 1 for every name, so that the same files always get the same names
     if len(name) > SHEET_NAME_MAX_LENGTH or is_taken(name):
         base = name
+        counter = 1
         while True:
-            suffix += 1
-            counter = str(suffix)
-            name = base[: SHEET_NAME_MAX_LENGTH - len(counter)] + counter
+            name = base[: SHEET_NAME_MAX_LENGTH - len(str(counter))] + str(counter)
             if not is_taken(name):
                 break
+            counter += 1
 
     if used_names is not None:
         used_names.add(name.lower())
