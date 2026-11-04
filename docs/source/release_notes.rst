@@ -14,6 +14,16 @@ Unreleased
   versions. See :ref:`transmission coefficient <transmission-coefficient>`.
 - New documentation pages describe the measurement types, the reduction workflow, and the
   normalizations, including the transmission coefficient.
+- With ``save_all_harmonics`` enabled, the harmonics of each measurement are now stitched into a
+  single I(Q) profile, written to ``UN_<name>_det_stitched.txt`` and, for samples,
+  ``UN_<name>_det_background_subtracted_stitched.txt``. The per-harmonic files are unchanged. See
+  :ref:`stitching the harmonics <stitching-harmonics>`.
+- ``summary.xlsx`` includes the stitched profiles. Its worksheet names no longer carry the ``UN_``
+  prefix or the ``.txt`` extension, and long names are shortened by abbreviation instead of
+  being cut after 20 characters, so worksheet names differ from those of previous versions.
+- The charts of ``summary.xlsx`` show every data point; previous versions showed at most the
+  first 99 points of each file. The intensity axis of the summary charts is labeled
+  ``I (1/cm)`` instead of ``I (1/cn)``.
 
 1.1.0
 -----

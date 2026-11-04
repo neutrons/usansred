@@ -16,7 +16,14 @@ import usansred.reduce
 from tests.test_fixtures import _make_sample
 from usansred.enums import MeasurementType
 from usansred.models import EventCounts, IQData, MonitorData, XYData
-from usansred.reduce import ARCSEC_TO_RADIANS, Experiment, Sample, Scan, horizontal_rocking_width
+from usansred.reduce import (
+    ARCSEC_TO_RADIANS,
+    Experiment,
+    Sample,
+    Scan,
+    horizontal_rocking_width,
+    unscattered_beam_q_cutoff,
+)
 
 
 class TestSampleProperties:
@@ -1069,6 +1076,36 @@ class TestStitchOrders:
         q = np.array(sample.data_stitched.q)
         assert np.all(np.diff(q) >= 0)
         np.testing.assert_allclose(sample.data_stitched.i, 10.0 - 2000.0 * q, rtol=1e-9)
+
+    def test_unscattered_beam_q_cutoff(self):
+        """The cutoff is 3 sigma of the harmonic-1 resolution, converted to Q, i.e. 5.65e-5 1/angstrom at 3.6 angstrom.
+
+        It scales with the number of standard deviations and inversely with the wavelength.
+        """
+        cutoff = unscattered_beam_q_cutoff(3.6)
+
+        assert cutoff == pytest.approx(5.654e-5, rel=1e-3)
+        assert unscattered_beam_q_cutoff(3.6, num_sigmas=1.0) == pytest.approx(cutoff / 3.0)
+        assert unscattered_beam_q_cutoff(7.2) == pytest.approx(cutoff / 2.0)
+
+    def test_stitching_uses_unscattered_beam_cutoff(self, mock_experiment_2banks, tmp_path, monkeypatch):
+        """stitch_orders fits the scale factors above the unscattered-beam cutoff of the primary wavelength."""
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+        calls = []
+        original = usansred.reduce.stitch_profiles
+
+        def spy(*args, **kwargs):
+            calls.append(kwargs["q_fit_min"])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(usansred.reduce, "stitch_profiles", spy)
+
+        sample.stitch_orders()
+
+        assert calls == [pytest.approx(unscattered_beam_q_cutoff(mock_experiment_2banks.prim_wave))]
+        # Harmonic-2 points below the cutoff are left out of the stitched profile
+        added = np.count_nonzero(self.Q2 >= calls[0])
+        assert len(sample.data_stitched.q) == len(self.Q1) + added
 
     def test_background_subtracted_data_reuses_scale_factors(self, mock_experiment_2banks, tmp_path):
         """The background-subtracted harmonics are stitched with the factors of the scaled data.

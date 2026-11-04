@@ -22,7 +22,7 @@ literal one-line `CLAUDE.md` file.
 - Use the Pixi environment for Python commands. Do not assume bare `python`
   is available in the default shell.
 - Prefer existing project patterns: `logging`, Pydantic models in
-  `src/usansred/reduce.py`, dataclasses in `src/usansred/model.py`, and
+  `src/usansred/reduce.py`, dataclasses in `src/usansred/models/data.py`, and
   pytest tests under `tests/`.
 - Add or update tests when changing reduction behavior, parsing, file output,
   or public command behavior.
@@ -62,9 +62,12 @@ later.
 
 ```text
 src/usansred/
-├── model.py          # XYData, IQData, MonitorData dataclasses
+├── models/
+│   ├── data.py       # XYData, IQData, MonitorData dataclasses
+│   └── reduction_config.py # Pydantic setup-file models
 ├── reduce.py         # Scan, Sample, CombinedSample, Experiment, CLI entry point
 ├── reduce_USANS.py   # Mantid-based autoreduction/preprocessing workflow
+├── stitch.py         # stitching of the per-harmonic I(Q) profiles
 ├── summary.py        # summary.xlsx report generation
 └── io/
     ├── read.py       # CSV/JSON setup parsing
@@ -151,8 +154,17 @@ Output names currently include:
   `n = 2..4`, only when `save_all_harmonics` is enabled. These are written flat in
   the output directory, not in per-bank subdirectories.
 - `UN_<sample>_det_1_background_subtracted.txt` (only when a background or
-  empty cell was subtracted; first harmonic only)
-- `summary.xlsx`
+  empty cell was subtracted), and `UN_<sample>_det_<n>_background_subtracted.txt`
+  for harmonics `n = 2..4` when `save_all_harmonics` is enabled.
+- `UN_<sample>_det_stitched.txt` and
+  `UN_<sample>_det_background_subtracted_stitched.txt`, the harmonics stitched
+  into one profile (`src/usansred/stitch.py`), only when `save_all_harmonics` is
+  enabled and at least harmonics 1 and 2 could be stitched. The second file is
+  only written when a background or empty cell was subtracted, so it is never
+  written for the background.
+- `summary.xlsx`, covering the `_det_1` and stitched files. Its worksheet names
+  drop `UN_` and `.txt` and are shortened to Excel's 31-character limit by the
+  rules in `src/usansred/summary.py`.
 
 ## Coding Standards
 
@@ -225,6 +237,8 @@ Testing expectations:
   relevant, `tests/usansred-data/IPTS-30410/shared/setup.json`.
 - Data model changes: update `tests/unit/test_model.py`, `test_scan.py`,
   `test_sample.py`, or `test_combined_sample.py`.
+- Stitching changes: update `tests/unit/test_stitch.py`, and
+  `tests/unit/test_sample.py` (`TestStitchOrders`) for the `Sample` integration.
 - Summary/report changes: update `tests/unit/test_summary.py`.
 - CLI/end-to-end changes: update `tests/integration/test_reduce.py`.
 - Mantid save helper changes: update `tests/unit/io/test_save.py`.

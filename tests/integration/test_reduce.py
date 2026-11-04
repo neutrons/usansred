@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import random
+import re
 from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch as mock_patch
@@ -178,6 +179,23 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
 
     assert_reduction_log_files(
         output_dir, [("S115_pc3", "sample"), ("S115_dry", "sample"), ("EmptyPCell", "background")]
+    )
+
+    # Stitching writes one stitched profile per measurement, and reports its outcome in the
+    # measurement's reduction log
+    for name, label in [("S115_pc3", "sample"), ("S115_dry", "sample"), ("EmptyPCell", "background")]:
+        assert (output_dir / f"UN_{name}_det_stitched.txt").is_file()
+        log = (output_dir / f"reduction_{name}.log").read_text(encoding="utf-8")
+        assert re.search(rf"Stitched orders \[1, 2[^\]]*\] of {label} {name} with scale factors", log)
+    for name in ["S115_pc3", "S115_dry"]:
+        assert (output_dir / f"UN_{name}_det_background_subtracted_stitched.txt").is_file()
+    assert not (output_dir / "UN_EmptyPCell_det_background_subtracted_stitched.txt").exists()
+    # Harmonic 3 of S115_pc3 does not extend the stitched profile to higher Q
+    pc3_log = (output_dir / "reduction_S115_pc3.log").read_text(encoding="utf-8")
+    assert "Stitched orders [1, 2] of sample S115_pc3" in pc3_log
+    assert "order 3 does not extend the stitched profile to higher Q" in pc3_log
+    assert "Stitched orders [1, 2, 3, 4] of sample S115_dry" in (output_dir / "reduction_S115_dry.log").read_text(
+        encoding="utf-8"
     )
 
 

@@ -15,13 +15,15 @@ empty cell only when no background is present) in the following steps, applied t
 1. `Counting uncertainties`_ are assigned to the detector and monitor counts of every scan.
 2. The detector counts of every scan are divided by the monitor counts
    (:ref:`monitor normalization <monitor-normalization>`).
-3. `Stitching`_ combines the scans into a single rocking curve.
+3. `Stitching the scans`_ combines the scans into a single rocking curve.
 4. `Centering`_ shifts the rocking curve so that the unscattered beam is at :math:`\theta = 0`.
 5. `Conversion to momentum transfer`_ maps the centered angles to :math:`Q_n`.
 6. The intensities are divided by the analyzer solid angle, the sample thickness, and the
    transmission coefficient (see :doc:`normalizations`).
 7. `Points at the same momentum transfer`_ are averaged.
 8. For samples, the background or the empty cell is subtracted (see :doc:`measurement_types`).
+9. With ``save_all_harmonics``, the harmonics are stitched into a single profile (see
+   :ref:`stitching the harmonics <stitching-harmonics>`).
 
 The units of the resulting output files are described in
 :ref:`units of the reduced data <units-of-reduced-data>`.
@@ -39,8 +41,8 @@ which is close to the Poisson uncertainty :math:`\sqrt{N}` for large counts, and
 :math:`N = 0` and :math:`N = 1`, so that no data point has zero uncertainty. The uncertainty
 column of the input files is not used.
 
-Stitching
----------
+Stitching the Scans
+-------------------
 
 The scans of a measurement cover different, partly overlapping ranges of analyzer angle. The
 monitor-normalized points of all scans are merged into a single rocking curve sorted by angle.

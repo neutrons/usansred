@@ -106,20 +106,20 @@ class TestHelpers:
         with pytest.raises(StitchError, match="interpolation outside"):
             interpolate_profile(np.array([0.5, 1.5]), np.array([1.0, 2.0]), np.ones(2), np.ones(2))
 
-    def test_merge_keeps_both_sets_inside_overlap_and_sorts(self):
-        """The merge keeps reference points with Q < q_max and scaled points with Q > q_min, sorted by Q.
+    def test_merge_keeps_reference_and_scaled_points_from_q_start(self):
+        """The merge keeps every reference point and the scaled points with Q >= q_start, sorted by Q.
 
-        Inside the overlap [2.5, 4.0], points of both profiles are kept. The reference point at
-        q_max = 4.0 and the scaled point at q_min = 2.5 are dropped; the scaled point at 4.0 is kept.
+        The scaled points at 1.5 and 2.5 lie below q_start = 3.0 (in the unscattered-beam peak) and
+        are dropped. The scaled point at 3.0 is kept and, for equal Q, follows the reference point.
         """
         reference = IQData(q=[1.0, 2.0, 3.0, 4.0], i=[1.0] * 4, e=[0.1] * 4)
-        scaled = IQData(q=[2.5, 3.5, 4.0, 5.0], i=[2.0] * 4, e=[0.2] * 4)
+        scaled = IQData(q=[1.5, 2.5, 3.0, 3.5, 5.0], i=[2.0] * 5, e=[0.2] * 5)
 
-        merged = merge_profiles(reference, scaled, q_min=2.5, q_max=4.0)
+        merged = merge_profiles(reference, scaled, q_start=3.0)
 
-        # Reference points with Q < 4.0 and scaled points with Q > 2.5
-        assert merged.q == [1.0, 2.0, 3.0, 3.5, 4.0, 5.0]
-        assert merged.i == [1.0, 1.0, 1.0, 2.0, 2.0, 2.0]
+        assert merged.q == [1.0, 2.0, 3.0, 3.0, 3.5, 4.0, 5.0]
+        assert merged.i == [1.0, 1.0, 1.0, 2.0, 2.0, 1.0, 2.0]
+        assert merged.e == [0.1, 0.1, 0.1, 0.2, 0.2, 0.1, 0.2]
 
 
 class TestScaleFactor:
@@ -183,8 +183,8 @@ class TestStitchProfiles:
     def test_two_orders_on_different_grids(self):
         """Order 2, on its own Q grid, is scaled onto order 1 with the known scale factor.
 
-        The stitched profile is sorted by Q, keeps order-1 points below the overlap end and order-2
-        points above the overlap start, and lies on the order-1 curve.
+        Without a fit cutoff, the fit range is the whole overlap. The stitched profile is sorted by
+        Q, keeps all order-1 points and all order-2 points, and lies on the order-1 curve.
         """
         profiles = [make_profile(Q1), make_profile(Q2, scale=2.5)]
 
@@ -194,10 +194,11 @@ class TestStitchProfiles:
         assert result.scale_factors[0] == 1.0
         assert result.scale_factors[1] == pytest.approx(2.5, rel=1e-9)
         assert result.overlaps == [(Q2[0], Q1[-1])]
+        assert result.fit_ranges == [(Q2[0], Q1[-1])]
         q = np.array(result.profile.q)
         assert np.all(np.diff(q) >= 0)
-        # Order-1 points with Q < Q1[-1] and order-2 points with Q > Q2[0]
-        assert len(q) == (len(Q1) - 1) + (len(Q2) - 1)
+        # All order-1 points, and the order-2 points from the start of the fit range (Q2[0]) upward
+        assert len(q) == len(Q1) + len(Q2)
         # Every stitched point lies on the order-1 curve
         np.testing.assert_allclose(result.profile.i, linear_intensity(q), rtol=1e-9)
 
@@ -230,6 +231,47 @@ class TestStitchProfiles:
         np.testing.assert_allclose(result.scale_factors, [1.0, 2.5, 0.4], rtol=1e-9)
         assert result.overlaps[1] == (Q3[0], Q2[-1])
         np.testing.assert_allclose(result.profile.i, linear_intensity(np.array(result.profile.q)), rtol=1e-9)
+
+    def test_fit_cutoff_excludes_unscattered_beam_peak(self):
+        """Below q_fit_min, order 2 neither enters the fit nor the stitched profile.
+
+        Order 2 is distorted below 1.5e-4 1/angstrom, standing in for the unscattered-beam peak,
+        whose shape differs between orders. With q_fit_min = 2.0e-4, the fit uses only undistorted
+        points, so the scale factor is exact, and the distorted points are left out. The
+        distortion ends one order-2 point below q_fit_min, because the interpolation onto the
+        first reference point of the fit range uses the order-2 point just below q_fit_min.
+        """
+        order2 = make_profile(Q2, scale=2.5)
+        q_fit_min = 2.0e-4
+        order2.i = [i * 3.0 if q < 1.5e-4 else i for q, i in zip(order2.q, order2.i)]
+
+        result = stitch_profiles([make_profile(Q1), order2], q_fit_min=q_fit_min)
+
+        assert result.scale_factors[1] == pytest.approx(2.5, rel=1e-9)
+        assert result.overlaps == [(Q2[0], Q1[-1])]
+        assert result.fit_ranges == [(q_fit_min, Q1[-1])]
+        num_order2_added = int(np.count_nonzero(Q2 >= q_fit_min))
+        assert len(result.profile.q) == len(Q1) + num_order2_added
+        # Every stitched point, of either order, lies on the order-1 curve
+        q = np.array(result.profile.q)
+        np.testing.assert_allclose(result.profile.i, linear_intensity(q), rtol=1e-9)
+
+    def test_fit_cutoff_below_overlap_start_has_no_effect(self):
+        """A q_fit_min below the start of the overlap leaves the fit range equal to the overlap."""
+        result = stitch_profiles([make_profile(Q1), make_profile(Q2, scale=2.5)], q_fit_min=1.0e-6)
+
+        assert result.fit_ranges == result.overlaps == [(Q2[0], Q1[-1])]
+
+    def test_fit_range_with_fewer_than_two_points(self, caplog):
+        """A q_fit_min that leaves fewer than two points of the stitched profile in the fit range stops the join."""
+        profiles = [make_profile(Q1), make_profile(Q2, scale=2.5)]
+
+        with caplog.at_level(logging.ERROR):
+            result = stitch_profiles(profiles, q_fit_min=Q1[-1])
+
+        assert result.joined_orders == [1]
+        assert "the fit range" in caplog.text
+        assert "at least two are required" in caplog.text
 
     def test_zero_count_points_excluded(self):
         """Zero-count points of order 2 are left out of the fit, the masks, and the stitched profile.
@@ -322,9 +364,9 @@ class TestStitchProfiles:
         """An order above 2 that does not reach beyond the stitched profile stops the stitching.
 
         Order 3 has zero counts above 1.5e-3 1/angstrom, below the highest Q of order 2
-        (2.0e-3 1/angstrom). Merging it would discard the order-2 points above 1.5e-3, so the
-        join is rejected. This is the usual outcome for weak higher orders, so it is logged as
-        a warning, and orders 3 and 4 are named as left out.
+        (2.0e-3 1/angstrom). It would add no new Q range, only noisier points, so the join is
+        rejected. This is the usual outcome for weak higher orders, so it is logged as a
+        warning, and orders 3 and 4 are named as left out.
         """
         order3 = make_profile(Q3, scale=0.4)
         order3.i = [i if q <= 1.5e-3 else 0.0 for q, i in zip(order3.q, order3.i)]
@@ -378,7 +420,7 @@ class TestStitchProfiles:
 class TestApplyStitch:
     """Reuse of an earlier stitch for the background-subtracted profiles."""
 
-    def test_reuses_scale_factors_masks_and_overlaps(self):
+    def test_reuses_scale_factors_masks_and_fit_ranges(self):
         """The background-subtracted profiles are stitched with the scale factors of the scaled profiles.
 
         A constant background b_n on order n becomes s_n * b_n after scaling. The backgrounds are
@@ -387,7 +429,7 @@ class TestApplyStitch:
         """
         scaled = [make_profile(Q1), make_profile(Q2, scale=2.5), make_profile(Q3, scale=0.4)]
         scaled[1].i[5] = 0.0  # zero-count point
-        result = stitch_profiles(scaled)
+        result = stitch_profiles(scaled, q_fit_min=1.0e-4)
         # Background-subtracted profiles on the same Q points; a constant background per order
         backgrounds = [1.0, 0.4, 2.5]
         subtracted = [IQData(q=p.q, i=(np.array(p.i) - b).tolist(), e=p.e, t=[]) for p, b in zip(scaled, backgrounds)]
@@ -397,6 +439,7 @@ class TestApplyStitch:
         assert applied.joined_orders == result.joined_orders
         assert applied.scale_factors == result.scale_factors
         assert applied.overlaps == result.overlaps
+        assert applied.fit_ranges == result.fit_ranges
         stitched = applied.profile
         assert stitched.q == result.profile.q
         # A background of b on order n becomes s_n * b after scaling, i.e. 1.0 for every order here

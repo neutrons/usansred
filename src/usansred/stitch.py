@@ -6,10 +6,14 @@ order 1, so adjacent orders overlap in Q. This module joins the profiles one aft
 order 1 is the fixed reference, and each higher order is scaled onto the profile stitched so
 far, using the points of the two profiles that lie in their Q-range intersection.
 
-The merge follows the scheme of ``drtsans.stitch.stitch_profiles``. The scale factor is an
-error-weighted least-squares fit (see ``scale_factor``) instead of the drtsans ratio of sums.
+The peak of the unscattered beam at low Q is dominated by the instrument resolution, which
+differs from order to order, so it is excluded: the scale factor is fitted only over the part
+of the overlap above a lower bound ``q_fit_min``, and only the points of the joined order above
+that bound are added to the stitched profile. The scale factor is an error-weighted
+least-squares fit (see ``scale_factor``).
 
-Momentum transfer Q is in ``1/angstrom`` throughout.
+Momentum transfer Q is in ``1/angstrom`` throughout. The user documentation describes the procedure
+in :ref:`stitching the harmonics <stitching-harmonics>`.
 """
 
 import logging
@@ -73,8 +77,12 @@ class StitchResult:
     scale_factors : list[float]
         Scale factor applied to each order in ``joined_orders``; the first one (order 1) is 1.0.
     overlaps : list[tuple[float, float]]
-        Q-range intersection ``(q_min, q_max)``, in ``1/angstrom``, used for each join. Entry ``k``
+        Q-range intersection ``(q_min, q_max)``, in ``1/angstrom``, of each join. Entry ``k``
         belongs to the join of ``joined_orders[k + 1]``, so there is one fewer entry than orders.
+    fit_ranges : list[tuple[float, float]]
+        Q range ``(max(q_min, q_fit_min), q_max)``, in ``1/angstrom``, over which the scale factor
+        of each join was fitted. Its lower end is also the lowest Q at which points of the joined
+        order are added to the stitched profile. Indexed like ``overlaps``.
     masks : list[np.ndarray]
         Boolean mask of the valid (non-zero-count) points of each order in ``joined_orders``,
         over that order's input profile.
@@ -84,6 +92,7 @@ class StitchResult:
     joined_orders: list[int] = field(default_factory=list)
     scale_factors: list[float] = field(default_factory=list)
     overlaps: list[tuple[float, float]] = field(default_factory=list)
+    fit_ranges: list[tuple[float, float]] = field(default_factory=list)
     masks: list[np.ndarray] = field(default_factory=list)
 
 
@@ -306,13 +315,15 @@ def scale_factor(
     return s
 
 
-def merge_profiles(reference: IQData, scaled: IQData, q_min: float, q_max: float) -> IQData:
+def merge_profiles(reference: IQData, scaled: IQData, q_start: float) -> IQData:
     """Merge the reference profile with a profile already scaled onto it.
 
-    Following ``drtsans.stitch.stitch_profiles``, the reference points with ``Q < q_max`` and
-    the scaled points with ``Q > q_min`` are kept, so both sets of points are kept inside the
-    overlap. The result is sorted by Q; the sort is stable, so for equal Q the reference point
-    comes first.
+    Every point of the reference profile is kept. Of the scaled profile, only the points with
+    ``Q >= q_start`` are added, where ``q_start`` is the lower end of the fit range: the points
+    inside the overlap that were used to fit the scale factor, and the points beyond the highest
+    Q of the reference profile. The scaled points below ``q_start`` lie in the peak of the
+    unscattered beam and are left out. The result is sorted by Q; the sort is stable, so for
+    equal Q the reference point comes first.
 
     Parameters
     ----------
@@ -320,10 +331,8 @@ def merge_profiles(reference: IQData, scaled: IQData, q_min: float, q_max: float
         The reference (stitched so far) profile.
     scaled : IQData
         The profile being added, already multiplied by its scale factor.
-    q_min : float
-        Lower end of the overlap, in ``1/angstrom``.
-    q_max : float
-        Upper end of the overlap, in ``1/angstrom``.
+    q_start : float
+        Lowest Q of the scaled points that are added, in ``1/angstrom``.
 
     Returns
     -------
@@ -332,12 +341,11 @@ def merge_profiles(reference: IQData, scaled: IQData, q_min: float, q_max: float
     """
     q_ref, i_ref, e_ref = (np.asarray(v, dtype=float) for v in (reference.q, reference.i, reference.e))
     q_n, i_n, e_n = (np.asarray(v, dtype=float) for v in (scaled.q, scaled.i, scaled.e))
-    keep_ref = q_ref < q_max
-    keep_n = q_n > q_min
+    keep_n = q_n >= q_start
 
-    q = np.concatenate([q_ref[keep_ref], q_n[keep_n]])
-    i = np.concatenate([i_ref[keep_ref], i_n[keep_n]])
-    e = np.concatenate([e_ref[keep_ref], e_n[keep_n]])
+    q = np.concatenate([q_ref, q_n[keep_n]])
+    i = np.concatenate([i_ref, i_n[keep_n]])
+    e = np.concatenate([e_ref, e_n[keep_n]])
     order = np.argsort(q, kind="stable")
     return IQData(q=q[order].tolist(), i=i[order].tolist(), e=e[order].tolist(), t=[])
 
@@ -398,7 +406,9 @@ def _valid_profile(profile: IQData, order: int) -> tuple[IQData, np.ndarray]:
     return IQData(q=q[mask].tolist(), i=i[mask].tolist(), e=e[mask].tolist(), t=[]), mask
 
 
-def _join(current: IQData, profile: IQData, order: int) -> tuple[IQData, float, tuple[float, float], np.ndarray]:
+def _join(
+    current: IQData, profile: IQData, order: int, q_fit_min: float
+) -> tuple[IQData, float, tuple[float, float], tuple[float, float], np.ndarray]:
     """Scale one order onto the current stitched profile and merge the two.
 
     Parameters
@@ -409,19 +419,22 @@ def _join(current: IQData, profile: IQData, order: int) -> tuple[IQData, float, 
         Scaled profile of the order being joined, sorted by Q.
     order : int
         Order (1-based) of ``profile``, used in log and error messages.
+    q_fit_min : float
+        Lower bound of the fit range, in ``1/angstrom``, excluding the unscattered-beam peak.
 
     Returns
     -------
-    tuple[IQData, float, tuple[float, float], np.ndarray]
+    tuple[IQData, float, tuple[float, float], tuple[float, float], np.ndarray]
         The merged profile, the scale factor applied to ``profile``, the overlap
-        ``(q_min, q_max)`` in ``1/angstrom``, and the mask of valid points of ``profile``.
+        ``(q_min, q_max)`` and the fit range ``(max(q_min, q_fit_min), q_max)`` in
+        ``1/angstrom``, and the mask of valid points of ``profile``.
 
     Raises
     ------
     StitchError
-        If ``profile`` has fewer than two valid points, the profiles do not overlap, the overlap
-        holds fewer than two points of ``current``, interpolation would extrapolate, or the
-        scale factor is invalid.
+        If ``profile`` has fewer than two valid points, the profiles do not overlap, the fit range
+        holds fewer than two points of ``current``, interpolation would extrapolate, or the scale
+        factor is invalid.
     QRangeNotExtendedError
         If the highest valid Q of ``profile`` does not exceed the highest Q of ``current``.
     """
@@ -430,31 +443,32 @@ def _join(current: IQData, profile: IQData, order: int) -> tuple[IQData, float, 
     q_ref, i_ref, e_ref = (np.asarray(v) for v in (current.q, current.i, current.e))
 
     q_min, q_max = overlap_range(q_ref, q_n)
-    # The merge keeps the stitched profile only below the overlap end, so an order that ends
-    # at or below the stitched profile would discard the stitched points above its last point
+    # A weaker order that ends at or below the stitched profile adds no new Q range, only points
+    # that are noisier than those already stitched
     if q_n[-1] <= q_ref[-1]:
         raise QRangeNotExtendedError(
             f"order {order} does not extend the stitched profile to higher Q (its highest "
             f"non-zero-count point is at {q_n[-1]:.6g} 1/angstrom, while the stitched profile "
             f"reaches {q_ref[-1]:.6g} 1/angstrom)"
         )
-    in_overlap = (q_ref >= q_min) & (q_ref <= q_max)
-    num_points = int(np.count_nonzero(in_overlap))
+    q_start = max(q_min, q_fit_min)
+    in_fit_range = (q_ref >= q_start) & (q_ref <= q_max)
+    num_points = int(np.count_nonzero(in_fit_range))
     if num_points < 2:
         raise StitchError(
-            f"the overlap [{q_min:.6g}, {q_max:.6g}] 1/angstrom contains {num_points} point(s) "
-            "of the stitched profile; at least two are required"
+            f"the fit range [{q_start:.6g}, {q_max:.6g}] 1/angstrom of the overlap contains {num_points} "
+            "point(s) of the stitched profile; at least two are required"
         )
 
-    i_interp, e_interp = interpolate_profile(q_ref[in_overlap], q_n, i_n, e_n)
-    s = scale_factor(i_ref[in_overlap], e_ref[in_overlap], i_interp, e_interp)
+    i_interp, e_interp = interpolate_profile(q_ref[in_fit_range], q_n, i_n, e_n)
+    s = scale_factor(i_ref[in_fit_range], e_ref[in_fit_range], i_interp, e_interp)
 
     scaled = IQData(q=q_n.tolist(), i=(s * i_n).tolist(), e=(s * e_n).tolist(), t=[])
     logger.info(
-        f"Joined order {order}: scale factor {s:.6g}, overlap [{q_min:.6g}, {q_max:.6g}] 1/angstrom "
-        f"with {num_points} points."
+        f"Joined order {order}: scale factor {s:.6g}, overlap [{q_min:.6g}, {q_max:.6g}] 1/angstrom, "
+        f"fitted over [{q_start:.6g}, {q_max:.6g}] 1/angstrom with {num_points} points."
     )
-    return merge_profiles(current, scaled, q_min, q_max), s, (q_min, q_max), mask
+    return merge_profiles(current, scaled, q_start), s, (q_min, q_max), (q_start, q_max), mask
 
 
 def _stop_message(label: str, order: int, err: StitchError, joined_orders: list[int], num_orders: int) -> str:
@@ -486,20 +500,23 @@ def _stop_message(label: str, order: int, err: StitchError, joined_orders: list[
     )
 
 
-def stitch_profiles(profiles: list[IQData], label: str = "profile") -> StitchResult:
+def stitch_profiles(profiles: list[IQData], label: str = "profile", q_fit_min: float = 0.0) -> StitchResult:
     """Stitch the scaled profiles of orders 1, 2, ... into a single profile.
 
     Order 1 is the fixed reference. Each higher order is joined onto the profile stitched so
     far:
 
     1. Zero-count points of the order are dropped (see ``valid_point_mask``).
-    2. The overlap is the Q-range intersection of the stitched profile and the order.
-    3. The order is interpolated onto the points of the stitched profile in the overlap, and
+    2. The overlap ``[q_min, q_max]`` is the Q-range intersection of the stitched profile and
+       the order. The fit range is the part of it above the unscattered-beam peak,
+       ``[max(q_min, q_fit_min), q_max]``.
+    3. The order is interpolated onto the points of the stitched profile in the fit range, and
        scaled by the factor from ``scale_factor``. Uncertainties are scaled by the same factor.
-    4. The two are merged with ``merge_profiles``.
+    4. The two are merged with ``merge_profiles``: all points of the stitched profile are kept,
+       and the points of the order from the lower end of the fit range upward are added.
 
     A join fails when the order has fewer than two valid points, when the profiles do not
-    overlap, when the order does not extend the stitched profile to higher Q, when the overlap
+    overlap, when the order does not extend the stitched profile to higher Q, when the fit range
     holds fewer than two points of the stitched profile, when interpolation would extrapolate,
     or when the scale factor is zero, negative, or not finite. Stitching then stops, and the
     result holds the orders joined up to that point.
@@ -516,12 +533,16 @@ def stitch_profiles(profiles: list[IQData], label: str = "profile") -> StitchRes
         ``1/angstrom``. A missing order can be given as an empty ``IQData``.
     label : str
         Description of the measurement, used in log messages.
+    q_fit_min : float
+        Lower bound of the fit range, in ``1/angstrom``, chosen above the peak of the unscattered
+        beam (see ``usansred.reduce.unscattered_beam_q_cutoff``). The default, 0, fits over the
+        whole overlap.
 
     Returns
     -------
     StitchResult
         The stitched profile together with the joined orders, their scale factors, the
-        overlaps, and the valid-point masks needed by ``apply_stitch``.
+        overlaps, the fit ranges, and the valid-point masks needed by ``apply_stitch``.
 
     Raises
     ------
@@ -541,7 +562,7 @@ def stitch_profiles(profiles: list[IQData], label: str = "profile") -> StitchRes
 
     for order, profile in enumerate(profiles[1:], start=2):
         try:
-            current, s, overlap, mask = _join(current, profile, order)
+            current, s, overlap, fit_range, mask = _join(current, profile, order, q_fit_min)
         except StitchError as err:
             level = err.log_level if order > 2 else logging.ERROR
             logger.log(level, _stop_message(label, order, err, result.joined_orders, len(profiles)))
@@ -550,6 +571,7 @@ def stitch_profiles(profiles: list[IQData], label: str = "profile") -> StitchRes
         result.joined_orders.append(order)
         result.scale_factors.append(s)
         result.overlaps.append(overlap)
+        result.fit_ranges.append(fit_range)
         result.masks.append(mask)
 
     logger.info(
@@ -560,7 +582,7 @@ def stitch_profiles(profiles: list[IQData], label: str = "profile") -> StitchRes
 
 
 def apply_stitch(profiles: list[IQData], result: StitchResult, label: str = "profile") -> StitchResult:
-    """Stitch other profiles with the scale factors, masks, and overlaps of an earlier stitch.
+    """Stitch other profiles with the scale factors, masks, and fit ranges of an earlier stitch.
 
     Used for the background-subtracted profiles: the scale factors are computed once, from the
     scaled profiles, and reused here. Each profile must be on the same Q points as the scaled
@@ -580,7 +602,7 @@ def apply_stitch(profiles: list[IQData], result: StitchResult, label: str = "pro
     Returns
     -------
     StitchResult
-        The stitched profile with the orders, scale factors, overlaps, and masks of ``result``
+        The stitched profile with the orders, scale factors, overlaps, fit ranges, and masks of ``result``
         that were used. These are the orders of ``result.joined_orders`` up to, and not
         including, the first one whose profile does not match its mask. The profile is empty
         when ``result`` holds no orders.
@@ -599,8 +621,9 @@ def apply_stitch(profiles: list[IQData], result: StitchResult, label: str = "pro
         if k == 0:
             applied.profile = scaled
         else:
-            applied.profile = merge_profiles(applied.profile, scaled, *result.overlaps[k - 1])
+            applied.profile = merge_profiles(applied.profile, scaled, result.fit_ranges[k - 1][0])
             applied.overlaps.append(result.overlaps[k - 1])
+            applied.fit_ranges.append(result.fit_ranges[k - 1])
         applied.joined_orders.append(order)
         applied.scale_factors.append(s)
         applied.masks.append(mask)

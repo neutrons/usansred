@@ -2,7 +2,7 @@ import logging
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Literal, Optional, Union
+from typing import Iterable, Iterator, Literal, Optional, Union
 
 FORMAT = "%(asctime)s | %(levelname)-4s | %(name)-8s | %(message)s"
 DATEFMT = "%Y-%m-%d %H:%M:%S"
@@ -123,11 +123,35 @@ def remove_log_fh(logger: logging.Logger, logfile: str | None = None) -> int:
 
 
 @contextmanager
-def log_to_file(logger: logging.Logger, logfile: str) -> Iterator[logging.Handler]:
-    """Temporarily attach a file handler and close it on exit."""
+def log_to_file(
+    logger: logging.Logger, logfile: str, extra_loggers: Iterable[logging.Logger] = ()
+) -> Iterator[logging.Handler]:
+    """Temporarily attach a file handler and close it on exit.
+
+    Parameters
+    ----------
+    logger : logging.Logger
+        The logger to which the file handler is attached.
+    logfile : str
+        The path to the log file, overwritten if it exists.
+    extra_loggers : Iterable[logging.Logger], optional
+        Other loggers whose messages are written to the same file, through the same handler.
+        Loggers obtained from ``get_logger`` do not propagate to their parents, so a module
+        that logs through its own logger must be listed here for its messages to reach the file.
+
+    Yields
+    ------
+    logging.Handler
+        The file handler.
+    """
 
     handler = add_log_fh(logger, logfile)
+    extra_loggers = list(extra_loggers)
+    for extra_logger in extra_loggers:
+        extra_logger.addHandler(handler)
     try:
         yield handler
     finally:
+        for extra_logger in extra_loggers:
+            extra_logger.removeHandler(handler)
         remove_log_fh(logger, logfile)

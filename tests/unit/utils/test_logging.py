@@ -43,6 +43,24 @@ def test_log_to_file_context_manager():
     os.remove(logfile)
 
 
+def test_log_to_file_extra_loggers(tmp_path):
+    """Messages of the extra loggers go to the same file, and their handler is removed on exit."""
+    logger = get_logger("test_logger_main")
+    extra_logger = get_logger("test_logger_extra")
+    logfile = tmp_path / "test_extra.log"
+
+    with log_to_file(logger, str(logfile), extra_loggers=[extra_logger]) as handler:
+        logger.info("main message")
+        extra_logger.info("extra message")
+        assert handler in extra_logger.handlers
+
+    assert handler not in extra_logger.handlers
+    assert all(not isinstance(h, logging.FileHandler) for h in logger.handlers)
+    content = logfile.read_text(encoding="utf-8")
+    assert "main message" in content
+    assert "extra message" in content
+
+
 def test_add_log_fh_append_mode():
     logger = get_logger("test_logger_append")
     logfile = "test_append.log"

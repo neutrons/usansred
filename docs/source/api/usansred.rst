@@ -56,6 +56,14 @@ usansred.reduce\_USANS
    :undoc-members:
    :show-inheritance:
 
+usansred.stitch
+---------------
+
+.. automodule:: usansred.stitch
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 usansred.summary
 ----------------
 

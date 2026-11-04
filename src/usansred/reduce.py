@@ -17,6 +17,7 @@ from usansred.enums import MeasurementType
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.stitch import apply_stitch, interpolate_error, stitch_profiles
+from usansred.stitch import logger as stitch_logger
 from usansred.summary import generate_report
 from usansred.utils.logging import get_logger, log_to_file, set_log_config
 
@@ -54,6 +55,40 @@ def horizontal_rocking_width(order: int) -> float:
     """
     assert order > 0, "Order must be positive"
     return 5.34 * math.exp(-0.01793 * order**2) / order**2
+
+
+def unscattered_beam_q_cutoff(wavelength: float, num_sigmas: float = 3.0) -> float:
+    r"""Momentum transfer above which the peak of the unscattered beam has decayed, in ``1/angstrom``.
+
+    At low Q, the profile of each harmonic is dominated by the rocking curve of the unscattered
+    beam, whose shape is set by the instrument resolution and differs from harmonic to harmonic.
+    Stitching therefore excludes this peak from the fit of the scale factors (see
+    ``usansred.stitch.stitch_profiles``). The low-Q end of the stitched profile is always
+    harmonic 1, so the cutoff is ``num_sigmas`` standard deviations of the harmonic-1 resolution:
+
+    .. math::
+
+        Q_{cut} = k \, \sigma_1 \, \frac{2 \pi}{\lambda_1}, \qquad
+        \sigma_1 = \frac{\mathrm{FWHM}_1}{2 \sqrt{2 \ln 2}}
+
+    with :math:`\mathrm{FWHM}_1` from ``horizontal_rocking_width(1)`` converted from arcsec to
+    radians. For :math:`\lambda_1 = 3.6` angstrom and :math:`k = 3`, :math:`Q_{cut} = 5.65 \times
+    10^{-5}` ``1/angstrom``, where a Gaussian peak has fallen to about 1 % of its maximum.
+
+    Parameters
+    ----------
+    wavelength : float
+        Primary wavelength, in ``angstrom``.
+    num_sigmas : float
+        Number of standard deviations of the harmonic-1 resolution.
+
+    Returns
+    -------
+    float
+        The cutoff, in ``1/angstrom``.
+    """
+    sigma = horizontal_rocking_width(1) * ARCSEC_TO_RADIANS / (2.0 * math.sqrt(2.0 * math.log(2.0)))
+    return num_sigmas * sigma * 2.0 * math.pi / wavelength
 
 
 class Scan(BaseModel):
@@ -554,9 +589,10 @@ class Sample(BaseModel):
 
         The scaled harmonics are stitched with ``usansred.stitch.stitch_profiles``: harmonic 1 is
         the fixed reference, and each higher harmonic is scaled onto the profile stitched so far,
-        over the Q range where the two overlap. The background-subtracted harmonics, if a
-        subtraction occurred, are stitched with the same scale factors, zero-count masks, and
-        overlaps (``usansred.stitch.apply_stitch``).
+        over the Q range where the two overlap above the peak of the unscattered beam
+        (``unscattered_beam_q_cutoff``). The background-subtracted harmonics, if a subtraction
+        occurred, are stitched with the same scale factors, zero-count masks, and fit ranges
+        (``usansred.stitch.apply_stitch``).
 
         A stitched profile is kept only when at least harmonics 1 and 2 were joined; otherwise it
         is left empty and no stitched file is written. Stitching never halts the reduction:
@@ -576,7 +612,8 @@ class Sample(BaseModel):
             return
 
         try:
-            result = stitch_profiles(self.data_scaled, label=self.label)
+            q_fit_min = unscattered_beam_q_cutoff(self.experiment.prim_wave)
+            result = stitch_profiles(self.data_scaled, label=self.label, q_fit_min=q_fit_min)
             if len(result.joined_orders) < 2:
                 logger.warning(
                     f"Orders 1 and 2 of {self.label} could not be stitched; no stitched profile is produced."
@@ -1231,7 +1268,7 @@ class Experiment(BaseModel):
                 )
             else:  # reduce the empty cell if no background is present
                 log_fn = Path(self.output_dir) / f"reduction_{self.empty_cell.name}.log"
-                with log_to_file(logger, log_fn):
+                with log_to_file(logger, log_fn, extra_loggers=[stitch_logger]):
                     try:
                         self.empty_cell.reduce()
                     except Exception as e:  # noqa BLE001
@@ -1243,7 +1280,7 @@ class Experiment(BaseModel):
 
         if self.background:
             log_fn = Path(self.output_dir) / f"reduction_{self.background.name}.log"
-            with log_to_file(logger, log_fn):
+            with log_to_file(logger, log_fn, extra_loggers=[stitch_logger]):
                 try:
                     self.background.reduce()
                 except Exception as e:  # noqa BLE001
@@ -1254,7 +1291,7 @@ class Experiment(BaseModel):
 
         for sample in self.samples:
             log_fn = Path(self.output_dir) / f"reduction_{sample.name}.log"
-            with log_to_file(logger, log_fn):
+            with log_to_file(logger, log_fn, extra_loggers=[stitch_logger]):
                 try:
                     sample.reduce()
                 except Exception as e:  # noqa BLE001

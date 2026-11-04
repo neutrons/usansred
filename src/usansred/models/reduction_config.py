@@ -107,7 +107,8 @@ class ReductionConfig(BaseModel):
         "If omitted, transmission correction and empty-cell subtraction will be skipped.",
     )
     save_all_harmonics: bool = Field(
-        default=False, description="Save individual harmonic output files in addition to the combined result."
+        default=False,
+        description="Save output files for every harmonic, and the profiles with all harmonics stitched together.",
     )
 
     @model_validator(mode="before")
