@@ -5,6 +5,7 @@ import logging
 import numpy as np
 import pytest
 
+import usansred.stitch
 from usansred.models import IQData
 from usansred.stitch import (
     StitchError,
@@ -154,6 +155,43 @@ class TestScaleFactor:
         weight_ref = 1.0 / e_ref**2
         s_ref_only = np.sum(weight_ref * i_ref * i_n) / np.sum(weight_ref * i_n**2)
         assert s != pytest.approx(s_ref_only, rel=1e-6)
+
+    def test_oscillating_iteration_falls_back_to_brent(self, caplog, monkeypatch):
+        """When the fixed-point iteration oscillates, Brent's method finds the self-consistent solution.
+
+        For these inputs f'(s) is about -1.5 at the solution s = 20.3005, so the iteration
+        alternates between about 2 and 95 instead of converging.
+        """
+        i_ref, e_ref = np.array([1.0, 100.0]), np.array([10.0, 1.0])
+        i_n, e_n = np.array([1.0, 1.0]), np.array([0.01, 1.0])
+        monkeypatch.setattr(usansred.stitch.logger, "propagate", True)
+
+        with caplog.at_level(logging.INFO):
+            s = scale_factor(i_ref, e_ref, i_n, e_n)
+
+        weight = 1.0 / (e_ref**2 + s**2 * e_n**2)
+        assert s == pytest.approx(np.sum(weight * i_ref * i_n) / np.sum(weight * i_n**2), rel=1e-9)
+        assert s == pytest.approx(20.3005, rel=1e-5)
+        assert "solved with Brent's method instead" in caplog.text
+
+    def test_fallback_matches_converged_iteration(self):
+        """Brent's method, forced by a zero iteration limit, gives the same factor as a converged iteration."""
+        rng = np.random.default_rng(42)
+        i_ref = np.linspace(10.0, 2.0, 20)
+        i_n = i_ref / 3.0 * (1 + 0.1 * rng.standard_normal(20))
+        e_ref, e_n = 0.05 * i_ref, 0.2 * np.abs(i_n)
+
+        s_iteration = scale_factor(i_ref, e_ref, i_n, e_n)
+        s_brent = scale_factor(i_ref, e_ref, i_n, e_n, max_iterations=0)
+
+        assert s_brent == pytest.approx(s_iteration, rel=1e-9)
+
+    def test_fallback_without_positive_bracket_raises(self):
+        """Without convergence, intensity ratios of mixed sign cannot bracket a positive solution."""
+        i_ref = np.array([4.0, 6.0])
+
+        with pytest.raises(StitchError, match="do not bracket a positive solution"):
+            scale_factor(i_ref, 0.1 * i_ref, np.array([1.0, -1.0]), np.full(2, 0.1), max_iterations=0)
 
     def test_negative_scale_raises(self):
         """A profile of opposite sign to the reference gives a negative scale factor, which is invalid."""

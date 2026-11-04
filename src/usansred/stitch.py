@@ -20,6 +20,7 @@ import logging
 from dataclasses import dataclass, field
 
 import numpy as np
+from scipy.optimize import brentq
 
 from usansred.models import IQData
 from usansred.utils.logging import get_logger
@@ -261,9 +262,18 @@ def scale_factor(
     variance of the scaled profile enters because higher orders are usually noisier than the
     reference; leaving it out would give the noisiest points too much weight.
 
-    Since :math:`\sigma_k^2` depends on :math:`s`, the equation is solved by fixed-point
-    iteration starting from :math:`s = 1`, until the relative change of :math:`s` falls
-    below ``rtol``. The result is the self-consistent solution of the equation above. It is
+    Since :math:`\sigma_k^2` depends on :math:`s`, the equation has the form :math:`s = f(s)`.
+    It is first solved by fixed-point iteration starting from :math:`s = 1`, until the relative
+    change of :math:`s` falls below ``rtol``. The iteration converges only where
+    :math:`|f'(s)| < 1` at the solution; otherwise it oscillates around the solution without
+    approaching it. If it has not converged after ``max_iterations`` iterations, the root of
+    :math:`g(s) = f(s) - s` is found with Brent's method instead. Because :math:`f(s)` is a
+    weighted mean of the ratios :math:`r_k = I_{\mathrm{ref},k} / I_{n,k}` with non-negative
+    weights :math:`I_{n,k}^2 / \sigma_k^2`, it lies between :math:`\min_k r_k` and
+    :math:`\max_k r_k` for every :math:`s`. Hence :math:`g(\min_k r_k) \ge 0 \ge g(\max_k r_k)`,
+    and these two ratios bracket a root, which Brent's method is guaranteed to find.
+
+    The result is the self-consistent solution of the equation above. It is
     close to, but not identical with, the minimizer of
     :math:`\sum_k (I_{\mathrm{ref},k} - s\, I_{n,k})^2 / \sigma_k^2`, whose derivative has an
     extra term from the dependence of :math:`\sigma_k^2` on :math:`s`.
@@ -279,9 +289,10 @@ def scale_factor(
     e_n : np.ndarray
         Uncertainties of the profile to be scaled, interpolated onto the reference points.
     rtol : float
-        Relative tolerance on the change of the scale factor between iterations.
+        Relative tolerance on the scale factor, for the fixed-point iteration and for Brent's
+        method.
     max_iterations : int
-        Maximum number of fixed-point iterations.
+        Maximum number of fixed-point iterations before falling back to Brent's method.
 
     Returns
     -------
@@ -291,19 +302,27 @@ def scale_factor(
     Raises
     ------
     StitchError
-        If some point has zero uncertainty in both profiles, or if the scale factor is zero,
-        negative, or not finite.
+        If some point has zero uncertainty in both profiles, if the scale factor is zero,
+        negative, or not finite, or if the iteration does not converge and no positive
+        solution can be bracketed.
     """
     var_ref = np.asarray(e_ref, dtype=float) ** 2
     var_n = np.asarray(e_n, dtype=float) ** 2
     if np.any((var_ref <= 0) & (var_n <= 0)):
         raise StitchError("some points in the overlap have zero uncertainty in both profiles")
 
-    s = 1.0
-    for _ in range(max_iterations):
+    i_ref = np.asarray(i_ref, dtype=float)
+    i_n = np.asarray(i_n, dtype=float)
+
+    def update(s: float) -> float:
+        """Right-hand side f(s) of the equation s = f(s)."""
         with np.errstate(divide="ignore", invalid="ignore"):
             weight = 1.0 / (var_ref + s**2 * var_n)
-            s_new = float(np.sum(weight * i_ref * i_n) / np.sum(weight * i_n**2))
+            return float(np.sum(weight * i_ref * i_n) / np.sum(weight * i_n**2))
+
+    s = 1.0
+    for _ in range(max_iterations):
+        s_new = update(s)
         if not np.isfinite(s_new) or s_new <= 0:
             raise StitchError(f"invalid scale factor {s_new}")
         converged = abs(s_new - s) <= rtol * abs(s_new)
@@ -311,7 +330,26 @@ def scale_factor(
         if converged:
             return s
 
-    logger.warning(f"Scale factor did not converge in {max_iterations} iterations; using s = {s:.6g}.")
+    # The iteration oscillates; bracket the root of g(s) = f(s) - s by the extreme ratios
+    # I_ref / I_n, between which f(s) always lies, and solve with Brent's method
+    nonzero = i_n != 0
+    ratios = i_ref[nonzero] / i_n[nonzero]
+    s_low, s_high = float(np.min(ratios)), float(np.max(ratios))
+    if not s_low > 0:
+        raise StitchError(
+            f"scale factor did not converge in {max_iterations} iterations, and the intensity ratios "
+            f"[{s_low:.6g}, {s_high:.6g}] do not bracket a positive solution"
+        )
+    try:
+        s = float(brentq(lambda x: update(x) - x, s_low, s_high, xtol=rtol * s_low, rtol=rtol))
+    except (ValueError, RuntimeError) as error:
+        raise StitchError(f"scale factor did not converge: {error}") from error
+    if not np.isfinite(s) or s <= 0:
+        raise StitchError(f"invalid scale factor {s}")
+    logger.info(
+        f"Scale factor iteration did not converge in {max_iterations} iterations; "
+        f"solved with Brent's method instead, s = {s:.6g}."
+    )
     return s
 
 

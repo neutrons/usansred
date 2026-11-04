@@ -91,7 +91,10 @@ so far, the *reference profile*, in the following steps.
    their uncertainty out would give the noisiest points too much weight. Since
    :math:`\sigma_k^2` depends on :math:`s`, the equation is solved iteratively, starting from
    :math:`s = 1` and substituting each new value of :math:`s` into :math:`\sigma_k^2`, until
-   :math:`s` changes by less than one part in :math:`10^{10}`.
+   :math:`s` changes by less than one part in :math:`10^{10}`. For some data the iteration does
+   not settle but oscillates around the solution. If it has not converged after 100 iterations,
+   the equation is solved with Brent's method instead, searching between the smallest and the
+   largest ratio :math:`I^{ref}_k / I_{n,k}`, which always enclose the solution.
 
    Harmonic 1 has :math:`s = 1`. The scale factors of the higher harmonics are usually larger
    than 1, because the higher harmonics are weaker.
