@@ -37,7 +37,8 @@ def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
     """Derive a valid Excel worksheet name from the name of a reduced data file.
 
     1. The ``.txt`` extension and the ``UN_`` prefix are removed.
-    2. Characters that Excel does not allow in worksheet names are replaced by ``_``.
+    2. Characters that Excel does not allow in worksheet names are replaced by ``_``, as is an
+       apostrophe at the start or end of the name.
     3. While the name is longer than 31 characters, the substitutions of
        ``SHEET_NAME_SHORTENING_RULES`` are applied in order, one at a time: ``background`` to
        ``bkgr``, ``stitched`` to ``stitch``, ``_det`` dropped, and ``subtracted`` to ``sub``.
@@ -67,6 +68,11 @@ def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
     name = filename.removesuffix(".txt").removeprefix("UN_")
     for character in INVALID_SHEET_NAME_CHARACTERS:
         name = name.replace(character, "_")
+    # Excel does not allow a worksheet name to start or end with an apostrophe
+    if name.startswith("'"):
+        name = "_" + name[1:]
+    if name.endswith("'"):
+        name = name[:-1] + "_"
 
     start = name.rfind("_det_")
     if start >= 0:
@@ -283,7 +289,9 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
         chart.add_series(series)
 
         # Add data series to the main chartsheets
-        if "background_subtracted" in file:
+        # Match the file-name suffixes, not a substring, since the measurement name itself
+        # may contain "background_subtracted"
+        if file.endswith(("_background_subtracted.txt", "_background_subtracted_stitched.txt")):
             main_chart_subtracted.add_series(dict(series))
         elif file.endswith("unscaled.txt"):
             main_chart_unscaled.add_series(dict(series))

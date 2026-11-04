@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import zipfile
@@ -38,6 +39,11 @@ def reset_sheet_name_suffix(monkeypatch):
         ("UN_A2_56C_3hr_det_background_subtracted_stitched.txt", "A2_56C_3hr_bkgr_sub_stitch"),
         # Invalid characters are replaced
         ("UN_example[1]_det_1.txt", "example_1__det_1"),
+        # A leading or trailing apostrophe, exposed by removing UN_ and .txt, is replaced
+        ("UN_'S1_det_1.txt", "_S1_det_1"),
+        ("S1'", "S1_"),
+        # An apostrophe inside the name is allowed
+        ("UN_S1's_det_1.txt", "S1's_det_1"),
         # Names without the UN_ prefix or the .txt extension are accepted
         ("normal_filename", "normal_filename"),
     ],
@@ -271,3 +277,47 @@ def test_generate_report_without_stitched_profiles(tmp_path, caplog, monkeypatch
     assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "S1_det_1"]
     assert "Sample UN_S1_det_stitched.txt file path does not exist!" in caplog.messages
     assert "Sample UN_S1_det_background_subtracted_stitched.txt file path does not exist!" in caplog.messages
+
+
+def test_generate_report_with_apostrophe_at_start_of_measurement_name(tmp_path):
+    """A measurement name starting with an apostrophe still yields a valid workbook."""
+    config = tmp_path / "setup.csv"
+    config.write_text("b/s,name,start_scan,num_scans,thickness\ns,'S1,1,1,1.0\n")
+    output_dir = tmp_path / "reduced"
+    output_dir.mkdir()
+    _write_profile(output_dir / "UN_'S1_det_1.txt", 10)
+
+    generate_report(str(config), output_dir=str(output_dir))
+
+    sheet_names = re.findall(r'<sheet name="([^"]*)"', _workbook_xml(output_dir / "summary.xlsx")["xl/workbook.xml"])
+    assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "_S1_det_1"]
+
+
+def test_generate_report_classifies_files_by_suffix(tmp_path):
+    """Files go to the summary charts by their file-name suffix, not by the measurement name.
+
+    The measurement name contains ``background_subtracted``, so only the two files that end
+    in a background-subtracted suffix may go to the "Background Subtracted" chart.
+    """
+    name = "x_background_subtracted"
+    config = tmp_path / "setup.json"
+    sample = {"name": name, "start_scan_num": 1, "num_of_scans": 1, "thickness": 0.1}
+    config.write_text(json.dumps({"samples": [sample]}))
+    output_dir = tmp_path / "reduced"
+    output_dir.mkdir()
+    for filename in get_filenames_from_samples(name):
+        _write_profile(output_dir / filename, 10)
+
+    generate_report(str(config), output_dir=str(output_dir))
+
+    parts = _workbook_xml(output_dir / "summary.xlsx")
+
+    def series_names(title: str) -> list[str]:
+        return re.findall(r"<c:tx><c:v>([^<]*)</c:v>", _chart_with_title(parts, title))
+
+    assert series_names("Unscaled Data") == [f"UN_{name}_det_1_unscaled"]
+    assert sorted(series_names("Original Data")) == [f"UN_{name}_det_1", f"UN_{name}_det_stitched"]
+    assert sorted(series_names("Background Subtracted")) == [
+        f"UN_{name}_det_1_background_subtracted",
+        f"UN_{name}_det_background_subtracted_stitched",
+    ]
