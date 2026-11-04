@@ -63,8 +63,12 @@ def read_profile(path: Path) -> tuple[list[float], list[float]]:
     return q, i
 
 
-def stitching_outcome(log_file: Path, name: str) -> tuple[dict[int, float], str]:
-    """Extract the scale factors and the reason stitching stopped from a reduction log.
+def stitching_outcome(log_file: Path, name: str) -> tuple[dict[int, float], int | None]:
+    """Extract the scale factors and the harmonic that could not be joined from a reduction log.
+
+    Only the stitch of the scaled harmonics is considered: messages about the
+    background-subtracted stitch name the measurement ``background-subtracted sample <name>``
+    and do not match.
 
     Parameters
     ----------
@@ -75,16 +79,26 @@ def stitching_outcome(log_file: Path, name: str) -> tuple[dict[int, float], str]
 
     Returns
     -------
-    tuple[dict[int, float], str]
-        Scale factor of each joined harmonic, and the reason the next harmonic was not joined
-        (empty when all harmonics were joined).
+    tuple[dict[int, float], int | None]
+        Scale factor of each joined harmonic, and the harmonic whose join failed and stopped the
+        stitching (None when all harmonics were joined).
+
+    Raises
+    ------
+    RuntimeError
+        If the log does not report the stitched orders, e.g. because stitching raised an
+        unexpected exception or harmonic 1 has no valid points.
     """
     text = log_file.read_text()
-    match = re.search(rf"Stitched orders \[([\d, ]+)\] of sample {name} with scale factors \[([^\]]+)\]", text)
+    label = re.escape(f"sample {name}")
+    match = re.search(rf"Stitched orders \[([\d, ]+)\] of {label} with scale factors \[([^\]]+)\]", text)
+    if match is None:
+        raise RuntimeError(f"{log_file} does not report the stitched orders of sample {name}.")
     orders = [int(order) for order in match.group(1).split(",")]
     factors = [float(factor) for factor in match.group(2).split(",")]
-    stop = re.search(rf"Cannot join order \d+ onto the stitched profile of sample {name}: (.*?) \(", text)
-    return dict(zip(orders, factors)), (stop.group(1) if stop else "")
+    # Every failed join is reported with this prefix, whatever the reason; only the order is needed
+    stop = re.search(rf"Cannot join order (\d+) onto the stitched profile of {label}: ", text)
+    return dict(zip(orders, factors)), (int(stop.group(1)) if stop else None)
 
 
 def plot_sample(output_dir: Path, name: str) -> Path:
@@ -105,7 +119,7 @@ def plot_sample(output_dir: Path, name: str) -> Path:
     Path
         The written figure.
     """
-    scale_factors, stop_reason = stitching_outcome(output_dir / f"reduction_{name}.log", name)
+    scale_factors, failed_harmonic = stitching_outcome(output_dir / f"reduction_{name}.log", name)
     q_stitched, i_stitched = read_profile(output_dir / f"UN_{name}_det_stitched.txt")
 
     figure, axis = plt.subplots(figsize=(7.0, 4.8), layout="constrained")
@@ -113,7 +127,7 @@ def plot_sample(output_dir: Path, name: str) -> Path:
         q, i = read_profile(output_dir / f"UN_{name}_det_{harmonic}.txt")
         if harmonic in scale_factors:
             status = "reference" if harmonic == 1 else f"joined, s = {scale_factors[harmonic]:.3g}"
-        elif harmonic == len(scale_factors) + 1 and stop_reason:
+        elif harmonic == failed_harmonic:
             status = "not joined"
         else:
             status = "not attempted"
