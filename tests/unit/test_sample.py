@@ -1218,6 +1218,31 @@ class TestStitchOrders:
 
         stitch_orders.assert_not_called()
 
+    @pytest.mark.parametrize(
+        ("measurement_type", "stitched"),
+        [(MeasurementType.SAMPLE, True), (MeasurementType.BACKGROUND, True), (MeasurementType.EMPTY_CELL, False)],
+    )
+    def test_reduce_does_not_stitch_empty_cell(self, mock_experiment_2banks, measurement_type, stitched):
+        """With save_all_harmonics, Sample.reduce stitches samples and the background, not the empty cell.
+
+        No output file is written for the empty cell, so its stitched profile would be discarded.
+        """
+        mock_experiment_2banks._config.save_all_harmonics = True
+        measurement = _make_sample(mock_experiment_2banks, "test", [])
+        measurement.measurement_type = measurement_type
+
+        with (
+            patch.object(Sample, "normalize_by_monitor", autospec=True, return_value=None),
+            patch.object(Sample, "stitch_scans", autospec=True, return_value=None),
+            patch.object(Sample, "rocking_curve_centering", autospec=True, return_value=None),
+            patch.object(Sample, "rescale_data", autospec=True, return_value=None),
+            patch.object(Sample, "subtract_background", autospec=True, return_value=None),
+            patch.object(Sample, "stitch_orders", autospec=True) as stitch_orders,
+        ):
+            measurement.reduce()
+
+        assert stitch_orders.called is stitched
+
     def test_writes_stitched_files(self, mock_experiment_2banks, tmp_path):
         """With save_all_harmonics, both stitched files are written and hold the stitched profiles."""
         sample = self._sample(mock_experiment_2banks, tmp_path)

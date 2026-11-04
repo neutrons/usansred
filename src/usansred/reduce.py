@@ -604,8 +604,9 @@ class Sample(BaseModel):
         harmonic, center the curves on the analyzer motor angle of the unscattered beam, and
         rescale to momentum transfer in ``1/angstrom``. For samples, the background (or, in its
         absence, the empty cell) is then subtracted from every harmonic. With
-        ``save_all_harmonics``, the harmonics are finally stitched into one profile (see
-        ``stitch_orders``).
+        ``save_all_harmonics``, the harmonics of samples and of the background are finally
+        stitched into one profile (see ``stitch_orders``). The empty cell is not stitched: no
+        output file is written for it, and only its per-harmonic data are used, for subtraction.
         """
         logger.info(f"Starting reduction for {self.label} with {len(self.scans)} scans.")
         logger.info(f"Transmission coefficient for {self.label}: {self.transmission:.4f}")
@@ -624,8 +625,9 @@ class Sample(BaseModel):
             elif self.experiment.empty_cell:
                 self.subtract_background(self.experiment.empty_cell)
 
-        # Stitching comes last, since it needs the background-subtracted data of every harmonic
-        if self.config.save_all_harmonics:
+        # Stitching comes last, since it needs the background-subtracted data of every harmonic.
+        # The stitched profile of the empty cell would never be written nor used.
+        if self.config.save_all_harmonics and self.measurement_type != MeasurementType.EMPTY_CELL:
             self.stitch_orders()
 
         logger.info(f"Data reduction finished for {self.label}.")
