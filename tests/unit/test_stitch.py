@@ -500,18 +500,49 @@ class TestApplyStitch:
         assert Q2[5] not in stitched.q
         assert len(stitched.q) == len(result.profile.q)
 
-    def test_mismatched_profile_stops(self, caplog):
-        """A background-subtracted order whose points do not match its mask stops the stitch with an error."""
+    def test_missing_order_stops_with_warning(self, caplog):
+        """A background-subtracted order with no data stops the stitch with a warning.
+
+        This is the expected outcome when the background has no data for that order.
+        """
         scaled = [make_profile(Q1), make_profile(Q2, scale=2.5)]
         result = stitch_profiles(scaled)
         subtracted = [scaled[0], IQData()]
 
-        with caplog.at_level(logging.ERROR):
+        with caplog.at_level(logging.WARNING):
             applied = apply_stitch(subtracted, result, label="sample S1")
 
         assert applied.profile.q == Q1.tolist()
         assert applied.joined_orders == [1]
-        assert "Cannot join order 2 onto the stitched profile of sample S1" in caplog.text
+        [record] = [r for r in caplog.records if "Cannot join" in r.getMessage()]
+        assert record.levelno == logging.WARNING
+        assert "Cannot join order 2 onto the stitched profile of sample S1: order 2 has no data." in record.getMessage()
+
+    def test_order_missing_from_profiles_stops_with_warning(self, caplog):
+        """An order beyond the end of the given profiles is treated as an order with no data."""
+        scaled = [make_profile(Q1), make_profile(Q2, scale=2.5)]
+        result = stitch_profiles(scaled)
+
+        with caplog.at_level(logging.WARNING):
+            applied = apply_stitch([scaled[0]], result, label="sample S1")
+
+        assert applied.joined_orders == [1]
+        [record] = [r for r in caplog.records if "Cannot join" in r.getMessage()]
+        assert record.levelno == logging.WARNING
+
+    def test_mismatched_profile_stops_with_error(self, caplog):
+        """A background-subtracted order whose points do not match its mask stops the stitch with an error."""
+        scaled = [make_profile(Q1), make_profile(Q2, scale=2.5)]
+        result = stitch_profiles(scaled)
+        subtracted = [scaled[0], make_profile(Q2[:-1], scale=2.5)]
+
+        with caplog.at_level(logging.WARNING):
+            applied = apply_stitch(subtracted, result, label="sample S1")
+
+        assert applied.joined_orders == [1]
+        [record] = [r for r in caplog.records if "Cannot join" in r.getMessage()]
+        assert record.levelno == logging.ERROR
+        assert f"order 2 has {len(Q2) - 1} points, but its scaled profile has {len(Q2)} points" in record.getMessage()
 
     def test_empty_result_gives_empty_profile(self):
         """When the scaled profiles could not be stitched, the background-subtracted result is empty."""

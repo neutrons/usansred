@@ -26,6 +26,7 @@ from usansred.models import IQData
 from usansred.utils.logging import get_logger
 
 __all__ = [
+    "MissingOrderError",
     "QRangeNotExtendedError",
     "StitchError",
     "StitchResult",
@@ -60,6 +61,16 @@ class QRangeNotExtendedError(StitchError):
     Higher orders are often too weak to carry counts at high Q, so this is an expected outcome
     rather than a fault in the data, and it is logged as a warning (except for order 2, see
     ``stitch_profiles``).
+    """
+
+    log_level: int = logging.WARNING
+
+
+class MissingOrderError(StitchError):
+    """Raised by ``apply_stitch`` when an order to be stitched has no data.
+
+    This is the expected outcome when the background has no data for an order that the sample
+    has, so it is logged as a warning.
     """
 
     log_level: int = logging.WARNING
@@ -628,6 +639,11 @@ def apply_stitch(profiles: list[IQData], result: StitchResult, label: str = "pro
     Q points. The zero-count mask of the scaled profile is applied, since a background-subtracted
     intensity can be zero or negative without being a zero-count point.
 
+    The stitch stops at the first order whose profile does not match its mask. An order with no
+    points is logged as a warning: it is the expected outcome when the background has no data for
+    that order, and ``Sample.subtract_background`` leaves an empty placeholder. Any other mismatch
+    is an inconsistency and is logged as an error.
+
     Parameters
     ----------
     profiles : list[IQData]
@@ -650,10 +666,12 @@ def apply_stitch(profiles: list[IQData], result: StitchResult, label: str = "pro
         profile = profiles[order - 1] if order <= len(profiles) else IQData()
         try:
             q, i, e = _as_arrays(profile, order)
+            if len(q) == 0:
+                raise MissingOrderError(f"order {order} has no data")
             if len(q) != len(mask):
                 raise StitchError(f"order {order} has {len(q)} points, but its scaled profile has {len(mask)} points")
         except StitchError as err:
-            logger.error(_stop_message(label, order, err, applied.joined_orders, len(profiles)))
+            logger.log(err.log_level, _stop_message(label, order, err, applied.joined_orders, len(profiles)))
             break
         scaled = IQData(q=q[mask].tolist(), i=(s * i[mask]).tolist(), e=(s * e[mask]).tolist(), t=[])
         if k == 0:

@@ -1077,6 +1077,45 @@ class TestStitchOrders:
         assert np.all(np.diff(q) >= 0)
         np.testing.assert_allclose(sample.data_stitched.i, 10.0 - 2000.0 * q, rtol=1e-9)
 
+    def test_background_subtracted_stitch_records_its_orders(self, mock_experiment_2banks, tmp_path):
+        """With background-subtracted data for every harmonic, both stitched profiles hold the same orders."""
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+
+        sample.stitch_orders()
+
+        assert sample.stitched_orders == [1, 2]
+        assert sample.bg_subtracted_stitched_orders == [1, 2]
+
+    def test_background_subtracted_stitch_stops_at_missing_background_harmonic(
+        self, mock_experiment_2banks, tmp_path, caplog, monkeypatch
+    ):
+        """A harmonic missing from the background stops the background-subtracted stitch only, with a warning.
+
+        ``Sample.subtract_background`` leaves an empty placeholder for a harmonic that the
+        background lacks. The stitch of the scaled data still holds harmonics 1 to 3, while the
+        background-subtracted one holds harmonics 1 and 2, and the log says which stitch stopped.
+        """
+        q3 = np.linspace(3.0e-5, 3.0e-3, 15)
+        scale3 = 4.0
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+        sample.data_scaled.append(self._profile(q3, scale=scale3))
+        sample.data_bg_subtracted.append(IQData())  # placeholder for the missing background harmonic
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
+        caplog.set_level(logging.INFO)
+
+        sample.stitch_orders()
+
+        assert sample.stitched_orders == [1, 2, 3]
+        assert sample.stitch_scale_factors == pytest.approx([1.0, self.SCALE, scale3], rel=1e-9)
+        assert sample.bg_subtracted_stitched_orders == [1, 2]
+        assert sample.data_bg_subtracted_stitched.q  # the profile of orders 1 and 2 is kept
+        [record] = [r for r in caplog.records if "Cannot join" in r.getMessage()]
+        assert record.levelno == logging.WARNING
+        assert record.getMessage().startswith(
+            "Cannot join order 3 onto the stitched profile of background-subtracted sample test: order 3 has no data."
+        )
+        assert "Stitched background-subtracted orders [1, 2] of sample test." in caplog.messages
+
     def test_unscattered_beam_q_cutoff(self):
         """The cutoff is 3 sigma of the harmonic-1 resolution, converted to Q, i.e. 5.65e-5 1/angstrom at 3.6 angstrom.
 

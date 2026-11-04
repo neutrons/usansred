@@ -269,7 +269,13 @@ class Sample(BaseModel):
         description="Background subtracted data of all harmonics stitched into one profile",
     )
     stitched_orders: list[int] = Field(
-        default_factory=list, init=False, description="Harmonics included in the stitched profiles"
+        default_factory=list, init=False, description="Harmonics included in the stitched profile data_stitched"
+    )
+    bg_subtracted_stitched_orders: list[int] = Field(
+        default_factory=list,
+        init=False,
+        description="Harmonics included in the stitched profile data_bg_subtracted_stitched, a leading "
+        "subset of stitched_orders",
     )
     stitch_scale_factors: list[float] = Field(
         default_factory=list, init=False, description="Scale factor applied to each harmonic in stitched_orders"
@@ -331,6 +337,7 @@ class Sample(BaseModel):
         self.data_stitched = IQData()
         self.data_bg_subtracted_stitched = IQData()
         self.stitched_orders = []
+        self.bg_subtracted_stitched_orders = []
         self.stitch_scale_factors = []
 
     @property
@@ -641,19 +648,23 @@ class Sample(BaseModel):
         over the Q range where the two overlap above the peak of the unscattered beam
         (``unscattered_beam_q_cutoff``). The background-subtracted harmonics, if a subtraction
         occurred, are stitched with the same scale factors, zero-count masks, and fit ranges
-        (``usansred.stitch.apply_stitch``).
+        (``usansred.stitch.apply_stitch``). That stitch stops early, and so holds fewer
+        harmonics, when the background (or empty cell) has no data for a harmonic that the sample
+        has.
 
         A stitched profile is kept only when at least harmonics 1 and 2 were joined; otherwise it
         is left empty and no stitched file is written. Stitching never halts the reduction:
         failed joins are logged by ``usansred.stitch``, and any unexpected exception is logged
         here and leaves the stitched profiles empty.
 
-        Results are stored in ``data_stitched``, ``data_bg_subtracted_stitched``,
-        ``stitched_orders``, and ``stitch_scale_factors``.
+        Results are stored in ``data_stitched`` and ``data_bg_subtracted_stitched``, with the
+        harmonics they include in ``stitched_orders`` and ``bg_subtracted_stitched_orders``, and
+        the scale factor of each harmonic of ``stitched_orders`` in ``stitch_scale_factors``.
         """
         self.data_stitched = IQData()
         self.data_bg_subtracted_stitched = IQData()
         self.stitched_orders = []
+        self.bg_subtracted_stitched_orders = []
         self.stitch_scale_factors = []
 
         if not self.data_scaled:
@@ -673,7 +684,7 @@ class Sample(BaseModel):
             self.stitch_scale_factors = result.scale_factors
 
             if self.is_reduced:
-                applied = apply_stitch(self.data_bg_subtracted, result, label=self.label)
+                applied = apply_stitch(self.data_bg_subtracted, result, label=f"background-subtracted {self.label}")
                 if len(applied.joined_orders) < 2:
                     logger.warning(
                         f"Background-subtracted orders 1 and 2 of {self.label} could not be stitched; "
@@ -681,11 +692,14 @@ class Sample(BaseModel):
                     )
                 else:
                     self.data_bg_subtracted_stitched = applied.profile
+                    self.bg_subtracted_stitched_orders = applied.joined_orders
+                    logger.info(f"Stitched background-subtracted orders {applied.joined_orders} of {self.label}.")
         except Exception as e:  # noqa BLE001
             logger.exception(f"Cannot stitch the orders of {self.label}: {e}")
             self.data_stitched = IQData()
             self.data_bg_subtracted_stitched = IQData()
             self.stitched_orders = []
+            self.bg_subtracted_stitched_orders = []
             self.stitch_scale_factors = []
 
     @staticmethod

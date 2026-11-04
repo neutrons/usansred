@@ -144,7 +144,9 @@ remaining harmonics are left out, even those that could be joined. Stitching nev
 reduction, and any failure is logged. If not even harmonics 1 and 2 can be stitched, no stitched
 profile is produced and no stitched file is written. The background-subtracted harmonics are
 stitched up to the same harmonic as the scaled harmonics, unless a background-subtracted
-harmonic is missing.
+harmonic is missing because the background (or empty cell) has no data for it. Their stitch then
+stops at that harmonic, and the stitched background-subtracted profile holds fewer harmonics than
+the stitched scaled profile.
 
 The third condition is the usual reason for stitching to stop. The higher harmonics are often too
 weak to record counts at high Q: their high-Q points have zero counts and are not valid points,
@@ -218,6 +220,17 @@ profile, and those left out:
 A harmonic above 2 that does not extend the profile to higher Q is logged as a warning, since this
 is the usual outcome for weak harmonics. All other failures, and any failure to join harmonic 2,
 are logged as errors. When no stitched profile can be produced, a warning says so.
+
+The stitch of the background-subtracted harmonics is reported separately, with the measurement
+described as ``background-subtracted sample <name>``. A harmonic missing from the background is
+logged as a warning:
+
+.. code-block:: text
+
+   Cannot join order 3 onto the stitched profile of background-subtracted sample S1: order 3 has
+   no data. Stitching stops; the stitched profile contains orders [1, 2], and orders [3, 4] are
+   left out.
+   Stitched background-subtracted orders [1, 2] of sample S1.
 
 Output Files
 ------------
