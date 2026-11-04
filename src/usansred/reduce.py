@@ -530,6 +530,9 @@ class Sample(BaseModel):
     def _dump_stitched(self, data: IQData, suffix: str, description: str) -> None:
         """Write a stitched profile to ``UN_<name>_<suffix>.txt``, or log why it is skipped.
 
+        When the profile is empty, a file of that name left by an earlier reduction into the
+        same output directory is removed, so that the summary report does not include it.
+
         Parameters
         ----------
         data : IQData
@@ -539,10 +542,13 @@ class Sample(BaseModel):
         description : str
             Description of the profile, used in log messages.
         """
+        filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_{suffix}.txt")
         if not data.q:
             logger.info(f"No {description} profile is available for {self.label}; skipping that data dump.")
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+                logger.info(f"Removed {filepath}, left by an earlier reduction.")
             return
-        filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_{suffix}.txt")
         self.dump_data_to_csv(filepath, data)
 
     def normalize_by_monitor(self) -> None:

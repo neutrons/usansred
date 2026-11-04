@@ -1270,6 +1270,27 @@ class TestStitchOrders:
         assert not list(tmp_path.glob("*stitched*"))
         assert (tmp_path / "UN_test_det_2.txt").is_file()
 
+    def test_stale_stitched_files_removed_when_harmonic_2_fails(
+        self, mock_experiment_2banks, tmp_path, caplog, monkeypatch
+    ):
+        """Stitched files of an earlier reduction into the same directory are removed when stitching fails.
+
+        Otherwise the summary report would mix them with the data of the new reduction.
+        """
+        stale = [tmp_path / "UN_test_det_stitched.txt", tmp_path / "UN_test_det_background_subtracted_stitched.txt"]
+        for path in stale:
+            path.write_text("stale\n")
+        sample = self._sample(mock_experiment_2banks, tmp_path)
+        sample.data_scaled[1] = self._profile(self.Q2 + 1.0e-2)
+        sample.stitch_orders()
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
+        caplog.set_level(logging.INFO)
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not any(path.exists() for path in stale)
+        assert f"Removed {stale[0]}, left by an earlier reduction." in caplog.text
+
     def test_no_background_subtracted_stitched_file_when_nothing_subtracted(self, mock_experiment_2banks, tmp_path):
         """Without a background subtraction, only ``UN_<name>_det_stitched.txt`` is written.
 
