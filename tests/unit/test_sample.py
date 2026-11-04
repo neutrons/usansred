@@ -1304,3 +1304,114 @@ class TestStitchOrders:
 
         assert (tmp_path / "UN_test_det_stitched.txt").is_file()
         assert not (tmp_path / "UN_test_det_background_subtracted_stitched.txt").exists()
+
+
+class TestRemoveEarlierOutputFiles:
+    """Tests for removing the output files of an earlier reduction into the same directory.
+
+    Otherwise those files would stay next to the files of the new reduction, and the summary
+    report would include them.
+    """
+
+    @staticmethod
+    def _write_stale(tmp_path, filenames: list[str]) -> list:
+        """Write placeholder files standing in for the output of an earlier reduction."""
+        paths = [tmp_path / filename for filename in filenames]
+        for path in paths:
+            path.write_text("stale\n")
+        return paths
+
+    def test_higher_harmonics_and_stitched_files_removed_without_save_all_harmonics(
+        self, mock_experiment_2banks, tmp_path, caplog, monkeypatch
+    ):
+        """Files written by an earlier reduction with save_all_harmonics are removed without it."""
+        stale = self._write_stale(
+            tmp_path,
+            [
+                "UN_test_det_2.txt",
+                "UN_test_det_2_unscaled.txt",
+                "UN_test_det_2_background_subtracted.txt",
+                "UN_test_det_stitched.txt",
+                "UN_test_det_background_subtracted_stitched.txt",
+            ],
+        )
+        overwritten = self._write_stale(tmp_path, ["UN_test_det_1.txt"])[0]
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
+        caplog.set_level(logging.INFO)
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not any(path.exists() for path in stale)
+        assert overwritten.read_text() != "stale\n"
+        assert sorted(path.name for path in tmp_path.iterdir()) == [
+            "UN_test_det_1.txt",
+            "UN_test_det_1_background_subtracted.txt",
+            "UN_test_det_1_unscaled.txt",
+        ]
+        assert f"Removed {stale[0]}, left by an earlier reduction." in caplog.text
+
+    def test_background_subtracted_files_removed_when_nothing_subtracted(self, mock_experiment_2banks, tmp_path):
+        """Background-subtracted files of an earlier reduction are removed when nothing is subtracted."""
+        stale = self._write_stale(
+            tmp_path,
+            [
+                "UN_test_det_1_background_subtracted.txt",
+                "UN_test_det_2_background_subtracted.txt",
+                "UN_test_det_background_subtracted_stitched.txt",
+            ],
+        )
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, subtracted=False)
+        sample.stitch_orders()
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not any(path.exists() for path in stale)
+        assert (tmp_path / "UN_test_det_stitched.txt").is_file()
+
+    def test_files_of_other_measurements_kept(self, mock_experiment_2banks, tmp_path):
+        """Only the files of the measurement being written are removed."""
+        kept = self._write_stale(
+            tmp_path,
+            [
+                "UN_test2_det_2.txt",
+                "UN_tes_det_2.txt",
+                "UN_test_det_5.txt",
+                "UN_test_det_2_notes.txt",
+                "summary.xlsx",
+            ],
+        )
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+
+        sample.dump_reduced_data_to_csv()
+
+        assert all(path.read_text() == "stale\n" for path in kept)
+
+    def test_only_enabled_categories_removed(self, mock_experiment_2banks, tmp_path):
+        """Files of a category that is not written are neither written nor removed."""
+        stale = self._write_stale(tmp_path, ["UN_test_det_2.txt", "UN_test_det_stitched.txt"])
+        kept = self._write_stale(
+            tmp_path,
+            [
+                "UN_test_det_2_unscaled.txt",
+                "UN_test_det_2_background_subtracted.txt",
+                "UN_test_det_background_subtracted_stitched.txt",
+            ],
+        )
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+
+        sample.dump_reduced_data_to_csv(detector_data=False, background_subtracted_data=False)
+
+        assert not any(path.exists() for path in stale)
+        assert all(path.read_text() == "stale\n" for path in kept)
+
+    def test_files_removed_when_measurement_cannot_be_written(self, mock_experiment_2banks, tmp_path):
+        """A measurement whose first harmonic is missing does not keep the files of an earlier reduction."""
+        stale = self._write_stale(tmp_path, ["UN_test_det_1.txt", "UN_test_det_1_unscaled.txt"])
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path)
+        sample.data_scaled = []
+
+        with pytest.raises(RuntimeError, match="Cannot write scaled data"):
+            sample.dump_reduced_data_to_csv()
+
+        assert not any(path.exists() for path in stale)

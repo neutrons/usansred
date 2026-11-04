@@ -242,6 +242,14 @@ more files (see :ref:`stitching the harmonics <stitching-harmonics>`):
   harmonics, stitched. It is additionally only written when a background or empty cell was
   subtracted.
 
+When a reduction writes into an output directory that already holds reduced data files, it first
+deletes every file listed above (for all four harmonics) of each sample and of the background in
+the setup file, then writes its own files. This prevents files from an earlier reduction, for
+example the higher harmonics of a reduction with ``save_all_harmonics``, from remaining next to the
+new files and appearing in ``summary.xlsx``. Files of measurements that are not in the setup file,
+and files with other names, are left untouched. Do not save edited data under these names in the
+output directory, since the next reduction deletes them.
+
 The Summary Report
 ~~~~~~~~~~~~~~~~~~
 

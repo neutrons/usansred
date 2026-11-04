@@ -7,6 +7,7 @@ import os
 
 import pandas
 
+from usansred.io.filenames import reduced_data_filenames
 from usansred.utils.logging import get_logger
 
 __author__ = "Yingrui Shang"
@@ -103,10 +104,13 @@ def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
 def get_filenames_from_samples(sample_name: str) -> list[str]:
     """Names of the reduced data files of a measurement that go into the summary report.
 
-    These are the first-order files and the files with all orders stitched together. The
-    stitched files exist only when ``save_all_harmonics`` is enabled and at least orders 1 and 2
-    could be stitched, and the background-subtracted files only when a subtraction occurred;
-    ``generate_report`` skips the files that do not exist.
+    These are the first-order files and the files with all orders stitched together, as listed
+    by ``reduced_data_filenames`` for a single harmonic. The stitched files exist only when
+    ``save_all_harmonics`` is enabled and at least orders 1 and 2 could be stitched, and the
+    background-subtracted files only when a subtraction occurred; ``generate_report`` skips the
+    files that do not exist. Files of an earlier reduction into the same directory are removed
+    by ``Sample.dump_reduced_data_to_csv``, so the files that exist are those of the latest
+    reduction.
 
     Parameters
     ----------
@@ -124,13 +128,7 @@ def get_filenames_from_samples(sample_name: str) -> list[str]:
         If ``sample_name`` is empty or None.
     """
     if sample_name:
-        return [
-            "UN_" + sample_name + "_det_1.txt",
-            "UN_" + sample_name + "_det_1_background_subtracted.txt",
-            "UN_" + sample_name + "_det_1_unscaled.txt",
-            "UN_" + sample_name + "_det_stitched.txt",
-            "UN_" + sample_name + "_det_background_subtracted_stitched.txt",
-        ]
+        return reduced_data_filenames(sample_name, num_of_harmonics=1)
     else:
         raise ValueError(f"Sample name is empty or not valid: {sample_name}")
 

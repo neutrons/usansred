@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
 
 from usansred.enums import MeasurementType
+from usansred.io.filenames import reduced_data_filenames
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.stitch import apply_stitch, interpolate_error, stitch_profiles
@@ -445,6 +446,10 @@ class Sample(BaseModel):
         the ``background_subtracted_data`` category. Each is skipped when its stitched profile
         is empty, i.e. when not even harmonics 1 and 2 could be stitched.
 
+        Before writing, the files of the enabled categories that an earlier reduction into the
+        same output directory may have left are removed (see ``_remove_earlier_output_files``),
+        so that the directory and the summary report hold only the files of this reduction.
+
         Raises
         ------
         RuntimeError
@@ -457,6 +462,10 @@ class Sample(BaseModel):
 
         def has_data(data: IQData) -> bool:
             return any((data.q, data.i, data.e, data.t))
+
+        # Removed before the checks below, so that a measurement that cannot be written does not
+        # keep the files of an earlier reduction
+        self._remove_earlier_output_files(detector_data, scaled_data, background_subtracted_data)
 
         if detector_data and (not self.detector_data or not has_data(self.detector_data[0])):
             raise RuntimeError(f"Cannot write detector data for {self.label}: first harmonic data is missing.")
@@ -527,11 +536,46 @@ class Sample(BaseModel):
 
         return
 
+    def _remove_earlier_output_files(
+        self,
+        detector_data: bool = True,
+        scaled_data: bool = True,
+        background_subtracted_data: bool = True,
+    ) -> None:
+        """Remove the output files of this measurement left by an earlier reduction.
+
+        Every file that a reduction could write for this measurement in the categories enabled
+        by the flags (see ``reduced_data_filenames``) is removed from the output directory,
+        for all the detector banks regardless of ``save_all_harmonics``, since the earlier
+        reduction may have used a different setup. The files of this reduction are written
+        afterwards, so files that this reduction does not write (e.g. higher harmonics without
+        ``save_all_harmonics``, or a stitched profile that could not be stitched) do not remain
+        from the earlier reduction.
+
+        Parameters
+        ----------
+        detector_data : bool
+            Remove the monitor-normalized files, ``_unscaled.txt``.
+        scaled_data : bool
+            Remove the scaled files and the stitched scaled profile.
+        background_subtracted_data : bool
+            Remove the background-subtracted files and the stitched background-subtracted profile.
+        """
+        filenames = reduced_data_filenames(
+            self.name,
+            self.experiment.num_of_banks,
+            detector_data=detector_data,
+            scaled_data=scaled_data,
+            background_subtracted_data=background_subtracted_data,
+        )
+        for filename in filenames:
+            filepath = os.path.join(self.experiment.output_dir, filename)
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+                logger.info(f"Removed {filepath}, left by an earlier reduction.")
+
     def _dump_stitched(self, data: IQData, suffix: str, description: str) -> None:
         """Write a stitched profile to ``UN_<name>_<suffix>.txt``, or log why it is skipped.
-
-        When the profile is empty, a file of that name left by an earlier reduction into the
-        same output directory is removed, so that the summary report does not include it.
 
         Parameters
         ----------
@@ -545,9 +589,6 @@ class Sample(BaseModel):
         filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_{suffix}.txt")
         if not data.q:
             logger.info(f"No {description} profile is available for {self.label}; skipping that data dump.")
-            if os.path.isfile(filepath):
-                os.remove(filepath)
-                logger.info(f"Removed {filepath}, left by an earlier reduction.")
             return
         self.dump_data_to_csv(filepath, data)
 
