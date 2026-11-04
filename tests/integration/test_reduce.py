@@ -10,7 +10,7 @@ from unittest.mock import patch as mock_patch
 import numpy as np
 import pytest
 
-from usansred.reduce import Experiment
+from usansred.reduce import Experiment, unscattered_beam_q_cutoff
 from usansred.reduce import main as reduce
 
 ### Helper functions for tests ###
@@ -59,6 +59,70 @@ def assert_reduction_log_files(output_dir: str | Path, measurements: list[tuple[
         assert logfile.is_file()
         content = logfile.read_text(encoding="utf-8")
         assert f"Data reduction finished for {label_prefix} {name}." in content
+
+
+def stitched_scale_factors(log: str, label: str, name: str) -> tuple[list[int], list[float]]:
+    """Read the stitched orders and their scale factors from the summary line of a reduction log.
+
+    Parameters
+    ----------
+    log : str
+        Content of ``reduction_<name>.log``.
+    label : str
+        Measurement type in the log, e.g. ``"sample"`` or ``"background"``.
+    name : str
+        Name of the measurement.
+
+    Returns
+    -------
+    tuple[list[int], list[float]]
+        The stitched orders and the scale factor of each.
+    """
+    match = re.search(rf"Stitched orders \[([\d, ]+)\] of {label} {name} with scale factors \[([^\]]+)\]", log)
+    assert match, f"no stitching summary for {label} {name}"
+    orders = [int(order) for order in match.group(1).split(",")]
+    factors = [float(factor) for factor in match.group(2).split(",")]
+    return orders, factors
+
+
+def assert_stitched_profile(output_dir: Path, name: str, q_cut: float) -> np.ndarray:
+    """Check the stitched scaled profile of a measurement against the stitching rules.
+
+    The profile is sorted by Q and holds no zero-count points. It keeps every valid point of
+    harmonic 1 unchanged, and any other point lies at or above the unscattered-beam cutoff,
+    since points of higher harmonics below it are never added.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Directory holding the reduced files.
+    name : str
+        Name of the measurement.
+    q_cut : float
+        Unscattered-beam cutoff, in ``1/angstrom``.
+
+    Returns
+    -------
+    np.ndarray
+        The stitched profile, one ``[Q, I, E]`` row per point.
+    """
+    stitched = np.array(read_numbers_from_file(output_dir / f"UN_{name}_det_stitched.txt"))
+    harmonic_1 = np.array(read_numbers_from_file(output_dir / f"UN_{name}_det_1.txt"))
+    harmonic_1 = harmonic_1[harmonic_1[:, 1] != 0]
+
+    assert np.all(np.diff(stitched[:, 0]) >= 0), f"stitched Q of {name} is not sorted"
+    assert np.all(stitched[:, 1] != 0), f"stitched profile of {name} holds zero-count points"
+    # Every valid harmonic-1 point is kept, with its intensity and uncertainty unchanged
+    is_harmonic_1 = np.zeros(len(stitched), dtype=bool)
+    for q, i, e in harmonic_1:
+        match = np.isclose(stitched[:, 0], q, rtol=1e-12) & np.isclose(stitched[:, 1], i, rtol=1e-12)
+        assert match.any(), f"harmonic-1 point at Q = {q} of {name} missing from the stitched profile"
+        assert np.isclose(stitched[match, 2], e, rtol=1e-12).any()
+        is_harmonic_1 |= match
+    # Points of higher harmonics lie above the unscattered-beam peak
+    assert np.all(stitched[~is_harmonic_1, 0] >= q_cut), f"higher-harmonic points of {name} below the cutoff"
+    assert np.count_nonzero(~is_harmonic_1) > 0, f"no higher-harmonic points stitched for {name}"
+    return stitched
 
 
 ### Tests ###
@@ -182,13 +246,27 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
     )
 
     # Stitching writes one stitched profile per measurement, and reports its outcome in the
-    # measurement's reduction log
-    for name, label in [("S115_pc3", "sample"), ("S115_dry", "sample"), ("EmptyPCell", "background")]:
-        assert (output_dir / f"UN_{name}_det_stitched.txt").is_file()
+    # measurement's reduction log. The scale factors are regression values for the reference
+    # dataset: a change to the stitching method changes them.
+    expected_scale_factors = {
+        "S115_pc3": ("sample", [1.0, 16.6985]),
+        "S115_dry": ("sample", [1.0, 11.8484, 29.9429, 82.3565]),
+        "EmptyPCell": ("background", [1.0, 3.7645]),
+    }
+    q_cut = unscattered_beam_q_cutoff(3.6)  # default primary wavelength of Experiment, in angstrom
+    for name, (label, expected) in expected_scale_factors.items():
+        stitched = assert_stitched_profile(output_dir, name, q_cut)
         log = (output_dir / f"reduction_{name}.log").read_text(encoding="utf-8")
-        assert re.search(rf"Stitched orders \[1, 2[^\]]*\] of {label} {name} with scale factors", log)
-    for name in ["S115_pc3", "S115_dry"]:
-        assert (output_dir / f"UN_{name}_det_background_subtracted_stitched.txt").is_file()
+        orders, factors = stitched_scale_factors(log, label, name)
+        assert orders == list(range(1, len(expected) + 1))
+        assert all(np.isfinite(factor) and factor > 0 for factor in factors)
+        assert factors == pytest.approx(expected, rel=1e-3)
+        if label == "sample":
+            # The background-subtracted harmonics are stitched on the same Q points
+            subtracted = np.array(
+                read_numbers_from_file(output_dir / f"UN_{name}_det_background_subtracted_stitched.txt")
+            )
+            np.testing.assert_allclose(subtracted[:, 0], stitched[:, 0], rtol=1e-12)
     assert not (output_dir / "UN_EmptyPCell_det_background_subtracted_stitched.txt").exists()
     # Harmonic 3 of S115_pc3 does not extend the stitched profile to higher Q
     pc3_log = (output_dir / "reduction_S115_pc3.log").read_text(encoding="utf-8")
