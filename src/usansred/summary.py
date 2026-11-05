@@ -1,13 +1,12 @@
 """summary.py: summary of the reduced data."""
 
-import csv
-import json
 import logging
 import os
 
 import pandas
 
 from usansred.io.filenames import reduced_data_filenames
+from usansred.io.read import read_config
 from usansred.utils.logging import get_logger
 
 __author__ = "Yingrui Shang"
@@ -160,27 +159,11 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
     if not output_dir:
         output_dir = os.path.join(data_dir, "reduced")
 
-    # Collect sample files from the config file, before creating summary.xlsx, since an invalid
-    # measurement name raises ValueError
-    if ext.lower() == ".json":
-        with open(config_file_path) as json_file:
-            data = json.load(json_file)
-            sample_files = []
-
-            background = data.get("background", {})
-            background_name = background.get("name")
-            if background_name:
-                sample_files.extend(get_filenames_from_samples(background_name))
-
-            for sample in data.get("samples", []):
-                sample_name = sample.get("name", "")
-                sample_files.extend(get_filenames_from_samples(sample_name))
-    else:
-        sample_files = []
-        with open(config_file_path, newline="") as csv_file:
-            csv_reader = csv.reader(csv_file, delimiter=",")
-            for row in filter(lambda r: len(r) > 1 and not r[0].startswith("#"), csv_reader):
-                sample_files.extend(get_filenames_from_samples(row[1]))
+    # Collect the files of the background and the samples, before creating summary.xlsx. The setup
+    # file is read as for the reduction, so the same rows are skipped and the same names rejected
+    config = read_config(config_file_path)
+    names = ([config.background.name] if config.background is not None else []) + [s.name for s in config.samples]
+    sample_files = [filename for name in names for filename in get_filenames_from_samples(name)]
 
     # Make sure the output directory exists
     os.makedirs(output_dir, exist_ok=True)

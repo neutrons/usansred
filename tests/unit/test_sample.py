@@ -1585,7 +1585,7 @@ class TestRemoveEarlierOutputFiles:
         sample.dump_reduced_data_to_csv()
 
         assert all(path.read_text() == "stale\n" for path in other_output)
-        assert "Files named UN_test_* are not removed for sample test" in caplog.text
+        assert "Files named UN_test_det_* are not removed for sample test" in caplog.text
 
     def test_legacy_names_kept_when_output_of_the_background(self, mock_experiment_2banks, tmp_path):
         """Files named UN_test_* are kept when the background is named UN_test."""
@@ -1608,3 +1608,96 @@ class TestRemoveEarlierOutputFiles:
         sample.dump_reduced_data_to_csv()
 
         assert not stale[0].exists()
+
+    # Files written only by usansred 1.0.0 to 1.8.0: log-binned files and bank_<n>/ subdirectories
+
+    PRE_1_9_0_FILES = [
+        "UN_test_det_1_lb.txt",
+        "UN_test_det_1_lbs.txt",
+        "bank_2/UN_test.txt",
+        "bank_2/UN_test_unscaled.txt",
+    ]
+
+    @classmethod
+    def _write_stale_pre_1_9_0(cls, tmp_path) -> list:
+        (tmp_path / "bank_2").mkdir()
+        return cls._write_stale(tmp_path, cls.PRE_1_9_0_FILES)
+
+    def test_files_of_versions_before_1_9_0_removed(self, mock_experiment_2banks, tmp_path, caplog, monkeypatch):
+        """The log-binned files and the bank_<n>/ files of versions 1.0.0 to 1.8.0 are removed, and so is
+        the bank_<n>/ subdirectory once empty."""
+        stale = self._write_stale_pre_1_9_0(tmp_path)
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
+        caplog.set_level(logging.INFO)
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not any(path.exists() for path in stale)
+        assert sorted(path.name for path in tmp_path.iterdir()) == [
+            "test_det_1.txt",
+            "test_det_1_background_subtracted.txt",
+            "test_det_1_unscaled.txt",
+        ]
+        assert f"Removed the empty directory {tmp_path / 'bank_2'}, left by an earlier reduction." in caplog.text
+
+    def test_bank_directory_with_other_files_kept(self, mock_experiment_2banks, tmp_path):
+        """A bank_<n>/ subdirectory that holds other files is kept, with those files."""
+        self._write_stale_pre_1_9_0(tmp_path)
+        kept = self._write_stale(tmp_path, ["bank_2/UN_test2.txt", "bank_2/notes.txt"])
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+
+        sample.dump_reduced_data_to_csv()
+
+        assert sorted(path.name for path in (tmp_path / "bank_2").iterdir()) == ["UN_test2.txt", "notes.txt"]
+        assert all(path.read_text() == "stale\n" for path in kept)
+
+    def test_only_enabled_categories_of_versions_before_1_9_0_removed(self, mock_experiment_2banks, tmp_path):
+        """Without detector data, the monitor-normalized bank_<n>/ file is kept."""
+        self._write_stale_pre_1_9_0(tmp_path)
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+
+        sample.dump_reduced_data_to_csv(detector_data=False, background_subtracted_data=False)
+
+        assert sorted(str(path.relative_to(tmp_path)) for path in tmp_path.rglob("UN_*")) == [
+            "bank_2/UN_test_unscaled.txt"
+        ]
+
+    def test_files_of_versions_before_1_9_0_removed_when_output_of_another_sample(
+        self, mock_experiment_2banks, tmp_path
+    ):
+        """A sample named UN_test keeps the 1.9.0 names of test, but not the names written only before 1.9.0,
+        which are never its output."""
+        stale = self._write_stale_pre_1_9_0(tmp_path)
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+        mock_experiment_2banks.samples = [_make_sample(mock_experiment_2banks, "UN_test", []), sample]
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not any(path.exists() for path in stale)
+
+    @pytest.mark.parametrize("order", [("test", "UN_test"), ("UN_test", "test")])
+    def test_experiment_with_measurements_x_and_UN_x(self, mock_experiment_2banks, tmp_path, order):
+        """With samples test and UN_test, each writes its own files, in either setup order.
+
+        The files named UN_test_det_* are the output of UN_test, so they are kept; the files written only by
+        versions before 1.9.0 for test, and the legacy files of UN_test, are removed.
+        """
+        stale = self._write_stale_pre_1_9_0(tmp_path)
+        stale += self._write_stale(tmp_path, ["UN_UN_test_det_1.txt", "UN_UN_test_det_2.txt"])
+        replaced = self._write_stale(tmp_path, ["UN_test_det_1.txt", "test_det_1.txt"])
+        samples = {}
+        for name in order:
+            samples[name] = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+            samples[name].name = name
+        mock_experiment_2banks.samples = list(samples.values())
+
+        mock_experiment_2banks.dump_reduced_data()
+
+        assert not any(path.exists() for path in stale)
+        assert all(path.read_text() != "stale\n" for path in replaced)
+        assert sorted(str(path.relative_to(tmp_path)) for path in tmp_path.rglob("*")) == sorted(
+            f"{name}_det_1{suffix}.txt"
+            for name in ("test", "UN_test")
+            for suffix in ("", "_background_subtracted", "_unscaled")
+        )

@@ -70,6 +70,7 @@ src/usansred/
 ├── stitch.py         # stitching of the per-harmonic I(Q) profiles
 ├── summary.py        # summary.xlsx report generation
 └── io/
+    ├── filenames.py  # names of the reduced data files, current and legacy
     ├── read.py       # CSV/JSON setup parsing
     ├── save.py       # Mantid SaveAscii/SumSpectra helpers
     └── usansred.json # JSON schema for setup files
@@ -167,11 +168,21 @@ Output names currently include:
   `src/usansred/summary.py`.
 
 All names are built by `reduced_data_filename` in `src/usansred/io/filenames.py`.
-usansred 1.9.0 and earlier wrote the same names with the prefix `UN_`
-(`LEGACY_PREFIX`); a re-reduction deletes those files of each measurement, unless
-they are the output of a measurement named `UN_<name>` in the same setup file.
-Measurement names may not contain `/` or `\` (validator in
-`src/usansred/models/reduction_config.py`).
+Before writing, `Sample._remove_earlier_output_files` deletes the files of each
+measurement left by an earlier reduction, including those of usansred 1.9.0 and
+earlier, listed by `legacy_filenames`. Those names start with `UN_` (`LEGACY_PREFIX`):
+
+- the same names with the prefix (version 1.9.0, and harmonic 1 of earlier versions),
+  kept when a sample or the background is named `UN_<name>`, since they are its
+  output (an empty cell with that name does not count: no files are written for it);
+- `UN_<name>_det_1_lb.txt` and `UN_<name>_det_1_lbs.txt` (up to 1.8.0), and
+  `bank_<n>/UN_<name>.txt` and `bank_<n>/UN_<name>_unscaled.txt` (1.6.0 to 1.8.0),
+  always deleted; an empty `bank_<n>/` is removed.
+
+Measurement names may not contain `/` or `\`: `check_measurement_name` in
+`filenames.py` rejects them, both in the setup-file validator
+(`src/usansred/models/reduction_config.py`) and whenever a file name is built.
+`summary.generate_report` reads the names with `read_config`.
 
 ## Coding Standards
 
@@ -247,6 +258,9 @@ Testing expectations:
 - Stitching changes: update `tests/unit/test_stitch.py`, and
   `tests/unit/test_sample.py` (`TestStitchOrders`) for the `Sample` integration.
 - Summary/report changes: update `tests/unit/test_summary.py`.
+- Output file name changes: update `tests/unit/io/test_filenames.py`, and
+  `tests/unit/test_sample.py` (`TestRemoveEarlierOutputFiles`) for the removal of
+  earlier output files.
 - CLI/end-to-end changes: update `tests/integration/test_reduce.py`.
 - Mantid save helper changes: update `tests/unit/io/test_save.py`.
 

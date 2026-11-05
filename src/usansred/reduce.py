@@ -14,7 +14,13 @@ from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
 
 from usansred.enums import MeasurementType
-from usansred.io.filenames import LEGACY_PREFIX, reduced_data_filename, reduced_data_filenames
+from usansred.io.filenames import (
+    LEGACY_PREFIX,
+    legacy_bank_dirname,
+    legacy_filenames,
+    reduced_data_filename,
+    reduced_data_filenames,
+)
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.stitch import apply_stitch, interpolate_error, stitch_profiles
@@ -562,13 +568,18 @@ class Sample(BaseModel):
         ``save_all_harmonics``, or a stitched profile that could not be stitched) do not remain
         from the earlier reduction.
 
-        The same files under the names written by usansred up to version 1.9.0, which start with
-        ``LEGACY_PREFIX`` (``UN_``), are removed as well, so that an earlier reduction by such a
-        version does not leave a second copy of each profile. These names are also the current
+        The files of the same categories written by usansred 1.9.0 and earlier, whose names start
+        with ``LEGACY_PREFIX`` (``UN_``), are removed as well (see ``legacy_filenames``), so that
+        an earlier reduction by such a version does not leave a second copy of each profile. This
+        includes the log-binned files and the ``bank_<n>/`` subdirectories of versions 1.0.0 to
+        1.8.0; a ``bank_<n>/`` subdirectory left empty is removed too.
+
+        The names written by version 1.9.0, such as ``UN_<name>_det_1.txt``, are also the current
         names of the files of a measurement named ``UN_<name>``. If the experiment writes such a
-        measurement, the legacy names are not removed, since they are its output. Otherwise a
-        file such as ``UN_<name>_det_1.txt`` cannot be told apart from a legacy file, and is
-        removed.
+        measurement, these names are not removed, since they are its output. Otherwise they cannot
+        be told apart from legacy files, and are removed. Conversely, the files written for a
+        measurement named ``UN_<name>`` replace the 1.9.0 files of a measurement ``<name>``, even
+        when ``<name>`` is not in the setup file.
 
         Parameters
         ----------
@@ -579,31 +590,38 @@ class Sample(BaseModel):
         background_subtracted_data : bool
             Remove the background-subtracted files and the stitched background-subtracted profile.
         """
-        filenames = reduced_data_filenames(
-            self.name,
-            self.experiment.num_of_banks,
-            detector_data=detector_data,
-            scaled_data=scaled_data,
-            background_subtracted_data=background_subtracted_data,
-        )
-        # Names written by usansred up to version 1.9.0, unless they are the current names of another
-        # measurement written by this experiment. The empty cell is not considered: no files are
-        # written for it.
+        categories = {
+            "detector_data": detector_data,
+            "scaled_data": scaled_data,
+            "background_subtracted_data": background_subtracted_data,
+        }
+        num_of_harmonics = self.experiment.num_of_banks
+        filenames = reduced_data_filenames(self.name, num_of_harmonics, **categories)
+        v190_filenames, older_filenames = legacy_filenames(self.name, num_of_harmonics, **categories)
+        # The names written by version 1.9.0, unless they are the current names of another measurement
+        # written by this experiment. The empty cell is not considered: no files are written for it.
         written = [sample.name for sample in self.experiment.samples]
         if self.experiment.background is not None:
             written.append(self.experiment.background.name)
         if LEGACY_PREFIX + self.name in written:
             logger.info(
-                f"Files named {LEGACY_PREFIX}{self.name}_* are not removed for {self.label}, since they are the "
-                f"output of measurement {LEGACY_PREFIX}{self.name}."
+                f"Files named {LEGACY_PREFIX}{self.name}_det_* are not removed for {self.label}, since they are "
+                f"the output of measurement {LEGACY_PREFIX}{self.name}."
             )
         else:
-            filenames += [LEGACY_PREFIX + filename for filename in filenames]
+            filenames += v190_filenames
+        filenames += older_filenames
         for filename in filenames:
             filepath = os.path.join(self.experiment.output_dir, filename)
             if os.path.isfile(filepath):
                 os.remove(filepath)
                 logger.info(f"Removed {filepath}, left by an earlier reduction.")
+        # The subdirectories of the higher harmonics written by versions 1.6.0 to 1.8.0
+        for harmonic in range(2, num_of_harmonics + 1):
+            dirpath = os.path.join(self.experiment.output_dir, legacy_bank_dirname(harmonic))
+            if os.path.isdir(dirpath) and not os.listdir(dirpath):
+                os.rmdir(dirpath)
+                logger.info(f"Removed the empty directory {dirpath}, left by an earlier reduction.")
 
     def _dump_stitched(self, data: IQData, suffix: str, description: str) -> None:
         """Write a stitched profile to ``<name>_<suffix>.txt``, or log why it is skipped.

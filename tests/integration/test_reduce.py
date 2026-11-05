@@ -1,8 +1,10 @@
+import filecmp
 import json
 import logging
 import os
 import random
 import re
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch as mock_patch
@@ -169,6 +171,65 @@ def test_main(mock_parse_args, data_server, tmp_path):
 
     assert_reduction_log_files(tmp_path, [("S115_pc3", "sample"), ("S115_dry", "sample"), ("EmptyPCell", "background")])
     assert_no_legacy_names(tmp_path)
+
+
+def legacy_output_files(name: str, num_of_harmonics: int = 4) -> list[str]:
+    """Paths of the files that usansred 1.9.0 and earlier wrote for a measurement, relative to the output directory.
+
+    Listed here independently of ``usansred.io.filenames.legacy_filenames``, from the code of the releases.
+    """
+    v190 = [
+        f"UN_{name}_det_{harmonic}{suffix}.txt"
+        for harmonic in range(1, num_of_harmonics + 1)
+        for suffix in ("", "_unscaled", "_background_subtracted")
+    ] + [f"UN_{name}_det_stitched.txt", f"UN_{name}_det_background_subtracted_stitched.txt"]
+    # Versions 1.0.0 to 1.8.0: log-binned files, and the higher harmonics in bank_<n>/ (from 1.6.0)
+    older = [f"UN_{name}_det_1_lb.txt", f"UN_{name}_det_1_lbs.txt"] + [
+        f"bank_{harmonic}/UN_{name}{suffix}.txt"
+        for harmonic in range(2, num_of_harmonics + 1)
+        for suffix in ("", "_unscaled")
+    ]
+    return v190 + older
+
+
+def relative_files(directory: Path) -> list[str]:
+    return sorted(str(path.relative_to(directory)) for path in directory.rglob("*") if path.is_file())
+
+
+def sheet_names(xlsx: Path) -> list[str]:
+    with zipfile.ZipFile(xlsx) as workbook:
+        return re.findall(r'<sheet name="([^"]*)"', workbook.read("xl/workbook.xml").decode())
+
+
+@pytest.mark.datarepo
+@mock_patch("usansred.reduce.parse_args")
+def test_main_into_directory_of_earlier_versions(mock_parse_args, data_server, tmp_path):
+    """Reducing into a directory holding the files of usansred 1.9.0 and earlier removes the files of the
+    measurements, keeps other files, and gives the same result as a reduction into an empty directory."""
+    fresh, upgraded = tmp_path / "fresh", tmp_path / "upgraded"
+    stale = [path for name in ("S115_pc3", "S115_dry", "EmptyPCell") for path in legacy_output_files(name)]
+    unrelated = ["UN_Other_det_1.txt", "notes.txt", "bank_2/notes.txt"]
+    for path in stale + unrelated:
+        (upgraded / path).parent.mkdir(parents=True, exist_ok=True)
+        (upgraded / path).write_text("stale\n")
+    mock_args = MagicMock()
+    mock_args.logbin = False
+    mock_args.path = data_server.path_to("setup.json")
+    mock_parse_args.return_value = mock_args
+
+    for output_dir in (fresh, upgraded):
+        mock_args.output = str(output_dir)
+        reduce()
+
+    assert not [path for path in stale if (upgraded / path).exists()]
+    assert not (upgraded / "bank_3").exists()
+    assert not (upgraded / "bank_4").exists()
+    assert all((upgraded / path).read_text() == "stale\n" for path in unrelated)
+    assert relative_files(upgraded) == sorted(relative_files(fresh) + unrelated)
+    reduced = [path for path in relative_files(fresh) if path.endswith(".txt")]
+    assert reduced, "the reduction wrote no data files"
+    assert [path for path in reduced if not filecmp.cmp(fresh / path, upgraded / path, shallow=False)] == []
+    assert sheet_names(upgraded / "summary.xlsx") == sheet_names(fresh / "summary.xlsx")
 
 
 @mock_patch("usansred.reduce.parse_args")

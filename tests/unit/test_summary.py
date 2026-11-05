@@ -322,6 +322,20 @@ def test_generate_report_rejects_path_separators_in_names(tmp_path, config_name,
     assert not (output_dir / "summary.xlsx").exists()
 
 
+def test_generate_report_skips_csv_rows_skipped_by_the_reduction(tmp_path):
+    """A header row is skipped as in the reduction, even when a column title has a path separator."""
+    config = tmp_path / "setup.csv"
+    config.write_text("type,sample/name,start,n,thickness\ns,S1,1,1,1.0\n")
+    output_dir = tmp_path / "reduced"
+    output_dir.mkdir()
+    _write_profile(output_dir / "S1_det_1.txt", 10)
+
+    generate_report(str(config), output_dir=str(output_dir))
+
+    sheet_names = re.findall(r'<sheet name="([^"]*)"', _workbook_xml(output_dir / "summary.xlsx")["xl/workbook.xml"])
+    assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "S1_det_1"]
+
+
 def test_generate_report_classifies_files_by_suffix(tmp_path):
     """Files go to the summary charts by their file-name suffix, not by the measurement name.
 

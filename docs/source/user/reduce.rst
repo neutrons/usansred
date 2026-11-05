@@ -249,14 +249,30 @@ When a reduction writes into an output directory that already holds reduced data
 deletes every file listed above (for all four harmonics) of each sample and of the background in
 the setup file, then writes its own files. This prevents files from an earlier reduction, for
 example the higher harmonics of a reduction with ``save_all_harmonics``, from remaining next to the
-new files and appearing in ``summary.xlsx``. The same files under the names written by usansred
-1.9.0 and earlier, which start with ``UN_`` (for example ``UN_X5D2_8_det_1.txt``), are deleted as
-well, so that an output directory reduced by an earlier version does not keep a second copy of
-each profile. As a consequence, reducing a measurement named ``x`` also deletes the files of a
-measurement named ``UN_x``, such as ``UN_x_det_1.txt``, when ``UN_x`` is not in the setup file,
-since they cannot be told apart from files of ``x`` written by an earlier version. Apart from this,
-files of measurements that are not in the setup file, and files with other names, are left
-untouched. Do not save edited data under these names in the output directory, since the
+new files and appearing in ``summary.xlsx``.
+
+The files that usansred 1.9.0 and earlier wrote for these measurements are deleted as well, so
+that an output directory reduced by an earlier version does not keep a second copy of each
+profile. Their names start with ``UN_``:
+
+- The files listed above, with the prefix, for example ``UN_X5D2_8_det_1.txt``.
+- The log-binned files ``UN_X5D2_8_det_1_lb.txt`` and ``UN_X5D2_8_det_1_lbs.txt``, written up to
+  version 1.8.0.
+- The higher harmonics ``bank_<n>/UN_X5D2_8.txt`` and ``bank_<n>/UN_X5D2_8_unscaled.txt``, written
+  by versions 1.6.0 to 1.8.0. A ``bank_<n>`` subdirectory left empty is deleted too.
+
+The names of the first kind are also the names of the files of a measurement named ``UN_x``. As a
+consequence, for a sample or background ``x``:
+
+- When a sample or the background is named ``UN_x``, ``x`` and ``UN_x`` each keep their own files.
+- Otherwise, reducing ``x`` deletes files such as ``UN_x_det_1.txt``, since they cannot be told
+  apart from files of ``x`` written by an earlier version.
+
+Conversely, reducing a measurement named ``UN_x`` replaces files such as ``UN_x_det_1.txt`` that
+version 1.9.0 wrote for ``x``, also when ``x`` is not in the setup file.
+
+Apart from this, files of measurements that are not in the setup file, and files with other
+names, are left untouched. Do not save edited data under these names in the output directory, since the
 next reduction deletes them.
 
 The Summary Report

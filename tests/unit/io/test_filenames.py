@@ -2,7 +2,13 @@
 
 import pytest
 
-from usansred.io.filenames import LEGACY_PREFIX, check_measurement_name, reduced_data_filename, reduced_data_filenames
+from usansred.io.filenames import (
+    LEGACY_PREFIX,
+    check_measurement_name,
+    legacy_filenames,
+    reduced_data_filename,
+    reduced_data_filenames,
+)
 
 
 def test_reduced_data_filename():
@@ -67,3 +73,31 @@ def test_reduced_data_filenames_rejects_path_separators():
 
 def test_check_measurement_name_accepts_name_without_separators():
     assert check_measurement_name("UN_S1's.v2") == "UN_S1's.v2"
+
+
+def test_legacy_filenames():
+    """The names written by 1.9.0 are the current names with the prefix; earlier versions also wrote
+    log-binned files and bank_<n>/ subdirectories."""
+    v190, older = legacy_filenames("S", num_of_harmonics=3)
+
+    assert v190 == [LEGACY_PREFIX + filename for filename in reduced_data_filenames("S", num_of_harmonics=3)]
+    assert older == [
+        "UN_S_det_1_lb.txt",
+        "UN_S_det_1_lbs.txt",
+        "bank_2/UN_S.txt",
+        "bank_2/UN_S_unscaled.txt",
+        "bank_3/UN_S.txt",
+        "bank_3/UN_S_unscaled.txt",
+    ]
+
+
+def test_legacy_filenames_categories():
+    v190, older = legacy_filenames("S", num_of_harmonics=2, scaled_data=False, background_subtracted_data=False)
+
+    assert v190 == ["UN_S_det_1_unscaled.txt", "UN_S_det_2_unscaled.txt"]
+    assert older == ["bank_2/UN_S_unscaled.txt"]
+
+
+def test_legacy_filenames_rejects_path_separators():
+    with pytest.raises(ValueError, match="name must not contain path separators"):
+        legacy_filenames("../other", num_of_harmonics=1)
