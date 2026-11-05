@@ -1,6 +1,6 @@
 """filenames.py: names of the reduced data files written for a measurement."""
 
-# Prefix of the reduced data file names written by usansred up to version 1.1.0
+# Prefix of the reduced data file names written by usansred up to version 1.9.0
 LEGACY_PREFIX = "UN_"
 
 

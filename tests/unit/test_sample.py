@@ -1480,7 +1480,7 @@ class TestRemoveEarlierOutputFiles:
 
         assert not any(path.exists() for path in stale)
 
-    # Files with the names written by usansred up to version 1.1.0, which start with ``UN_``
+    # Files with the names written by usansred up to version 1.9.0, which start with ``UN_``
 
     def test_legacy_files_removed(self, mock_experiment_2banks, tmp_path, caplog, monkeypatch):
         """Files of an earlier reduction by a version that wrote ``UN_`` names are removed."""

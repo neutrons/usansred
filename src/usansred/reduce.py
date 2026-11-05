@@ -562,7 +562,7 @@ class Sample(BaseModel):
         ``save_all_harmonics``, or a stitched profile that could not be stitched) do not remain
         from the earlier reduction.
 
-        The same files under the names written by usansred up to version 1.1.0, which start with
+        The same files under the names written by usansred up to version 1.9.0, which start with
         ``LEGACY_PREFIX`` (``UN_``), are removed as well, so that an earlier reduction by such a
         version does not leave a second copy of each profile. A limitation: if the experiment
         also holds a measurement whose name is ``UN_`` followed by this measurement's name, its
@@ -585,7 +585,7 @@ class Sample(BaseModel):
             scaled_data=scaled_data,
             background_subtracted_data=background_subtracted_data,
         )
-        # Names written by usansred up to version 1.1.0
+        # Names written by usansred up to version 1.9.0
         filenames += [LEGACY_PREFIX + filename for filename in filenames]
         for filename in filenames:
             filepath = os.path.join(self.experiment.output_dir, filename)

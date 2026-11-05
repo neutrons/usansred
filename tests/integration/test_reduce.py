@@ -63,7 +63,7 @@ def assert_reduction_log_files(output_dir: str | Path, measurements: list[tuple[
 
 
 def assert_no_legacy_names(output_dir: str | Path):
-    """Assert that no output file carries the ``UN_`` prefix of usansred up to version 1.1.0."""
+    """Assert that no output file carries the ``UN_`` prefix of usansred up to version 1.9.0."""
     legacy = sorted(path.name for path in Path(output_dir).glob(f"{LEGACY_PREFIX}*"))
     assert legacy == [], f"output files with the legacy prefix: {legacy}"
 

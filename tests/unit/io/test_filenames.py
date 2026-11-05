@@ -9,7 +9,7 @@ def test_reduced_data_filename():
 
 
 def test_legacy_prefix():
-    """Names written by usansred up to version 1.1.0 are the current names with the prefix ``UN_``."""
+    """Names written by usansred up to version 1.9.0 are the current names with the prefix ``UN_``."""
     assert LEGACY_PREFIX + reduced_data_filename("S", "det_1") == "UN_S_det_1.txt"
 
 
