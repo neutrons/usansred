@@ -1,6 +1,8 @@
 """Tests for the names of the reduced data files."""
 
-from usansred.io.filenames import LEGACY_PREFIX, reduced_data_filename, reduced_data_filenames
+import pytest
+
+from usansred.io.filenames import LEGACY_PREFIX, check_measurement_name, reduced_data_filename, reduced_data_filenames
 
 
 def test_reduced_data_filename():
@@ -49,3 +51,19 @@ def test_reduced_data_filenames_selected_categories():
         "S_det_2_background_subtracted.txt",
         "S_det_background_subtracted_stitched.txt",
     ]
+
+
+@pytest.mark.parametrize("name", ["../other", "/tmp/x", "a/b", "a\\b"])
+def test_reduced_data_filename_rejects_path_separators(name):
+    """A separator in the name would place the file outside the output directory."""
+    with pytest.raises(ValueError, match="name must not contain path separators"):
+        reduced_data_filename(name, "det_1")
+
+
+def test_reduced_data_filenames_rejects_path_separators():
+    with pytest.raises(ValueError, match="name must not contain path separators"):
+        reduced_data_filenames("../other", num_of_harmonics=1)
+
+
+def test_check_measurement_name_accepts_name_without_separators():
+    assert check_measurement_name("UN_S1's.v2") == "UN_S1's.v2"

@@ -5,6 +5,7 @@ from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from usansred.enums import MeasurementType
+from usansred.io.filenames import check_measurement_name
 from usansred.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -38,11 +39,7 @@ class _ScanBase(BaseModel):
     @field_validator("name")
     @classmethod
     def _no_path_separators(cls, v: str) -> str:
-        # The name is part of the output file names, so a separator would place files outside
-        # the output directory, e.g. "../x" or "/tmp/x"
-        if "/" in v or "\\" in v:
-            raise ValueError("name must not contain path separators ('/' or '\\')")
-        return v
+        return check_measurement_name(v)
 
     @field_validator("start_scan_num", "num_of_scans", mode="before")
     @classmethod

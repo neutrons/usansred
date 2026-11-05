@@ -3,6 +3,33 @@
 # Prefix of the reduced data file names written by usansred up to version 1.9.0
 LEGACY_PREFIX = "UN_"
 
+# Characters a measurement name may not contain. The name is part of the file names, so a separator
+# would place files outside the output directory, e.g. "../x" or "/tmp/x".
+PATH_SEPARATORS = ("/", "\\")
+
+
+def check_measurement_name(name: str) -> str:
+    """Check that a measurement name can be part of a file name.
+
+    Parameters
+    ----------
+    name : str
+        Name of the measurement.
+
+    Returns
+    -------
+    str
+        ``name``, unchanged.
+
+    Raises
+    ------
+    ValueError
+        If ``name`` contains a path separator, ``/`` or ``\\``.
+    """
+    if any(separator in name for separator in PATH_SEPARATORS):
+        raise ValueError(f"name must not contain path separators ('/' or '\\'): {name!r}")
+    return name
+
 
 def reduced_data_filename(name: str, suffix: str) -> str:
     """Name of one reduced data file of a measurement, ``<name>_<suffix>.txt``.
@@ -21,8 +48,13 @@ def reduced_data_filename(name: str, suffix: str) -> str:
     -------
     str
         The file name, without directory.
+
+    Raises
+    ------
+    ValueError
+        If ``name`` contains a path separator, ``/`` or ``\\``.
     """
-    return f"{name}_{suffix}.txt"
+    return f"{check_measurement_name(name)}_{suffix}.txt"
 
 
 def reduced_data_filenames(
@@ -66,6 +98,11 @@ def reduced_data_filenames(
     -------
     list[str]
         The file names, without directory.
+
+    Raises
+    ------
+    ValueError
+        If ``name`` contains a path separator, ``/`` or ``\\``.
     """
     filenames = []
     for harmonic in range(1, num_of_harmonics + 1):

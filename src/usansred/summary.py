@@ -125,7 +125,7 @@ def get_filenames_from_samples(sample_name: str) -> list[str]:
     Raises
     ------
     ValueError
-        If ``sample_name`` is empty or None.
+        If ``sample_name`` is empty or None, or contains a path separator, ``/`` or ``\\``.
     """
     if sample_name:
         return reduced_data_filenames(sample_name, num_of_harmonics=1)
@@ -159,6 +159,28 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
 
     if not output_dir:
         output_dir = os.path.join(data_dir, "reduced")
+
+    # Collect sample files from the config file, before creating summary.xlsx, since an invalid
+    # measurement name raises ValueError
+    if ext.lower() == ".json":
+        with open(config_file_path) as json_file:
+            data = json.load(json_file)
+            sample_files = []
+
+            background = data.get("background", {})
+            background_name = background.get("name")
+            if background_name:
+                sample_files.extend(get_filenames_from_samples(background_name))
+
+            for sample in data.get("samples", []):
+                sample_name = sample.get("name", "")
+                sample_files.extend(get_filenames_from_samples(sample_name))
+    else:
+        sample_files = []
+        with open(config_file_path, newline="") as csv_file:
+            csv_reader = csv.reader(csv_file, delimiter=",")
+            for row in filter(lambda r: len(r) > 1 and not r[0].startswith("#"), csv_reader):
+                sample_files.extend(get_filenames_from_samples(row[1]))
 
     # Make sure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -196,27 +218,6 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
 
     main_chart_subtracted.set_y_axis({"name": "I (1/cm)", "log_base": 10})
     main_chart_subtracted.set_title({"name": "Background Subtracted"})
-
-    # Collect sample files from the config file
-    if ext.lower() == ".json":
-        with open(config_file_path) as json_file:
-            data = json.load(json_file)
-            sample_files = []
-
-            background = data.get("background", {})
-            background_name = background.get("name")
-            if background_name:
-                sample_files.extend(get_filenames_from_samples(background_name))
-
-            for sample in data.get("samples", []):
-                sample_name = sample.get("name", "")
-                sample_files.extend(get_filenames_from_samples(sample_name))
-    else:
-        sample_files = []
-        with open(config_file_path, newline="") as csv_file:
-            csv_reader = csv.reader(csv_file, delimiter=",")
-            for row in filter(lambda r: len(r) > 1 and not r[0].startswith("#"), csv_reader):
-                sample_files.extend(get_filenames_from_samples(row[1]))
 
     # Process each sample file and add data to the corresponding charts
     used_sheet_names = {"unscaled", "original", "bg subtracted"}  # the chart sheets

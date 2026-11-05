@@ -300,6 +300,28 @@ def test_generate_report_with_apostrophe_at_start_of_measurement_name(tmp_path):
     assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "_S1_det_1"]
 
 
+@pytest.mark.parametrize("config_name", ["setup.json", "setup.csv"])
+@pytest.mark.parametrize("name", ["../other", "/tmp/other"])
+def test_generate_report_rejects_path_separators_in_names(tmp_path, config_name, name):
+    """generate_report reads the setup file itself, so it must also reject names with a path
+    separator, which would make it read files outside the output directory."""
+    config = tmp_path / "data" / config_name
+    config.parent.mkdir()
+    if config_name.endswith(".json"):
+        sample = {"name": name, "start_scan_num": 1, "num_of_scans": 1, "thickness": 0.1}
+        config.write_text(json.dumps({"samples": [sample]}))
+    else:
+        config.write_text(f"b/s,name,start_scan,num_scans,thickness\ns,{name},1,1,1.0\n")
+    output_dir = tmp_path / "data" / "reduced"
+    output_dir.mkdir()
+    _write_profile(tmp_path / "data" / "other_det_1.txt", 10)  # what "../other" would read
+
+    with pytest.raises(ValueError, match="name must not contain path separators"):
+        generate_report(str(config), output_dir=str(output_dir))
+
+    assert not (output_dir / "summary.xlsx").exists()
+
+
 def test_generate_report_classifies_files_by_suffix(tmp_path):
     """Files go to the summary charts by their file-name suffix, not by the measurement name.
 
