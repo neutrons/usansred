@@ -62,4 +62,13 @@ has data:
 - ``UN_<sample>_det_<n>_background_subtracted.txt``: the data after subtraction of the
   background or empty cell. Only written when one of them was subtracted.
 
+When ``save_all_harmonics`` is enabled, the harmonics are also stitched into a single profile (see
+:ref:`stitching the harmonics <stitching-harmonics>`), written to:
+
+- ``UN_<sample>_det_stitched.txt``: the scaled harmonics, stitched.
+- ``UN_<sample>_det_background_subtracted_stitched.txt``: the background-subtracted harmonics,
+  stitched. Only written when a background or empty cell was subtracted.
+
+Neither file is written if not even harmonics 1 and 2 could be stitched.
+
 The sample is also included in ``summary.xlsx``.

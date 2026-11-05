@@ -14,8 +14,11 @@ from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
 
 from usansred.enums import MeasurementType
+from usansred.io.filenames import reduced_data_filenames
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
+from usansred.stitch import apply_stitch, interpolate_error, stitch_profiles
+from usansred.stitch import logger as stitch_logger
 from usansred.summary import generate_report
 from usansred.utils.logging import get_logger, log_to_file, set_log_config
 
@@ -53,6 +56,40 @@ def horizontal_rocking_width(order: int) -> float:
     """
     assert order > 0, "Order must be positive"
     return 5.34 * math.exp(-0.01793 * order**2) / order**2
+
+
+def unscattered_beam_q_cutoff(wavelength: float, num_sigmas: float = 3.0) -> float:
+    r"""Momentum transfer above which the peak of the unscattered beam has decayed, in ``1/angstrom``.
+
+    At low Q, the profile of each harmonic is dominated by the rocking curve of the unscattered
+    beam, whose shape is set by the instrument resolution and differs from harmonic to harmonic.
+    Stitching therefore excludes this peak from the fit of the scale factors (see
+    ``usansred.stitch.stitch_profiles``). The low-Q end of the stitched profile is always
+    harmonic 1, so the cutoff is ``num_sigmas`` standard deviations of the harmonic-1 resolution:
+
+    .. math::
+
+        Q_{cut} = k \, \sigma_1 \, \frac{2 \pi}{\lambda_1}, \qquad
+        \sigma_1 = \frac{\mathrm{FWHM}_1}{2 \sqrt{2 \ln 2}}
+
+    with :math:`\mathrm{FWHM}_1` from ``horizontal_rocking_width(1)`` converted from arcsec to
+    radians. For :math:`\lambda_1 = 3.6` angstrom and :math:`k = 3`, :math:`Q_{cut} = 5.65 \times
+    10^{-5}` ``1/angstrom``, where a Gaussian peak has fallen to about 1 % of its maximum.
+
+    Parameters
+    ----------
+    wavelength : float
+        Primary wavelength, in ``angstrom``.
+    num_sigmas : float
+        Number of standard deviations of the harmonic-1 resolution.
+
+    Returns
+    -------
+    float
+        The cutoff, in ``1/angstrom``.
+    """
+    sigma = horizontal_rocking_width(1) * ARCSEC_TO_RADIANS / (2.0 * math.sqrt(2.0 * math.log(2.0)))
+    return num_sigmas * sigma * 2.0 * math.pi / wavelength
 
 
 class Scan(BaseModel):
@@ -223,6 +260,26 @@ class Sample(BaseModel):
     data_bg_subtracted: list[IQData] = Field(
         default_factory=list, init=False, description="Background subtracted data, one entry per harmonic"
     )
+    data_stitched: IQData = Field(
+        default_factory=IQData, init=False, description="Scaled data of all harmonics stitched into one profile"
+    )
+    data_bg_subtracted_stitched: IQData = Field(
+        default_factory=IQData,
+        init=False,
+        description="Background subtracted data of all harmonics stitched into one profile",
+    )
+    stitched_orders: list[int] = Field(
+        default_factory=list, init=False, description="Harmonics included in the stitched profile data_stitched"
+    )
+    bg_subtracted_stitched_orders: list[int] = Field(
+        default_factory=list,
+        init=False,
+        description="Harmonics included in the stitched profile data_bg_subtracted_stitched, a leading "
+        "subset of stitched_orders",
+    )
+    stitch_scale_factors: list[float] = Field(
+        default_factory=list, init=False, description="Scale factor applied to each harmonic in stitched_orders"
+    )
     transmitted: float = Field(0, description="Ratio of transmitted neutrons (for transmission correction)")
     transmission: float = Field(1.0, description="Transmission coefficient (for transmission correction)")
 
@@ -272,9 +329,16 @@ class Sample(BaseModel):
         #  - data_bg_subtracted: data_scaled after background subtraction, one entry per harmonic,
         #    positionally aligned with data_scaled (harmonic n is entry n-1). The first harmonic
         #    is aliased as self.data_reduced.
+        #  - data_stitched, data_bg_subtracted_stitched: data_scaled and data_bg_subtracted with
+        #    all harmonics stitched into one profile (only with save_all_harmonics)
         self.detector_data = []
         self.data_scaled = []
         self.data_bg_subtracted = []
+        self.data_stitched = IQData()
+        self.data_bg_subtracted_stitched = IQData()
+        self.stitched_orders = []
+        self.bg_subtracted_stitched_orders = []
+        self.stitch_scale_factors = []
 
     @property
     def data(self):
@@ -383,6 +447,16 @@ class Sample(BaseModel):
             harmonics go to ``UN_<name>_det_<n>_background_subtracted.txt``. Only written when a
             subtraction actually occurred (``is_reduced`` is True).
 
+        With ``save_all_harmonics``, the profiles with all harmonics stitched together (see
+        ``stitch_orders``) are also written: ``UN_<name>_det_stitched.txt`` with the
+        ``scaled_data`` category, and ``UN_<name>_det_background_subtracted_stitched.txt`` with
+        the ``background_subtracted_data`` category. Each is skipped when its stitched profile
+        is empty, i.e. when not even harmonics 1 and 2 could be stitched.
+
+        Before writing, the files of the enabled categories that an earlier reduction into the
+        same output directory may have left are removed (see ``_remove_earlier_output_files``),
+        so that the directory and the summary report hold only the files of this reduction.
+
         Raises
         ------
         RuntimeError
@@ -395,6 +469,10 @@ class Sample(BaseModel):
 
         def has_data(data: IQData) -> bool:
             return any((data.q, data.i, data.e, data.t))
+
+        # Removed before the checks below, so that a measurement that cannot be written does not
+        # keep the files of an earlier reduction
+        self._remove_earlier_output_files(detector_data, scaled_data, background_subtracted_data)
 
         if detector_data and (not self.detector_data or not has_data(self.detector_data[0])):
             raise RuntimeError(f"Cannot write detector data for {self.label}: first harmonic data is missing.")
@@ -431,6 +509,8 @@ class Sample(BaseModel):
                     f"No scaled data is available for {self.label} for harmonics {missing_harmonics}; "
                     "skipping those data dumps."
                 )
+            if self.config.save_all_harmonics:
+                self._dump_stitched(self.data_stitched, "det_stitched", "stitched")
 
         if background_subtracted_data:
             # Only written when a background or empty cell was actually subtracted
@@ -450,12 +530,74 @@ class Sample(BaseModel):
                         f"No background-subtracted data is available for {self.label} for harmonics "
                         f"{missing_harmonics}; skipping those data dumps."
                     )
+                if self.config.save_all_harmonics:
+                    self._dump_stitched(
+                        self.data_bg_subtracted_stitched,
+                        "det_background_subtracted_stitched",
+                        "stitched background-subtracted",
+                    )
             else:
                 logger.info(
                     f"No background or empty cell was subtracted from the {self.label}; skipping that data dump."
                 )
 
         return
+
+    def _remove_earlier_output_files(
+        self,
+        detector_data: bool = True,
+        scaled_data: bool = True,
+        background_subtracted_data: bool = True,
+    ) -> None:
+        """Remove the output files of this measurement left by an earlier reduction.
+
+        Every file that a reduction could write for this measurement in the categories enabled
+        by the flags (see ``reduced_data_filenames``) is removed from the output directory,
+        for all the detector banks regardless of ``save_all_harmonics``, since the earlier
+        reduction may have used a different setup. The files of this reduction are written
+        afterwards, so files that this reduction does not write (e.g. higher harmonics without
+        ``save_all_harmonics``, or a stitched profile that could not be stitched) do not remain
+        from the earlier reduction.
+
+        Parameters
+        ----------
+        detector_data : bool
+            Remove the monitor-normalized files, ``_unscaled.txt``.
+        scaled_data : bool
+            Remove the scaled files and the stitched scaled profile.
+        background_subtracted_data : bool
+            Remove the background-subtracted files and the stitched background-subtracted profile.
+        """
+        filenames = reduced_data_filenames(
+            self.name,
+            self.experiment.num_of_banks,
+            detector_data=detector_data,
+            scaled_data=scaled_data,
+            background_subtracted_data=background_subtracted_data,
+        )
+        for filename in filenames:
+            filepath = os.path.join(self.experiment.output_dir, filename)
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+                logger.info(f"Removed {filepath}, left by an earlier reduction.")
+
+    def _dump_stitched(self, data: IQData, suffix: str, description: str) -> None:
+        """Write a stitched profile to ``UN_<name>_<suffix>.txt``, or log why it is skipped.
+
+        Parameters
+        ----------
+        data : IQData
+            The stitched profile.
+        suffix : str
+            File-name suffix after the measurement name, e.g. ``det_stitched``.
+        description : str
+            Description of the profile, used in log messages.
+        """
+        filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_{suffix}.txt")
+        if not data.q:
+            logger.info(f"No {description} profile is available for {self.label}; skipping that data dump.")
+            return
+        self.dump_data_to_csv(filepath, data)
 
     def normalize_by_monitor(self) -> None:
         """Normalize detector intensities by monitor counts for all scans."""
@@ -468,7 +610,10 @@ class Sample(BaseModel):
         Normalize each scan by its monitor counts, stitch the scans into one rocking curve per
         harmonic, center the curves on the analyzer motor angle of the unscattered beam, and
         rescale to momentum transfer in ``1/angstrom``. For samples, the background (or, in its
-        absence, the empty cell) is then subtracted from every harmonic.
+        absence, the empty cell) is then subtracted from every harmonic. With
+        ``save_all_harmonics``, the harmonics of samples and of the background are finally
+        stitched into one profile (see ``stitch_orders``). The empty cell is not stitched: no
+        output file is written for it, and only its per-harmonic data are used, for subtraction.
         """
         logger.info(f"Starting reduction for {self.label} with {len(self.scans)} scans.")
         logger.info(f"Transmission coefficient for {self.label}: {self.transmission:.4f}")
@@ -487,8 +632,75 @@ class Sample(BaseModel):
             elif self.experiment.empty_cell:
                 self.subtract_background(self.experiment.empty_cell)
 
+        # Stitching comes last, since it needs the background-subtracted data of every harmonic.
+        # The stitched profile of the empty cell would never be written nor used.
+        if self.config.save_all_harmonics and self.measurement_type != MeasurementType.EMPTY_CELL:
+            self.stitch_orders()
+
         logger.info(f"Data reduction finished for {self.label}.")
         return
+
+    def stitch_orders(self) -> None:
+        """Stitch the scaled and background-subtracted harmonics into one profile each.
+
+        The scaled harmonics are stitched with ``usansred.stitch.stitch_profiles``: harmonic 1 is
+        the fixed reference, and each higher harmonic is scaled onto the profile stitched so far,
+        over the Q range where the two overlap above the peak of the unscattered beam
+        (``unscattered_beam_q_cutoff``). The background-subtracted harmonics, if a subtraction
+        occurred, are stitched with the same scale factors, zero-count masks, and fit ranges
+        (``usansred.stitch.apply_stitch``). That stitch stops early, and so holds fewer
+        harmonics, when the background (or empty cell) has no data for a harmonic that the sample
+        has.
+
+        A stitched profile is kept only when at least harmonics 1 and 2 were joined; otherwise it
+        is left empty and no stitched file is written. Stitching never halts the reduction:
+        failed joins are logged by ``usansred.stitch``, and any unexpected exception is logged
+        here and leaves the stitched profiles empty.
+
+        Results are stored in ``data_stitched`` and ``data_bg_subtracted_stitched``, with the
+        harmonics they include in ``stitched_orders`` and ``bg_subtracted_stitched_orders``, and
+        the scale factor of each harmonic of ``stitched_orders`` in ``stitch_scale_factors``.
+        """
+        self.data_stitched = IQData()
+        self.data_bg_subtracted_stitched = IQData()
+        self.stitched_orders = []
+        self.bg_subtracted_stitched_orders = []
+        self.stitch_scale_factors = []
+
+        if not self.data_scaled:
+            logger.warning(f"No scaled data for {self.label}; skipping the stitching of orders.")
+            return
+
+        try:
+            q_fit_min = unscattered_beam_q_cutoff(self.experiment.prim_wave)
+            result = stitch_profiles(self.data_scaled, label=self.label, q_fit_min=q_fit_min)
+            if len(result.joined_orders) < 2:
+                logger.warning(
+                    f"Orders 1 and 2 of {self.label} could not be stitched; no stitched profile is produced."
+                )
+                return
+            self.data_stitched = result.profile
+            self.stitched_orders = result.joined_orders
+            self.stitch_scale_factors = result.scale_factors
+
+            if self.is_reduced:
+                applied = apply_stitch(self.data_bg_subtracted, result, label=f"background-subtracted {self.label}")
+                if len(applied.joined_orders) < 2:
+                    logger.warning(
+                        f"Background-subtracted orders 1 and 2 of {self.label} could not be stitched; "
+                        "no stitched background-subtracted profile is produced."
+                    )
+                else:
+                    self.data_bg_subtracted_stitched = applied.profile
+                    self.bg_subtracted_stitched_orders = applied.joined_orders
+                    logger.info(f"Stitched background-subtracted orders {applied.joined_orders} of {self.label}.")
+        except Exception as e:  # noqa BLE001
+            logger.exception(f"Cannot stitch the orders of {self.label}: {e}")
+            self.data_stitched = IQData()
+            self.data_bg_subtracted_stitched = IQData()
+            self.stitched_orders = []
+            self.bg_subtracted_stitched_orders = []
+            self.stitch_scale_factors = []
 
     @staticmethod
     def _combine_duplicate_q_points(
@@ -696,56 +908,6 @@ class Sample(BaseModel):
         logger.info(f"Centered rocking curves for {self.label} using offset {q_offset}.")
         return q_offset
 
-    @staticmethod
-    def _interpolate_error(q: float, q_bg: np.ndarray, e_bg: np.ndarray) -> float:
-        """Interpolate a background uncertainty at ``q`` by propagating variances in quadrature.
-
-        Linear interpolation of the intensity between the two bracketing background points is
-        ``I = (1 - w) * I0 + w * I1``, with ``w`` the fractional position of ``q`` in the interval.
-        Treating the two background measurements as statistically independent, the uncertainty of
-        that combination is
-
-        .. math::
-
-            \\sigma = \\sqrt{\\left[(1 - w)\\,\\sigma_0\\right]^2 + \\left[w\\,\\sigma_1\\right]^2}
-
-        The interpolation weights must be squared. Interpolating the variance with the plain
-        weights, ``sqrt((1 - w) * e0**2 + w * e1**2)``, is a different and also incorrect result.
-        Note that the correct value can fall below both endpoint uncertainties; combining two
-        independent measurements does reduce the variance.
-
-        Outside the background range the nearest endpoint uncertainty is returned, which matches
-        how ``numpy.interp`` clamps the intensity and is the ``w = 0`` / ``w = 1`` limit of the
-        formula above.
-
-        Parameters
-        ----------
-        q : float
-            Momentum transfer at which the uncertainty is needed, in ``1/angstrom``.
-        q_bg : np.ndarray
-            Background momentum-transfer values in ``1/angstrom``, sorted in ascending order.
-        e_bg : np.ndarray
-            Background uncertainties, one per entry of ``q_bg``.
-
-        Returns
-        -------
-        float
-            The interpolated uncertainty at ``q``.
-        """
-        hi = int(np.searchsorted(q_bg, q))
-        if hi == 0:  # q below the background range
-            return float(e_bg[0])
-        if hi == len(q_bg):  # q above the background range
-            return float(e_bg[-1])
-
-        lo = hi - 1
-        interval = q_bg[hi] - q_bg[lo]
-        if interval == 0:  # duplicate background q values, nothing to interpolate over
-            return float(e_bg[lo])
-
-        weight = (q - q_bg[lo]) / interval
-        return float(np.sqrt(((1.0 - weight) * e_bg[lo]) ** 2 + (weight * e_bg[hi]) ** 2))
-
     def _match_or_interpolate(
         self,
         q_data: np.ndarray,
@@ -758,10 +920,30 @@ class Sample(BaseModel):
 
         Used for background subtraction. Intensities are interpolated linearly, while
         uncertainties are interpolated in variance with squared weights (see
-        ``_interpolate_error``) because the background points are independent measurements.
+        ``usansred.stitch.interpolate_error``) because the background points are independent
+        measurements.
 
-        ``q_bg`` is assumed sorted in ascending order, as required by ``numpy.interp`` and by the
-        bracketing search in ``_interpolate_error``."""
+        Parameters
+        ----------
+        q_data : np.ndarray
+            Momentum-transfer values of the sample, in ``1/angstrom``.
+        q_bg : np.ndarray
+            Momentum-transfer values of the background, in ``1/angstrom``, sorted in ascending
+            order, as required by ``numpy.interp`` and by the bracketing search in
+            ``usansred.stitch.interpolate_error``.
+        i_bg : np.ndarray
+            Background intensities.
+        e_bg : np.ndarray
+            Background uncertainties.
+        tolerance : float
+            Relative tolerance for matching a background Q value to a sample Q value directly.
+            The absolute tolerance is ``max(tolerance * q, 1e-6)`` in ``1/angstrom``.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Background intensities and uncertainties, one per entry of ``q_data``.
+        """
         i_bg_matched = np.zeros_like(q_data)
         e_bg_matched = np.zeros_like(q_data)
 
@@ -775,7 +957,7 @@ class Sample(BaseModel):
             else:
                 # Otherwise, interpolate
                 i_bg_matched[i] = np.interp(q, q_bg, i_bg)
-                e_bg_matched[i] = self._interpolate_error(q, q_bg, e_bg)
+                e_bg_matched[i] = interpolate_error(q, q_bg, e_bg)
 
         return i_bg_matched, e_bg_matched
 
@@ -1149,7 +1331,7 @@ class Experiment(BaseModel):
                 )
             else:  # reduce the empty cell if no background is present
                 log_fn = Path(self.output_dir) / f"reduction_{self.empty_cell.name}.log"
-                with log_to_file(logger, log_fn):
+                with log_to_file(logger, log_fn, extra_loggers=[stitch_logger]):
                     try:
                         self.empty_cell.reduce()
                     except Exception as e:  # noqa BLE001
@@ -1161,7 +1343,7 @@ class Experiment(BaseModel):
 
         if self.background:
             log_fn = Path(self.output_dir) / f"reduction_{self.background.name}.log"
-            with log_to_file(logger, log_fn):
+            with log_to_file(logger, log_fn, extra_loggers=[stitch_logger]):
                 try:
                     self.background.reduce()
                 except Exception as e:  # noqa BLE001
@@ -1172,7 +1354,7 @@ class Experiment(BaseModel):
 
         for sample in self.samples:
             log_fn = Path(self.output_dir) / f"reduction_{sample.name}.log"
-            with log_to_file(logger, log_fn):
+            with log_to_file(logger, log_fn, extra_loggers=[stitch_logger]):
                 try:
                     sample.reduce()
                 except Exception as e:  # noqa BLE001

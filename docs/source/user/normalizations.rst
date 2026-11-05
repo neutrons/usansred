@@ -155,8 +155,8 @@ Example
 ^^^^^^^
 
 The table below compares, scan by scan, the transmission of sample ``S115_dry`` (runs 41712 to
-41715) relative to ``EmptyPCell`` (runs 41740 to 41743), from the reference dataset
-``IPTS-30410``. [#]_ The first two scans cross the direct beam, so a large share of the neutrons
+41715) relative to ``EmptyPCell`` (runs 41740 to 41743), from the reference dataset of the
+``usansred-data`` repository. [#]_ The first two scans cross the direct beam, so a large share of the neutrons
 is reflected into the main detector. The last two scans are at wide angles, where the main
 detector receives almost no neutrons.
 

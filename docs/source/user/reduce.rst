@@ -11,14 +11,15 @@ After the experiment, the raw data should be stored in your experiment folder:
    $ cd /SNS/USANS/IPTS-XXXXXX/shared/autoreduce/
    $ usansred
 
-The steps of the reduction and the normalizations applied to the data are described in the
-following pages:
+The steps of the reduction, the normalizations applied to the data, and the stitching of the
+harmonics are described in the following pages:
 
 .. toctree::
    :maxdepth: 2
 
    reduction_workflow
    normalizations
+   stitching
 
 
 Activating the Environment
@@ -43,6 +44,8 @@ The setup file is a file that contains the information about the samples to be r
 Two formats are supported: JSON and CSV (comma separated values).
 The CSV is supported for backward compatibility and it only supports the background and sample information,
 while the JSON format also supports additional configuration flags such as `save_all_harmonics`.
+Enabling `save_all_harmonics` also stitches the harmonics into a single profile (see
+:ref:`stitching the harmonics <stitching-harmonics>`).
 
 The JSON format provides the same information in a structured layout.
 A JSON setup file contains a required samples entry, optional background entry, and optional configuration flags.
@@ -74,7 +77,7 @@ Each background and sample object contains descriptive keys for each field.
        "num_of_scans": "<integer|string>",    // required if empty cell is present; number of scans
        "exclude": ["<integer|string>"]        // scan numbers to skip during reduction; default: []
      },
-     "save_all_harmonics": "<boolean>"         // optional; save reduced data for higher harmonics; default: false
+     "save_all_harmonics": "<boolean>"         // optional; save reduced data for higher harmonics and the stitched profile; default: false
    }
 
 For example, create a file named ``setup.json`` with the following content:
@@ -230,7 +233,48 @@ Background subtraction is performed harmonic by harmonic: harmonic *n* of the ba
 empty cell) is subtracted from harmonic *n* of the sample, never from a different harmonic,
 because only same-order curves share a comparable momentum-transfer axis.
 
-The ``summary.xlsx`` report covers the first-harmonic files only.
+With ``save_all_harmonics``, the harmonics are also stitched into a single profile, written to two
+more files (see :ref:`stitching the harmonics <stitching-harmonics>`):
+
+- ``UN_X5D2_8_det_stitched.txt`` holds the scaled harmonics, stitched. It is written only when at
+  least harmonics 1 and 2 could be stitched.
+- ``UN_X5D2_8_det_background_subtracted_stitched.txt`` holds the background-subtracted
+  harmonics, stitched. It is additionally only written when a background or empty cell was
+  subtracted.
+
+When a reduction writes into an output directory that already holds reduced data files, it first
+deletes every file listed above (for all four harmonics) of each sample and of the background in
+the setup file, then writes its own files. This prevents files from an earlier reduction, for
+example the higher harmonics of a reduction with ``save_all_harmonics``, from remaining next to the
+new files and appearing in ``summary.xlsx``. Files of measurements that are not in the setup file,
+and files with other names, are left untouched. Do not save edited data under these names in the
+output directory, since the next reduction deletes them.
+
+The Summary Report
+~~~~~~~~~~~~~~~~~~
+
+The ``summary.xlsx`` report covers the first-harmonic files and, with ``save_all_harmonics``, the
+two stitched files. Each file gets its own worksheet with a chart, and its curve is also added to
+one of three summary charts: "Unscaled", "Original" (scaled data), or "BG Subtracted". The
+stitched curves are drawn with markers only, since the points of different harmonics are
+interleaved where the harmonics overlap. In every chart, a curve is named after its file, without
+the ``.txt`` extension.
+
+Worksheet names are derived from the file names. The ``UN_`` prefix and the ``.txt`` extension are
+removed, so ``UN_X5D2_8_det_1.txt`` becomes ``X5D2_8_det_1``. Excel limits worksheet names to 31
+characters; a longer name is shortened by applying the following substitutions, one at a time
+and in this order, until it fits:
+
+1. ``background`` becomes ``bkgr``;
+2. ``stitched`` becomes ``stitch``;
+3. ``_det`` is removed;
+4. ``subtracted`` becomes ``sub``.
+
+The substitutions apply only to the part of the name after the measurement name, which is never
+altered. For example, ``UN_S115_pc3_det_background_subtracted_stitched.txt`` becomes
+``S115_pc3_bkgr_subtracted_stitch``. A name still longer than 31 characters after all four
+substitutions, which happens only for long measurement names, is cut and given a number to keep
+it unique.
 
 .. _units-of-reduced-data:
 
@@ -259,6 +303,9 @@ applied. The units of the output files are therefore:
    * - ``UN_<name>_det_<n>_background_subtracted.txt``
      - :math:`Q_n`, in ``1/angstrom``
      - detector counts per monitor count, per cm per sr
+   * - ``UN_<name>_det_stitched.txt`` and ``UN_<name>_det_background_subtracted_stitched.txt``
+     - :math:`Q`, in ``1/angstrom``
+     - detector counts per monitor count, per cm per sr, on the scale of harmonic 1
 
 The reduced data are also slit-smeared: they are the scattering cross section integrated over the
 vertical acceptance of the analyzer, not the cross section itself (Section 6 of [NIST2008]_;

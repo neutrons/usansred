@@ -7,38 +7,128 @@ import os
 
 import pandas
 
+from usansred.io.filenames import reduced_data_filenames
 from usansred.utils.logging import get_logger
 
 __author__ = "Yingrui Shang"
 __copyright__ = "Copyright 2021, NSD, ORNL"
 __all__ = ["generate_report"]
 
-suffix = 0
-
 logger = get_logger(__name__)
 
+# Excel limits worksheet names to 31 characters
+SHEET_NAME_MAX_LENGTH = 31
 
-def format_sheet_name(filename: str) -> str:
-    """Reformat the file name to a valid sheetname in excel worksheet."""
-    global suffix
-    invalid = ["[", "]", ":", "*", "?", "/", "\\"]
-    new_filename = filename
-    for cc in invalid:
-        new_filename = new_filename.replace(cc, "_")
-    if len(new_filename) > 20:
-        suffix += 1
-        new_filename = new_filename[:20] + str(suffix)
-    return new_filename
+# Characters that Excel does not allow in worksheet names
+INVALID_SHEET_NAME_CHARACTERS = ["[", "]", ":", "*", "?", "/", "\\"]
+
+# Substitutions applied in order, one at a time, to the part of a sheet name that follows the
+# measurement name, until the sheet name fits in SHEET_NAME_MAX_LENGTH characters
+SHEET_NAME_SHORTENING_RULES = [
+    ("background", "bkgr"),
+    ("stitched", "stitch"),
+    ("_det", ""),
+    ("subtracted", "sub"),
+]
+
+
+def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
+    """Derive a valid Excel worksheet name from the name of a reduced data file.
+
+    1. The ``.txt`` extension and the ``UN_`` prefix are removed.
+    2. Characters that Excel does not allow in worksheet names are replaced by ``_``, as is an
+       apostrophe at the start or end of the name.
+    3. While the name is longer than 31 characters, the substitutions of
+       ``SHEET_NAME_SHORTENING_RULES`` are applied in order, one at a time: ``background`` to
+       ``bkgr``, ``stitched`` to ``stitch``, ``_det`` dropped, and ``subtracted`` to ``sub``.
+       They apply only to the part of the name from the last ``_det_`` onward, so that the
+       measurement name is never altered.
+    4. If the name is still too long, or already in ``used_names``, it is cut and a counter is
+       appended, so that it ends at no more than 31 characters and is unique. The counter is
+       the smallest integer, starting at 1, that gives a name not in ``used_names``, so the
+       result depends only on ``filename`` and ``used_names``.
+
+    For example, ``UN_S115_pc3_det_background_subtracted_stitched.txt`` becomes
+    ``S115_pc3_bkgr_subtracted_stitch``.
+
+    Parameters
+    ----------
+    filename : str
+        Name of a reduced data file, e.g. ``UN_S115_pc3_det_1.txt``.
+    used_names : set[str] | None
+        Worksheet names already in the workbook, in lower case since Excel compares worksheet
+        names without regard to case. The returned name is added to it. If None, uniqueness is
+        not checked.
+
+    Returns
+    -------
+    str
+        The worksheet name.
+    """
+    name = filename.removesuffix(".txt").removeprefix("UN_")
+    for character in INVALID_SHEET_NAME_CHARACTERS:
+        name = name.replace(character, "_")
+    # Excel does not allow a worksheet name to start or end with an apostrophe
+    if name.startswith("'"):
+        name = "_" + name[1:]
+    if name.endswith("'"):
+        name = name[:-1] + "_"
+
+    start = name.rfind("_det_")
+    if start >= 0:
+        measurement, tail = name[:start], name[start:]
+        for old, new in SHEET_NAME_SHORTENING_RULES:
+            if len(measurement) + len(tail) <= SHEET_NAME_MAX_LENGTH:
+                break
+            tail = tail.replace(old, new)
+        name = measurement + tail
+
+    def is_taken(candidate: str) -> bool:
+        return used_names is not None and candidate.lower() in used_names
+
+    # The counter starts at 1 for every name, so that the same files always get the same names
+    if len(name) > SHEET_NAME_MAX_LENGTH or is_taken(name):
+        base = name
+        counter = 1
+        while True:
+            name = base[: SHEET_NAME_MAX_LENGTH - len(str(counter))] + str(counter)
+            if not is_taken(name):
+                break
+            counter += 1
+
+    if used_names is not None:
+        used_names.add(name.lower())
+    return name
 
 
 def get_filenames_from_samples(sample_name: str) -> list[str]:
-    """Get a list of reduced file names based on a sample name."""
+    """Names of the reduced data files of a measurement that go into the summary report.
+
+    These are the first-order files and the files with all orders stitched together, as listed
+    by ``reduced_data_filenames`` for a single harmonic. The stitched files exist only when
+    ``save_all_harmonics`` is enabled and at least orders 1 and 2 could be stitched, and the
+    background-subtracted files only when a subtraction occurred; ``generate_report`` skips the
+    files that do not exist. Files of an earlier reduction into the same directory are removed
+    by ``Sample.dump_reduced_data_to_csv``, so the files that exist are those of the latest
+    reduction.
+
+    Parameters
+    ----------
+    sample_name : str
+        Name of the measurement.
+
+    Returns
+    -------
+    list[str]
+        The file names.
+
+    Raises
+    ------
+    ValueError
+        If ``sample_name`` is empty or None.
+    """
     if sample_name:
-        return [
-            "UN_" + sample_name + "_det_1.txt",
-            "UN_" + sample_name + "_det_1_background_subtracted.txt",
-            "UN_" + sample_name + "_det_1_unscaled.txt",
-        ]
+        return reduced_data_filenames(sample_name, num_of_harmonics=1)
     else:
         raise ValueError(f"Sample name is empty or not valid: {sample_name}")
 
@@ -94,17 +184,17 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
 
     main_chart_unscaled.set_x_axis({"name": "Q (1/A)", "log_base": 10})
 
-    main_chart_unscaled.set_y_axis({"name": "I (1/cn)", "log_base": 10})
+    main_chart_unscaled.set_y_axis({"name": "I (1/cm)", "log_base": 10})
     main_chart_unscaled.set_title({"name": "Unscaled Data"})
 
     main_chart_orig.set_x_axis({"name": "Q (1/A)", "log_base": 10})
 
-    main_chart_orig.set_y_axis({"name": "I (1/cn)", "log_base": 10})
+    main_chart_orig.set_y_axis({"name": "I (1/cm)", "log_base": 10})
     main_chart_orig.set_title({"name": "Original Data"})
 
     main_chart_subtracted.set_x_axis({"name": "Q (1/A)", "log_base": 10})
 
-    main_chart_subtracted.set_y_axis({"name": "I (1/cn)", "log_base": 10})
+    main_chart_subtracted.set_y_axis({"name": "I (1/cm)", "log_base": 10})
     main_chart_subtracted.set_title({"name": "Background Subtracted"})
 
     # Collect sample files from the config file
@@ -129,6 +219,7 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
                 sample_files.extend(get_filenames_from_samples(row[1]))
 
     # Process each sample file and add data to the corresponding charts
+    used_sheet_names = {"unscaled", "original", "bg subtracted"}  # the chart sheets
     for file in sample_files:
         fp = os.path.join(output_dir, file)
 
@@ -174,7 +265,7 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
         ]
         df.columns = cnames
 
-        wn = format_sheet_name(file)
+        wn = format_sheet_name(file, used_sheet_names)
         df.to_excel(xlsx_writer, sheet_name=wn, index=False)
 
         worksheet = xlsx_writer.sheets[wn]
@@ -182,42 +273,31 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
 
         chart = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
 
-        chart.add_series(
-            {
-                "name": f"{wn}",
-                "categories": f"={wn}!$D$2:$D$100",
-                "values": f"={wn}!$E$2:$E$100",
-            }
-        )
+        # Plot the positive Q (column D) and I (column E) values. Row 0 holds the column names,
+        # and rows 1 to len(df) the data. The list form of the ranges quotes the sheet name.
+        series = {
+            "name": file.removesuffix(".txt"),
+            "categories": [wn, 1, 3, len(df), 3],
+            "values": [wn, 1, 4, len(df), 4],
+        }
+        if file.endswith("stitched.txt"):
+            # Points of different orders are interleaved in the stitched profile, so a line
+            # through them would zigzag wherever the orders scatter
+            series["line"] = {"none": True}
+        chart.add_series(series)
 
         # Add data series to the main chartsheets
-        if file.endswith("background_subtracted.txt"):
-            main_chart_subtracted.add_series(
-                {
-                    "name": f"{wn}",
-                    "categories": f"={wn}!$D$2:$D$100",
-                    "values": f"={wn}!$E$2:$E$100",
-                }
-            )
+        # Match the file-name suffixes, not a substring, since the measurement name itself
+        # may contain "background_subtracted"
+        if file.endswith(("_background_subtracted.txt", "_background_subtracted_stitched.txt")):
+            main_chart_subtracted.add_series(dict(series))
         elif file.endswith("unscaled.txt"):
-            main_chart_unscaled.add_series(
-                {
-                    "name": f"{wn}",
-                    "categories": f"={wn}!$D$2:$D$100",
-                    "values": f"={wn}!$E$2:$E$100",
-                }
-            )
+            main_chart_unscaled.add_series(dict(series))
         else:
-            main_chart_orig.add_series(
-                {
-                    "name": f"{wn}",
-                    "categories": f"={wn}!$D$2:$D$100",
-                    "values": f"={wn}!$E$2:$E$100",
-                }
-            )
+            main_chart_orig.add_series(dict(series))
 
-        chart.set_x_axis({"name": f"={wn}!$A$1", "log_base": 10})
-        chart.set_y_axis({"name": f"={wn}!$B$1", "log_base": 10})
+        chart.set_x_axis({"name": [wn, 0, 0], "log_base": 10})
+        chart.set_y_axis({"name": [wn, 0, 1], "log_base": 10})
         worksheet.insert_chart("F1", chart)
 
     if main_chart_unscaled.series:

@@ -69,5 +69,10 @@ that has data:
   scaling.
 - ``UN_<background>_det_<n>.txt``: the stitched data after scaling.
 
+When ``save_all_harmonics`` is enabled, the scaled harmonics are also stitched into a single
+profile, ``UN_<background>_det_stitched.txt`` (see
+:ref:`stitching the harmonics <stitching-harmonics>`). It is not written if not even harmonics 1
+and 2 could be stitched.
+
 No ``_background_subtracted.txt`` file is written for the background, since nothing is subtracted
 from it.
