@@ -1,8 +1,11 @@
 """filenames.py: names of the reduced data files written for a measurement."""
 
+# Prefix of the reduced data file names written by usansred up to version 1.1.0
+LEGACY_PREFIX = "UN_"
+
 
 def reduced_data_filename(name: str, suffix: str) -> str:
-    """Name of one reduced data file of a measurement, ``UN_<name>_<suffix>.txt``.
+    """Name of one reduced data file of a measurement, ``<name>_<suffix>.txt``.
 
     Every reduced data file name is built here, so that the naming scheme is defined in one place.
 
@@ -19,7 +22,7 @@ def reduced_data_filename(name: str, suffix: str) -> str:
     str
         The file name, without directory.
     """
-    return f"UN_{name}_{suffix}.txt"
+    return f"{name}_{suffix}.txt"
 
 
 def reduced_data_filenames(
@@ -34,14 +37,14 @@ def reduced_data_filenames(
     The flags select the categories of file, as in ``Sample.dump_reduced_data_to_csv``. For each
     harmonic ``n`` from 1 to ``num_of_harmonics``, in this order:
 
-    - ``UN_<name>_det_<n>.txt`` (``scaled_data``)
-    - ``UN_<name>_det_<n>_background_subtracted.txt`` (``background_subtracted_data``)
-    - ``UN_<name>_det_<n>_unscaled.txt`` (``detector_data``)
+    - ``<name>_det_<n>.txt`` (``scaled_data``)
+    - ``<name>_det_<n>_background_subtracted.txt`` (``background_subtracted_data``)
+    - ``<name>_det_<n>_unscaled.txt`` (``detector_data``)
 
     followed by the profiles with all harmonics stitched together:
 
-    - ``UN_<name>_det_stitched.txt`` (``scaled_data``)
-    - ``UN_<name>_det_background_subtracted_stitched.txt`` (``background_subtracted_data``)
+    - ``<name>_det_stitched.txt`` (``scaled_data``)
+    - ``<name>_det_background_subtracted_stitched.txt`` (``background_subtracted_data``)
 
     Whether each file is actually written depends on the reduction, e.g. on ``save_all_harmonics``
     and on whether a background was subtracted.

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
 
 from usansred.enums import MeasurementType
-from usansred.io.filenames import reduced_data_filename, reduced_data_filenames
+from usansred.io.filenames import LEGACY_PREFIX, reduced_data_filename, reduced_data_filenames
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.stitch import apply_stitch, interpolate_error, stitch_profiles
@@ -435,21 +435,21 @@ class Sample(BaseModel):
         Parameters
         ----------
         detector_data : bool
-            Write the stitched, monitor-normalized data, ``UN_<name>_det_1_unscaled.txt``.
-            With ``save_all_harmonics``, higher harmonics go to ``UN_<name>_det_<n>_unscaled.txt``.
+            Write the stitched, monitor-normalized data, ``<name>_det_1_unscaled.txt``.
+            With ``save_all_harmonics``, higher harmonics go to ``<name>_det_<n>_unscaled.txt``.
         scaled_data : bool
             Write the data rescaled by analyzer solid angle, sample thickness, and transmission,
-            ``UN_<name>_det_1.txt``. With ``save_all_harmonics``, higher harmonics go to
-            ``UN_<name>_det_<n>.txt``.
+            ``<name>_det_1.txt``. With ``save_all_harmonics``, higher harmonics go to
+            ``<name>_det_<n>.txt``.
         background_subtracted_data : bool
             Write the background- (or empty-cell-) subtracted data,
-            ``UN_<name>_det_1_background_subtracted.txt``. With ``save_all_harmonics``, higher
-            harmonics go to ``UN_<name>_det_<n>_background_subtracted.txt``. Only written when a
+            ``<name>_det_1_background_subtracted.txt``. With ``save_all_harmonics``, higher
+            harmonics go to ``<name>_det_<n>_background_subtracted.txt``. Only written when a
             subtraction actually occurred (``is_reduced`` is True).
 
         With ``save_all_harmonics``, the profiles with all harmonics stitched together (see
-        ``stitch_orders``) are also written: ``UN_<name>_det_stitched.txt`` with the
-        ``scaled_data`` category, and ``UN_<name>_det_background_subtracted_stitched.txt`` with
+        ``stitch_orders``) are also written: ``<name>_det_stitched.txt`` with the
+        ``scaled_data`` category, and ``<name>_det_background_subtracted_stitched.txt`` with
         the ``background_subtracted_data`` category. Each is skipped when its stitched profile
         is empty, i.e. when not even harmonics 1 and 2 could be stitched.
 
@@ -562,6 +562,13 @@ class Sample(BaseModel):
         ``save_all_harmonics``, or a stitched profile that could not be stitched) do not remain
         from the earlier reduction.
 
+        The same files under the names written by usansred up to version 1.1.0, which start with
+        ``LEGACY_PREFIX`` (``UN_``), are removed as well, so that an earlier reduction by such a
+        version does not leave a second copy of each profile. A limitation: if the experiment
+        also holds a measurement whose name is ``UN_`` followed by this measurement's name, its
+        files are among those removed, and they are written again only if that measurement is
+        written afterwards.
+
         Parameters
         ----------
         detector_data : bool
@@ -578,6 +585,8 @@ class Sample(BaseModel):
             scaled_data=scaled_data,
             background_subtracted_data=background_subtracted_data,
         )
+        # Names written by usansred up to version 1.1.0
+        filenames += [LEGACY_PREFIX + filename for filename in filenames]
         for filename in filenames:
             filepath = os.path.join(self.experiment.output_dir, filename)
             if os.path.isfile(filepath):
@@ -585,7 +594,7 @@ class Sample(BaseModel):
                 logger.info(f"Removed {filepath}, left by an earlier reduction.")
 
     def _dump_stitched(self, data: IQData, suffix: str, description: str) -> None:
-        """Write a stitched profile to ``UN_<name>_<suffix>.txt``, or log why it is skipped.
+        """Write a stitched profile to ``<name>_<suffix>.txt``, or log why it is skipped.
 
         Parameters
         ----------

@@ -10,6 +10,7 @@ from unittest.mock import patch as mock_patch
 import numpy as np
 import pytest
 
+from usansred.io.filenames import LEGACY_PREFIX
 from usansred.reduce import Experiment, unscattered_beam_q_cutoff
 from usansred.reduce import main as reduce
 
@@ -61,6 +62,12 @@ def assert_reduction_log_files(output_dir: str | Path, measurements: list[tuple[
         assert f"Data reduction finished for {label_prefix} {name}." in content
 
 
+def assert_no_legacy_names(output_dir: str | Path):
+    """Assert that no output file carries the ``UN_`` prefix of usansred up to version 1.1.0."""
+    legacy = sorted(path.name for path in Path(output_dir).glob(f"{LEGACY_PREFIX}*"))
+    assert legacy == [], f"output files with the legacy prefix: {legacy}"
+
+
 def stitched_scale_factors(log: str, label: str, name: str) -> tuple[list[int], list[float]]:
     """Read the stitched orders and their scale factors from the summary line of a reduction log.
 
@@ -106,8 +113,8 @@ def assert_stitched_profile(output_dir: Path, name: str, q_cut: float) -> np.nda
     np.ndarray
         The stitched profile, one ``[Q, I, E]`` row per point.
     """
-    stitched = np.array(read_numbers_from_file(output_dir / f"UN_{name}_det_stitched.txt"))
-    harmonic_1 = np.array(read_numbers_from_file(output_dir / f"UN_{name}_det_1.txt"))
+    stitched = np.array(read_numbers_from_file(output_dir / f"{name}_det_stitched.txt"))
+    harmonic_1 = np.array(read_numbers_from_file(output_dir / f"{name}_det_1.txt"))
     harmonic_1 = harmonic_1[harmonic_1[:, 1] != 0]
 
     assert np.all(np.diff(stitched[:, 0]) >= 0), f"stitched Q of {name} is not sorted"
@@ -147,7 +154,7 @@ def test_main(mock_parse_args, data_server, tmp_path):
             "background subtracted": "_background_subtracted",
         }
         for suffix in file_suffixes.values():
-            filename = f"UN_{name}_det_1{suffix}.txt"
+            filename = f"{name}_det_1{suffix}.txt"
             output, expected = os.path.join(tmp_path, filename), os.path.join(goldendir, filename)
             if os.path.exists(expected):
                 assert os.path.exists(output), f"Missing expected output file: {output}"
@@ -155,11 +162,12 @@ def test_main(mock_parse_args, data_server, tmp_path):
 
     # The background-subtracted file is written for the samples ...
     for name in ["S115_pc3", "S115_dry"]:
-        assert os.path.exists(os.path.join(tmp_path, f"UN_{name}_det_1_background_subtracted.txt"))
+        assert os.path.exists(os.path.join(tmp_path, f"{name}_det_1_background_subtracted.txt"))
     # ... but not for the background itself (nothing is subtracted from it)
-    assert not os.path.exists(os.path.join(tmp_path, "UN_EmptyPCell_det_1_background_subtracted.txt"))
+    assert not os.path.exists(os.path.join(tmp_path, "EmptyPCell_det_1_background_subtracted.txt"))
 
     assert_reduction_log_files(tmp_path, [("S115_pc3", "sample"), ("S115_dry", "sample"), ("EmptyPCell", "background")])
+    assert_no_legacy_names(tmp_path)
 
 
 @mock_patch("usansred.reduce.parse_args")
@@ -221,23 +229,23 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
     # the first-harmonic ``_det_1`` files; no per-bank subdirectories are created.
     for harmonic in range(2, 5):
         for name in ["EmptyPCell", "S115_dry", "S115_pc3"]:
-            harmonic_file = output_dir / f"UN_{name}_det_{harmonic}_unscaled.txt"
+            harmonic_file = output_dir / f"{name}_det_{harmonic}_unscaled.txt"
             assert harmonic_file.is_file()
             assert harmonic_file.stat().st_size > 0
             assert len(harmonic_file.read_text(encoding="utf-8").splitlines()) == 65
 
-            scaled_file = output_dir / f"UN_{name}_det_{harmonic}.txt"
+            scaled_file = output_dir / f"{name}_det_{harmonic}.txt"
             assert scaled_file.is_file()
             assert scaled_file.stat().st_size > 0
 
     # Background subtraction is performed for every harmonic, for the samples only
     for harmonic in range(1, 5):
         for name in ["S115_dry", "S115_pc3"]:
-            subtracted_file = output_dir / f"UN_{name}_det_{harmonic}_background_subtracted.txt"
+            subtracted_file = output_dir / f"{name}_det_{harmonic}_background_subtracted.txt"
             assert subtracted_file.is_file()
             assert subtracted_file.stat().st_size > 0
         # Nothing is subtracted from the background itself
-        assert not (output_dir / f"UN_EmptyPCell_det_{harmonic}_background_subtracted.txt").exists()
+        assert not (output_dir / f"EmptyPCell_det_{harmonic}_background_subtracted.txt").exists()
 
     assert not list(output_dir.glob("bank_*")), "per-bank subdirectories should no longer be created"
 
@@ -263,11 +271,9 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
         assert factors == pytest.approx(expected, rel=1e-3)
         if label == "sample":
             # The background-subtracted harmonics are stitched on the same Q points
-            subtracted = np.array(
-                read_numbers_from_file(output_dir / f"UN_{name}_det_background_subtracted_stitched.txt")
-            )
+            subtracted = np.array(read_numbers_from_file(output_dir / f"{name}_det_background_subtracted_stitched.txt"))
             np.testing.assert_allclose(subtracted[:, 0], stitched[:, 0], rtol=1e-12)
-    assert not (output_dir / "UN_EmptyPCell_det_background_subtracted_stitched.txt").exists()
+    assert not (output_dir / "EmptyPCell_det_background_subtracted_stitched.txt").exists()
     # Harmonic 3 of S115_pc3 does not extend the stitched profile to higher Q
     pc3_log = (output_dir / "reduction_S115_pc3.log").read_text(encoding="utf-8")
     assert "Stitched orders [1, 2] of sample S115_pc3" in pc3_log
@@ -275,6 +281,7 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
     assert "Stitched orders [1, 2, 3, 4] of sample S115_dry" in (output_dir / "reduction_S115_dry.log").read_text(
         encoding="utf-8"
     )
+    assert_no_legacy_names(output_dir)
 
 
 @pytest.mark.datarepo
@@ -292,12 +299,13 @@ def test_reduce_empty_cell(data_server, tmp_path):
     assert_reduction_log_files(tmp_path, [("EmptyPCell", "empty cell"), ("S115_pc3", "sample"), ("S115_dry", "sample")])
 
     # No output files are written for the empty cell
-    assert list(tmp_path.glob("UN_EmptyPCell*")) == []
+    assert list(tmp_path.glob("EmptyPCell_det_*")) == []
+    assert_no_legacy_names(tmp_path)
 
     # The empty cell was subtracted from each sample, for every harmonic
     for name in ["S115_pc3", "S115_dry"]:
         for harmonic in range(1, 5):
-            subtracted_file = tmp_path / f"UN_{name}_det_{harmonic}_background_subtracted.txt"
+            subtracted_file = tmp_path / f"{name}_det_{harmonic}_background_subtracted.txt"
             assert subtracted_file.is_file()
             assert subtracted_file.stat().st_size > 0
         logfile = (tmp_path / f"reduction_{name}.log").read_text(encoding="utf-8")
@@ -311,8 +319,8 @@ def test_reduce_empty_cell(data_server, tmp_path):
     for sample in experiment.samples:
         transmission = sample.transmission
         assert 0.0 < transmission < 1.0
-        golden = np.array(read_numbers_from_file(os.path.join(goldendir, f"UN_{sample.name}_det_1.txt")))
-        output = np.array(read_numbers_from_file(str(tmp_path / f"UN_{sample.name}_det_1.txt")))
+        golden = np.array(read_numbers_from_file(os.path.join(goldendir, f"{sample.name}_det_1.txt")))
+        output = np.array(read_numbers_from_file(str(tmp_path / f"{sample.name}_det_1.txt")))
         np.testing.assert_allclose(output[:, 0], golden[:, 0], rtol=1e-6)  # Q (1/angstrom) unchanged
         np.testing.assert_allclose(output[:, 1], golden[:, 1] / transmission, rtol=1e-6)
         np.testing.assert_allclose(output[:, 2], golden[:, 2] / transmission, rtol=1e-6)

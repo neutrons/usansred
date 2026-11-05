@@ -520,8 +520,8 @@ class TestDumpAllHarmonics:
         sample.dump_reduced_data_to_csv(background_subtracted_data=False)
 
         for harmonic in (1, 2):
-            assert (tmp_path / f"UN_test_det_{harmonic}_unscaled.txt").is_file()
-            assert (tmp_path / f"UN_test_det_{harmonic}.txt").is_file()
+            assert (tmp_path / f"test_det_{harmonic}_unscaled.txt").is_file()
+            assert (tmp_path / f"test_det_{harmonic}.txt").is_file()
         assert not list(tmp_path.glob("bank_*")), "no per-bank subdirectories should be created"
 
     def test_higher_harmonics_hold_their_own_bank_data(self, mock_experiment_2banks, tmp_path):
@@ -530,7 +530,7 @@ class TestDumpAllHarmonics:
 
         sample.dump_reduced_data_to_csv(background_subtracted_data=False)
 
-        rows = list(csv.reader((tmp_path / "UN_test_det_2_unscaled.txt").read_text().splitlines()))
+        rows = list(csv.reader((tmp_path / "test_det_2_unscaled.txt").read_text().splitlines()))
         assert [float(row[0]) for row in rows] == [0.3, 0.4]
         assert [float(row[1]) for row in rows] == [300.0, 400.0]
 
@@ -540,10 +540,10 @@ class TestDumpAllHarmonics:
 
         sample.dump_reduced_data_to_csv(background_subtracted_data=False)
 
-        assert (tmp_path / "UN_test_det_1_unscaled.txt").is_file()
-        assert (tmp_path / "UN_test_det_1.txt").is_file()
-        assert not (tmp_path / "UN_test_det_2_unscaled.txt").exists()
-        assert not (tmp_path / "UN_test_det_2.txt").exists()
+        assert (tmp_path / "test_det_1_unscaled.txt").is_file()
+        assert (tmp_path / "test_det_1.txt").is_file()
+        assert not (tmp_path / "test_det_2_unscaled.txt").exists()
+        assert not (tmp_path / "test_det_2.txt").exists()
 
     def test_missing_first_detector_harmonic_aborts_output(self, mock_experiment_2banks, tmp_path):
         """Missing first-harmonic detector data must abort output generation."""
@@ -570,10 +570,10 @@ class TestDumpAllHarmonics:
         with caplog.at_level(logging.WARNING):
             sample.dump_reduced_data_to_csv(background_subtracted_data=False)
 
-        assert (tmp_path / "UN_test_det_1_unscaled.txt").is_file()
-        assert (tmp_path / "UN_test_det_1.txt").is_file()
-        assert not (tmp_path / "UN_test_det_2_unscaled.txt").exists()
-        assert not (tmp_path / "UN_test_det_2.txt").exists()
+        assert (tmp_path / "test_det_1_unscaled.txt").is_file()
+        assert (tmp_path / "test_det_1.txt").is_file()
+        assert not (tmp_path / "test_det_2_unscaled.txt").exists()
+        assert not (tmp_path / "test_det_2.txt").exists()
         assert "No detector data is available" in caplog.text
         assert "No scaled data is available" in caplog.text
 
@@ -596,7 +596,7 @@ class TestDumpBackgroundSubtracted:
 
         sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
 
-        subtracted_file = tmp_path / "UN_test_det_1_background_subtracted.txt"
+        subtracted_file = tmp_path / "test_det_1_background_subtracted.txt"
         assert subtracted_file.is_file()
         assert subtracted_file.stat().st_size > 0
 
@@ -626,7 +626,7 @@ class TestDumpBackgroundSubtracted:
         sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
 
         for harmonic in (1, 2):
-            assert (tmp_path / f"UN_test_det_{harmonic}_background_subtracted.txt").is_file()
+            assert (tmp_path / f"test_det_{harmonic}_background_subtracted.txt").is_file()
 
     def test_higher_harmonics_hold_their_own_data(self, mock_experiment_2banks, tmp_path):
         """The ``_det_2`` subtracted file holds harmonic 2's curve, not a copy of harmonic 1's."""
@@ -634,7 +634,7 @@ class TestDumpBackgroundSubtracted:
 
         sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
 
-        contents = (tmp_path / "UN_test_det_2_background_subtracted.txt").read_text()
+        contents = (tmp_path / "test_det_2_background_subtracted.txt").read_text()
         assert "0.3" in contents
         assert "0.4" in contents
         assert "0.1" not in contents
@@ -645,8 +645,8 @@ class TestDumpBackgroundSubtracted:
 
         sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
 
-        assert (tmp_path / "UN_test_det_1_background_subtracted.txt").is_file()
-        assert not (tmp_path / "UN_test_det_2_background_subtracted.txt").exists()
+        assert (tmp_path / "test_det_1_background_subtracted.txt").is_file()
+        assert not (tmp_path / "test_det_2_background_subtracted.txt").exists()
 
     def test_empty_higher_harmonic_is_skipped(self, mock_experiment_2banks, tmp_path):
         """A placeholder harmonic produces no file, and does not block the first harmonic."""
@@ -655,8 +655,8 @@ class TestDumpBackgroundSubtracted:
 
         sample.dump_reduced_data_to_csv(detector_data=False, scaled_data=False)
 
-        assert (tmp_path / "UN_test_det_1_background_subtracted.txt").is_file()
-        assert not (tmp_path / "UN_test_det_2_background_subtracted.txt").exists()
+        assert (tmp_path / "test_det_1_background_subtracted.txt").is_file()
+        assert not (tmp_path / "test_det_2_background_subtracted.txt").exists()
 
 
 class TestSubtractBackground:
@@ -1289,11 +1289,11 @@ class TestStitchOrders:
 
         sample.dump_reduced_data_to_csv()
 
-        stitched = self._read(tmp_path / "UN_test_det_stitched.txt")
+        stitched = self._read(tmp_path / "test_det_stitched.txt")
         assert [row[0] for row in stitched] == pytest.approx(sample.data_stitched.q)
         assert [row[1] for row in stitched] == pytest.approx(sample.data_stitched.i)
         assert [row[2] for row in stitched] == pytest.approx(sample.data_stitched.e)
-        subtracted = self._read(tmp_path / "UN_test_det_background_subtracted_stitched.txt")
+        subtracted = self._read(tmp_path / "test_det_background_subtracted_stitched.txt")
         assert [row[1] for row in subtracted] == pytest.approx(sample.data_bg_subtracted_stitched.i)
 
     def test_per_harmonic_files_unchanged_by_stitching(self, mock_experiment_2banks, tmp_path):
@@ -1311,7 +1311,7 @@ class TestStitchOrders:
         for name in per_harmonic:
             assert (stitched_dir / name).read_bytes() == (unstitched_dir / name).read_bytes()
         assert sorted(path.name for path in stitched_dir.iterdir()) == sorted(
-            [*per_harmonic, "UN_test_det_stitched.txt", "UN_test_det_background_subtracted_stitched.txt"]
+            [*per_harmonic, "test_det_stitched.txt", "test_det_background_subtracted_stitched.txt"]
         )
 
     def test_no_stitched_files_without_save_all_harmonics(self, mock_experiment_2banks, tmp_path):
@@ -1332,7 +1332,7 @@ class TestStitchOrders:
         sample.dump_reduced_data_to_csv()
 
         assert not list(tmp_path.glob("*stitched*"))
-        assert (tmp_path / "UN_test_det_2.txt").is_file()
+        assert (tmp_path / "test_det_2.txt").is_file()
 
     def test_stale_stitched_files_removed_when_harmonic_2_fails(
         self, mock_experiment_2banks, tmp_path, caplog, monkeypatch
@@ -1341,7 +1341,7 @@ class TestStitchOrders:
 
         Otherwise the summary report would mix them with the data of the new reduction.
         """
-        stale = [tmp_path / "UN_test_det_stitched.txt", tmp_path / "UN_test_det_background_subtracted_stitched.txt"]
+        stale = [tmp_path / "test_det_stitched.txt", tmp_path / "test_det_background_subtracted_stitched.txt"]
         for path in stale:
             path.write_text("stale\n")
         sample = self._sample(mock_experiment_2banks, tmp_path)
@@ -1356,7 +1356,7 @@ class TestStitchOrders:
         assert f"Removed {stale[0]}, left by an earlier reduction." in caplog.text
 
     def test_no_background_subtracted_stitched_file_when_nothing_subtracted(self, mock_experiment_2banks, tmp_path):
-        """Without a background subtraction, only ``UN_<name>_det_stitched.txt`` is written.
+        """Without a background subtraction, only ``<name>_det_stitched.txt`` is written.
 
         This is the case of the background measurement itself.
         """
@@ -1366,8 +1366,8 @@ class TestStitchOrders:
 
         sample.dump_reduced_data_to_csv()
 
-        assert (tmp_path / "UN_test_det_stitched.txt").is_file()
-        assert not (tmp_path / "UN_test_det_background_subtracted_stitched.txt").exists()
+        assert (tmp_path / "test_det_stitched.txt").is_file()
+        assert not (tmp_path / "test_det_background_subtracted_stitched.txt").exists()
 
 
 class TestRemoveEarlierOutputFiles:
@@ -1392,14 +1392,14 @@ class TestRemoveEarlierOutputFiles:
         stale = self._write_stale(
             tmp_path,
             [
-                "UN_test_det_2.txt",
-                "UN_test_det_2_unscaled.txt",
-                "UN_test_det_2_background_subtracted.txt",
-                "UN_test_det_stitched.txt",
-                "UN_test_det_background_subtracted_stitched.txt",
+                "test_det_2.txt",
+                "test_det_2_unscaled.txt",
+                "test_det_2_background_subtracted.txt",
+                "test_det_stitched.txt",
+                "test_det_background_subtracted_stitched.txt",
             ],
         )
-        overwritten = self._write_stale(tmp_path, ["UN_test_det_1.txt"])[0]
+        overwritten = self._write_stale(tmp_path, ["test_det_1.txt"])[0]
         sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
         monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
         caplog.set_level(logging.INFO)
@@ -1409,9 +1409,9 @@ class TestRemoveEarlierOutputFiles:
         assert not any(path.exists() for path in stale)
         assert overwritten.read_text() != "stale\n"
         assert sorted(path.name for path in tmp_path.iterdir()) == [
-            "UN_test_det_1.txt",
-            "UN_test_det_1_background_subtracted.txt",
-            "UN_test_det_1_unscaled.txt",
+            "test_det_1.txt",
+            "test_det_1_background_subtracted.txt",
+            "test_det_1_unscaled.txt",
         ]
         assert f"Removed {stale[0]}, left by an earlier reduction." in caplog.text
 
@@ -1420,9 +1420,9 @@ class TestRemoveEarlierOutputFiles:
         stale = self._write_stale(
             tmp_path,
             [
-                "UN_test_det_1_background_subtracted.txt",
-                "UN_test_det_2_background_subtracted.txt",
-                "UN_test_det_background_subtracted_stitched.txt",
+                "test_det_1_background_subtracted.txt",
+                "test_det_2_background_subtracted.txt",
+                "test_det_background_subtracted_stitched.txt",
             ],
         )
         sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, subtracted=False)
@@ -1431,17 +1431,17 @@ class TestRemoveEarlierOutputFiles:
         sample.dump_reduced_data_to_csv()
 
         assert not any(path.exists() for path in stale)
-        assert (tmp_path / "UN_test_det_stitched.txt").is_file()
+        assert (tmp_path / "test_det_stitched.txt").is_file()
 
     def test_files_of_other_measurements_kept(self, mock_experiment_2banks, tmp_path):
         """Only the files of the measurement being written are removed."""
         kept = self._write_stale(
             tmp_path,
             [
-                "UN_test2_det_2.txt",
-                "UN_tes_det_2.txt",
-                "UN_test_det_5.txt",
-                "UN_test_det_2_notes.txt",
+                "test2_det_2.txt",
+                "tes_det_2.txt",
+                "test_det_5.txt",
+                "test_det_2_notes.txt",
                 "summary.xlsx",
             ],
         )
@@ -1453,6 +1453,95 @@ class TestRemoveEarlierOutputFiles:
 
     def test_only_enabled_categories_removed(self, mock_experiment_2banks, tmp_path):
         """Files of a category that is not written are neither written nor removed."""
+        stale = self._write_stale(tmp_path, ["test_det_2.txt", "test_det_stitched.txt"])
+        kept = self._write_stale(
+            tmp_path,
+            [
+                "test_det_2_unscaled.txt",
+                "test_det_2_background_subtracted.txt",
+                "test_det_background_subtracted_stitched.txt",
+            ],
+        )
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+
+        sample.dump_reduced_data_to_csv(detector_data=False, background_subtracted_data=False)
+
+        assert not any(path.exists() for path in stale)
+        assert all(path.read_text() == "stale\n" for path in kept)
+
+    def test_files_removed_when_measurement_cannot_be_written(self, mock_experiment_2banks, tmp_path):
+        """A measurement whose first harmonic is missing does not keep the files of an earlier reduction."""
+        stale = self._write_stale(tmp_path, ["test_det_1.txt", "test_det_1_unscaled.txt"])
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path)
+        sample.data_scaled = []
+
+        with pytest.raises(RuntimeError, match="Cannot write scaled data"):
+            sample.dump_reduced_data_to_csv()
+
+        assert not any(path.exists() for path in stale)
+
+    # Files with the names written by usansred up to version 1.1.0, which start with ``UN_``
+
+    def test_legacy_files_removed(self, mock_experiment_2banks, tmp_path, caplog, monkeypatch):
+        """Files of an earlier reduction by a version that wrote ``UN_`` names are removed."""
+        stale = self._write_stale(
+            tmp_path,
+            [
+                f"UN_test_det_{harmonic}{suffix}.txt"
+                for harmonic in (1, 2)
+                for suffix in ("", "_unscaled", "_background_subtracted")
+            ]
+            + ["UN_test_det_stitched.txt", "UN_test_det_background_subtracted_stitched.txt"],
+        )
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path)
+        sample.stitch_orders()
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
+        caplog.set_level(logging.INFO)
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not any(path.exists() for path in stale)
+        assert not any(path.name.startswith("UN_") for path in tmp_path.iterdir())
+        assert (tmp_path / "test_det_1.txt").is_file()
+        assert f"Removed {stale[0]}, left by an earlier reduction." in caplog.text
+
+    def test_legacy_higher_harmonics_removed_without_save_all_harmonics(self, mock_experiment_2banks, tmp_path):
+        """Legacy files of every harmonic are removed, regardless of ``save_all_harmonics``."""
+        stale = self._write_stale(
+            tmp_path,
+            [
+                "UN_test_det_2.txt",
+                "UN_test_det_2_unscaled.txt",
+                "UN_test_det_2_background_subtracted.txt",
+                "UN_test_det_stitched.txt",
+                "UN_test_det_background_subtracted_stitched.txt",
+            ],
+        )
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not any(path.exists() for path in stale)
+        assert sorted(path.name for path in tmp_path.iterdir()) == [
+            "test_det_1.txt",
+            "test_det_1_background_subtracted.txt",
+            "test_det_1_unscaled.txt",
+        ]
+
+    def test_legacy_files_of_other_measurements_kept(self, mock_experiment_2banks, tmp_path):
+        """Only the legacy files of the measurement being written are removed."""
+        kept = self._write_stale(
+            tmp_path,
+            ["UN_test2_det_1.txt", "UN_tes_det_1.txt", "UN_test_det_5.txt", "UN_test_det_1_notes.txt"],
+        )
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path, save_all_harmonics=False)
+
+        sample.dump_reduced_data_to_csv()
+
+        assert all(path.read_text() == "stale\n" for path in kept)
+
+    def test_only_enabled_legacy_categories_removed(self, mock_experiment_2banks, tmp_path):
+        """Legacy files of a category that is not written are kept."""
         stale = self._write_stale(tmp_path, ["UN_test_det_2.txt", "UN_test_det_stitched.txt"])
         kept = self._write_stale(
             tmp_path,
@@ -1469,8 +1558,8 @@ class TestRemoveEarlierOutputFiles:
         assert not any(path.exists() for path in stale)
         assert all(path.read_text() == "stale\n" for path in kept)
 
-    def test_files_removed_when_measurement_cannot_be_written(self, mock_experiment_2banks, tmp_path):
-        """A measurement whose first harmonic is missing does not keep the files of an earlier reduction."""
+    def test_legacy_files_removed_when_measurement_cannot_be_written(self, mock_experiment_2banks, tmp_path):
+        """A measurement whose first harmonic is missing does not keep the legacy files either."""
         stale = self._write_stale(tmp_path, ["UN_test_det_1.txt", "UN_test_det_1_unscaled.txt"])
         sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path)
         sample.data_scaled = []
