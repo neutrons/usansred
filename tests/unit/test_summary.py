@@ -17,31 +17,33 @@ from usansred.summary import (
 @pytest.mark.parametrize(
     ("input_filename", "expected_output"),
     [
-        # The extension and the UN_ prefix are always removed; short names are otherwise kept
-        ("UN_S115_pc3_det_1.txt", "S115_pc3_det_1"),
-        ("UN_S115_pc3_det_1_unscaled.txt", "S115_pc3_det_1_unscaled"),
-        ("UN_S115_pc3_det_stitched.txt", "S115_pc3_det_stitched"),
+        # The extension is always removed; short names are otherwise kept
+        ("S115_pc3_det_1.txt", "S115_pc3_det_1"),
+        ("S115_pc3_det_1_unscaled.txt", "S115_pc3_det_1_unscaled"),
+        ("S115_pc3_det_stitched.txt", "S115_pc3_det_stitched"),
         # Rule 1 alone makes the name fit
-        ("UN_S115_pc3_det_1_background_subtracted.txt", "S115_pc3_det_1_bkgr_subtracted"),
+        ("S115_pc3_det_1_background_subtracted.txt", "S115_pc3_det_1_bkgr_subtracted"),
         # Rules 1 to 3; exactly 31 characters
-        ("UN_S115_pc3_det_background_subtracted_stitched.txt", "S115_pc3_bkgr_subtracted_stitch"),
+        ("S115_pc3_det_background_subtracted_stitched.txt", "S115_pc3_bkgr_subtracted_stitch"),
         # Rules 1 and 3 (rule 2 has nothing to replace)
-        ("UN_A2_56C_3hr_det_1_background_subtracted.txt", "A2_56C_3hr_1_bkgr_subtracted"),
+        ("A2_56C_3hr_det_1_background_subtracted.txt", "A2_56C_3hr_1_bkgr_subtracted"),
         # Rules 1 to 4
-        ("UN_A2_56C_3hr_det_background_subtracted_stitched.txt", "A2_56C_3hr_bkgr_sub_stitch"),
+        ("A2_56C_3hr_det_background_subtracted_stitched.txt", "A2_56C_3hr_bkgr_sub_stitch"),
         # Invalid characters are replaced
-        ("UN_example[1]_det_1.txt", "example_1__det_1"),
-        # A leading or trailing apostrophe, exposed by removing UN_ and .txt, is replaced
-        ("UN_'S1_det_1.txt", "_S1_det_1"),
+        ("example[1]_det_1.txt", "example_1__det_1"),
+        # A leading or trailing apostrophe, exposed by removing .txt, is replaced
+        ("'S1_det_1.txt", "_S1_det_1"),
         ("S1'", "S1_"),
         # An apostrophe inside the name is allowed
-        ("UN_S1's_det_1.txt", "S1's_det_1"),
-        # Names without the UN_ prefix or the .txt extension are accepted
+        ("S1's_det_1.txt", "S1's_det_1"),
+        # A measurement name starting with UN_, the prefix of earlier versions, is kept
+        ("UN_x_det_1.txt", "UN_x_det_1"),
+        # Names without the .txt extension are accepted
         ("normal_filename", "normal_filename"),
     ],
 )
 def test_format_sheet_name(input_filename, expected_output):
-    """Sheet names drop ``UN_`` and ``.txt``, and long names are shortened rule by rule."""
+    """Sheet names drop ``.txt``, and long names are shortened rule by rule."""
     assert format_sheet_name(input_filename) == expected_output
 
 
@@ -52,8 +54,8 @@ def test_format_sheet_name_stops_at_first_rule_that_fits():
     so ``_det`` is kept. With one more character in the measurement name, rule 1 is not enough
     and rule 3 drops ``_det``.
     """
-    assert format_sheet_name("UN_S115_dry2_det_1_background_subtracted.txt") == "S115_dry2_det_1_bkgr_subtracted"
-    assert format_sheet_name("UN_S115_dry23_det_1_background_subtracted.txt") == "S115_dry23_1_bkgr_subtracted"
+    assert format_sheet_name("S115_dry2_det_1_background_subtracted.txt") == "S115_dry2_det_1_bkgr_subtracted"
+    assert format_sheet_name("S115_dry23_det_1_background_subtracted.txt") == "S115_dry23_1_bkgr_subtracted"
 
 
 def test_format_sheet_name_keeps_measurement_name_intact():
@@ -61,10 +63,10 @@ def test_format_sheet_name_keeps_measurement_name_intact():
 
     The measurement name below contains ``_det`` and ``background``, which must survive.
     """
-    name = format_sheet_name("UN_my_detbackground_det_stitched.txt")
+    name = format_sheet_name("my_detbackground_det_stitched.txt")
 
     assert name == "my_detbackground_det_stitched"
-    long_name = format_sheet_name("UN_bg_det_x_det_background_subtracted_stitched.txt")
+    long_name = format_sheet_name("bg_det_x_det_background_subtracted_stitched.txt")
     assert long_name.startswith("bg_det_x_")
     assert long_name == "bg_det_x_bkgr_subtracted_stitch"
 
@@ -74,7 +76,7 @@ def test_format_sheet_name_falls_back_to_cut_and_counter():
 
     The cut applies to the name after all rules, ``a_very_long_measurement_name_bkgr_sub_stitch``.
     """
-    name = format_sheet_name("UN_a_very_long_measurement_name_det_background_subtracted_stitched.txt")
+    name = format_sheet_name("a_very_long_measurement_name_det_background_subtracted_stitched.txt")
 
     assert len(name) == SHEET_NAME_MAX_LENGTH
     assert name == "a_very_long_measurement_name_b1"
@@ -83,7 +85,7 @@ def test_format_sheet_name_falls_back_to_cut_and_counter():
 def test_format_sheet_name_makes_names_unique():
     """Names already used, compared without regard to case, get a counter."""
     used_names = {"original"}
-    long_name = "UN_a_very_long_measurement_name_det_background_subtracted_stitched.txt"
+    long_name = "a_very_long_measurement_name_det_background_subtracted_stitched.txt"
 
     first = format_sheet_name(long_name, used_names)
     second = format_sheet_name(long_name, used_names)
@@ -97,8 +99,8 @@ def test_format_sheet_name_makes_names_unique():
 
 def test_format_sheet_name_counter_does_not_depend_on_earlier_calls():
     """The counter starts at 1 for every name, so repeated reports give the same sheet names."""
-    long_name = "UN_a_very_long_measurement_name_det_background_subtracted_stitched.txt"
-    other_long_name = "UN_another_very_long_measurement_name_det_1_background_subtracted.txt"
+    long_name = "a_very_long_measurement_name_det_background_subtracted_stitched.txt"
+    other_long_name = "another_very_long_measurement_name_det_1_background_subtracted.txt"
 
     first_report = [format_sheet_name(name, set()) for name in (other_long_name, long_name)]
     used_names = set()
@@ -114,11 +116,11 @@ def test_format_sheet_name_counter_does_not_depend_on_earlier_calls():
         (
             "sample1",
             [
-                "UN_sample1_det_1.txt",
-                "UN_sample1_det_1_background_subtracted.txt",
-                "UN_sample1_det_1_unscaled.txt",
-                "UN_sample1_det_stitched.txt",
-                "UN_sample1_det_background_subtracted_stitched.txt",
+                "sample1_det_1.txt",
+                "sample1_det_1_background_subtracted.txt",
+                "sample1_det_1_unscaled.txt",
+                "sample1_det_stitched.txt",
+                "sample1_det_background_subtracted_stitched.txt",
             ],
         ),
         ("", ValueError),
@@ -145,7 +147,7 @@ def test_generate_report_reads_from_output_dir(tmp_path, caplog, monkeypatch):
     config.write_text("b/s,name,start_scan,num_scans,thickness\ns,mysample,1,1,1.0\n")
 
     # Place a reduced file in output_dir
-    sample_txt = output_dir / "UN_mysample_det_1.txt"
+    sample_txt = output_dir / "mysample_det_1.txt"
     sample_txt.write_text("0.001,10.0,0.5\n0.002,8.0,0.4\n")
 
     monkeypatch.setattr(usansred.summary.logger, "propagate", True)
@@ -154,7 +156,7 @@ def test_generate_report_reads_from_output_dir(tmp_path, caplog, monkeypatch):
         generate_report(str(config), data_dir=str(data_dir), output_dir=str(output_dir))
 
     assert (output_dir / "summary.xlsx").exists()
-    assert any("Reading sample file UN_mysample_det_1.txt" in m for m in caplog.messages), (
+    assert any("Reading sample file mysample_det_1.txt" in m for m in caplog.messages), (
         f"Expected the sample file to be read from output_dir, but it was not found. Log messages: {caplog.messages}"
     )
 
@@ -222,10 +224,10 @@ def test_generate_report_includes_stitched_profiles(tmp_path, monkeypatch):
     config.write_text('{"samples": [{"name": "S115_pc3", "start_scan_num": 1, "num_of_scans": 1, "thickness": 0.1}]}')
     output_dir = tmp_path / "reduced"
     output_dir.mkdir()
-    _write_profile(output_dir / "UN_S115_pc3_det_1.txt", 65)
-    _write_profile(output_dir / "UN_S115_pc3_det_1_background_subtracted.txt", 65)
-    _write_profile(output_dir / "UN_S115_pc3_det_stitched.txt", 150)
-    _write_profile(output_dir / "UN_S115_pc3_det_background_subtracted_stitched.txt", 150)
+    _write_profile(output_dir / "S115_pc3_det_1.txt", 65)
+    _write_profile(output_dir / "S115_pc3_det_1_background_subtracted.txt", 65)
+    _write_profile(output_dir / "S115_pc3_det_stitched.txt", 150)
+    _write_profile(output_dir / "S115_pc3_det_background_subtracted_stitched.txt", 150)
 
     generate_report(str(config), output_dir=str(output_dir))
 
@@ -242,15 +244,15 @@ def test_generate_report_includes_stitched_profiles(tmp_path, monkeypatch):
     ]
 
     original = _chart_with_title(parts, "Original Data")
-    assert "<c:v>UN_S115_pc3_det_stitched</c:v>" in original
+    assert "<c:v>S115_pc3_det_stitched</c:v>" in original
     assert "S115_pc3_det_stitched!$D$2:$D$151" in original
     assert "S115_pc3_det_stitched!$E$2:$E$151" in original
     assert "S115_pc3_det_1!$D$2:$D$66" in original
 
     subtracted = _chart_with_title(parts, "Background Subtracted")
-    assert "<c:v>UN_S115_pc3_det_background_subtracted_stitched</c:v>" in subtracted
+    assert "<c:v>S115_pc3_det_background_subtracted_stitched</c:v>" in subtracted
     assert "S115_pc3_bkgr_subtracted_stitch!$E$2:$E$151" in subtracted
-    assert "UN_S115_pc3_det_stitched<" not in subtracted
+    assert "S115_pc3_det_stitched<" not in subtracted
 
     # Only the stitched series have their line removed
     series = re.findall(r"<c:ser>.*?</c:ser>", original, flags=re.DOTALL)
@@ -273,15 +275,15 @@ def test_generate_report_without_stitched_profiles(tmp_path, caplog, monkeypatch
     config.write_text("b/s,name,start_scan,num_scans,thickness\ns,S1,1,1,1.0\n")
     output_dir = tmp_path / "reduced"
     output_dir.mkdir()
-    _write_profile(output_dir / "UN_S1_det_1.txt", 10)
+    _write_profile(output_dir / "S1_det_1.txt", 10)
 
     with caplog.at_level(logging.INFO):
         generate_report(str(config), output_dir=str(output_dir))
 
     sheet_names = re.findall(r'<sheet name="([^"]*)"', _workbook_xml(output_dir / "summary.xlsx")["xl/workbook.xml"])
     assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "S1_det_1"]
-    assert "Sample UN_S1_det_stitched.txt file path does not exist!" in caplog.messages
-    assert "Sample UN_S1_det_background_subtracted_stitched.txt file path does not exist!" in caplog.messages
+    assert "Sample S1_det_stitched.txt file path does not exist!" in caplog.messages
+    assert "Sample S1_det_background_subtracted_stitched.txt file path does not exist!" in caplog.messages
 
 
 def test_generate_report_with_apostrophe_at_start_of_measurement_name(tmp_path):
@@ -290,12 +292,48 @@ def test_generate_report_with_apostrophe_at_start_of_measurement_name(tmp_path):
     config.write_text("b/s,name,start_scan,num_scans,thickness\ns,'S1,1,1,1.0\n")
     output_dir = tmp_path / "reduced"
     output_dir.mkdir()
-    _write_profile(output_dir / "UN_'S1_det_1.txt", 10)
+    _write_profile(output_dir / "'S1_det_1.txt", 10)
 
     generate_report(str(config), output_dir=str(output_dir))
 
     sheet_names = re.findall(r'<sheet name="([^"]*)"', _workbook_xml(output_dir / "summary.xlsx")["xl/workbook.xml"])
     assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "_S1_det_1"]
+
+
+@pytest.mark.parametrize("config_name", ["setup.json", "setup.csv"])
+@pytest.mark.parametrize("name", ["../other", "/tmp/other"])
+def test_generate_report_rejects_path_separators_in_names(tmp_path, config_name, name):
+    """generate_report reads the setup file itself, so it must also reject names with a path
+    separator, which would make it read files outside the output directory."""
+    config = tmp_path / "data" / config_name
+    config.parent.mkdir()
+    if config_name.endswith(".json"):
+        sample = {"name": name, "start_scan_num": 1, "num_of_scans": 1, "thickness": 0.1}
+        config.write_text(json.dumps({"samples": [sample]}))
+    else:
+        config.write_text(f"b/s,name,start_scan,num_scans,thickness\ns,{name},1,1,1.0\n")
+    output_dir = tmp_path / "data" / "reduced"
+    output_dir.mkdir()
+    _write_profile(tmp_path / "data" / "other_det_1.txt", 10)  # what "../other" would read
+
+    with pytest.raises(ValueError, match="name must not contain path separators"):
+        generate_report(str(config), output_dir=str(output_dir))
+
+    assert not (output_dir / "summary.xlsx").exists()
+
+
+def test_generate_report_skips_csv_rows_skipped_by_the_reduction(tmp_path):
+    """A header row is skipped as in the reduction, even when a column title has a path separator."""
+    config = tmp_path / "setup.csv"
+    config.write_text("type,sample/name,start,n,thickness\ns,S1,1,1,1.0\n")
+    output_dir = tmp_path / "reduced"
+    output_dir.mkdir()
+    _write_profile(output_dir / "S1_det_1.txt", 10)
+
+    generate_report(str(config), output_dir=str(output_dir))
+
+    sheet_names = re.findall(r'<sheet name="([^"]*)"', _workbook_xml(output_dir / "summary.xlsx")["xl/workbook.xml"])
+    assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "S1_det_1"]
 
 
 def test_generate_report_classifies_files_by_suffix(tmp_path):
@@ -320,9 +358,9 @@ def test_generate_report_classifies_files_by_suffix(tmp_path):
     def series_names(title: str) -> list[str]:
         return re.findall(r"<c:tx><c:v>([^<]*)</c:v>", _chart_with_title(parts, title))
 
-    assert series_names("Unscaled Data") == [f"UN_{name}_det_1_unscaled"]
-    assert sorted(series_names("Original Data")) == [f"UN_{name}_det_1", f"UN_{name}_det_stitched"]
+    assert series_names("Unscaled Data") == [f"{name}_det_1_unscaled"]
+    assert sorted(series_names("Original Data")) == [f"{name}_det_1", f"{name}_det_stitched"]
     assert sorted(series_names("Background Subtracted")) == [
-        f"UN_{name}_det_1_background_subtracted",
-        f"UN_{name}_det_background_subtracted_stitched",
+        f"{name}_det_1_background_subtracted",
+        f"{name}_det_background_subtracted_stitched",
     ]

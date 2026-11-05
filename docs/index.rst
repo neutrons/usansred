@@ -26,7 +26,7 @@ User Guide
 .. toctree::
    :titlesonly:
 
-   /source/release_notes
+   Release Notes <https://github.com/neutrons/usansred/releases>
 
 API
 ---

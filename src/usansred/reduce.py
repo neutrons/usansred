@@ -14,7 +14,13 @@ from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
 
 from usansred.enums import MeasurementType
-from usansred.io.filenames import reduced_data_filenames
+from usansred.io.filenames import (
+    LEGACY_PREFIX,
+    legacy_bank_dirname,
+    legacy_filenames,
+    reduced_data_filename,
+    reduced_data_filenames,
+)
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.stitch import apply_stitch, interpolate_error, stitch_profiles
@@ -435,21 +441,21 @@ class Sample(BaseModel):
         Parameters
         ----------
         detector_data : bool
-            Write the stitched, monitor-normalized data, ``UN_<name>_det_1_unscaled.txt``.
-            With ``save_all_harmonics``, higher harmonics go to ``UN_<name>_det_<n>_unscaled.txt``.
+            Write the stitched, monitor-normalized data, ``<name>_det_1_unscaled.txt``.
+            With ``save_all_harmonics``, higher harmonics go to ``<name>_det_<n>_unscaled.txt``.
         scaled_data : bool
             Write the data rescaled by analyzer solid angle, sample thickness, and transmission,
-            ``UN_<name>_det_1.txt``. With ``save_all_harmonics``, higher harmonics go to
-            ``UN_<name>_det_<n>.txt``.
+            ``<name>_det_1.txt``. With ``save_all_harmonics``, higher harmonics go to
+            ``<name>_det_<n>.txt``.
         background_subtracted_data : bool
             Write the background- (or empty-cell-) subtracted data,
-            ``UN_<name>_det_1_background_subtracted.txt``. With ``save_all_harmonics``, higher
-            harmonics go to ``UN_<name>_det_<n>_background_subtracted.txt``. Only written when a
+            ``<name>_det_1_background_subtracted.txt``. With ``save_all_harmonics``, higher
+            harmonics go to ``<name>_det_<n>_background_subtracted.txt``. Only written when a
             subtraction actually occurred (``is_reduced`` is True).
 
         With ``save_all_harmonics``, the profiles with all harmonics stitched together (see
-        ``stitch_orders``) are also written: ``UN_<name>_det_stitched.txt`` with the
-        ``scaled_data`` category, and ``UN_<name>_det_background_subtracted_stitched.txt`` with
+        ``stitch_orders``) are also written: ``<name>_det_stitched.txt`` with the
+        ``scaled_data`` category, and ``<name>_det_background_subtracted_stitched.txt`` with
         the ``background_subtracted_data`` category. Each is skipped when its stitched profile
         is empty, i.e. when not even harmonics 1 and 2 could be stitched.
 
@@ -486,7 +492,9 @@ class Sample(BaseModel):
                 if not has_data(self.detector_data[harmonic - 1]):
                     missing_harmonics.append(harmonic)
                     continue
-                filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_{harmonic}_unscaled.txt")
+                filepath = os.path.join(
+                    self.experiment.output_dir, reduced_data_filename(self.name, f"det_{harmonic}_unscaled")
+                )
                 self.dump_data_to_csv(filepath, self.detector_data[harmonic - 1])
             missing_harmonics.extend(range(len(self.detector_data) + 1, num_of_harmonics + 1))
             if missing_harmonics:
@@ -501,7 +509,7 @@ class Sample(BaseModel):
                 if not has_data(self.data_scaled[harmonic - 1]):
                     missing_harmonics.append(harmonic)
                     continue
-                filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_{harmonic}.txt")
+                filepath = os.path.join(self.experiment.output_dir, reduced_data_filename(self.name, f"det_{harmonic}"))
                 self.dump_data_to_csv(filepath, self.data_scaled[harmonic - 1])
             missing_harmonics.extend(range(len(self.data_scaled) + 1, num_of_harmonics + 1))
             if missing_harmonics:
@@ -521,7 +529,8 @@ class Sample(BaseModel):
                         missing_harmonics.append(harmonic)
                         continue
                     filepath = os.path.join(
-                        self.experiment.output_dir, f"UN_{self.name}_det_{harmonic}_background_subtracted.txt"
+                        self.experiment.output_dir,
+                        reduced_data_filename(self.name, f"det_{harmonic}_background_subtracted"),
                     )
                     self.dump_data_to_csv(filepath, self.data_bg_subtracted[harmonic - 1])
                 missing_harmonics.extend(range(len(self.data_bg_subtracted) + 1, num_of_harmonics + 1))
@@ -559,6 +568,19 @@ class Sample(BaseModel):
         ``save_all_harmonics``, or a stitched profile that could not be stitched) do not remain
         from the earlier reduction.
 
+        The files of the same categories written by usansred 1.9.0 and earlier, whose names start
+        with ``LEGACY_PREFIX`` (``UN_``), are removed as well (see ``legacy_filenames``), so that
+        an earlier reduction by such a version does not leave a second copy of each profile. This
+        includes the log-binned files and the ``bank_<n>/`` subdirectories of versions 1.0.0 to
+        1.8.0; a ``bank_<n>/`` subdirectory left empty is removed too.
+
+        The names written by version 1.9.0, such as ``UN_<name>_det_1.txt``, are also the current
+        names of the files of a measurement named ``UN_<name>``. If the experiment writes such a
+        measurement, these names are not removed, since they are its output. Otherwise they cannot
+        be told apart from legacy files, and are removed. Conversely, the files written for a
+        measurement named ``UN_<name>`` replace the 1.9.0 files of a measurement ``<name>``, even
+        when ``<name>`` is not in the setup file.
+
         Parameters
         ----------
         detector_data : bool
@@ -568,21 +590,41 @@ class Sample(BaseModel):
         background_subtracted_data : bool
             Remove the background-subtracted files and the stitched background-subtracted profile.
         """
-        filenames = reduced_data_filenames(
-            self.name,
-            self.experiment.num_of_banks,
-            detector_data=detector_data,
-            scaled_data=scaled_data,
-            background_subtracted_data=background_subtracted_data,
-        )
+        categories = {
+            "detector_data": detector_data,
+            "scaled_data": scaled_data,
+            "background_subtracted_data": background_subtracted_data,
+        }
+        num_of_harmonics = self.experiment.num_of_banks
+        filenames = reduced_data_filenames(self.name, num_of_harmonics, **categories)
+        v190_filenames, older_filenames = legacy_filenames(self.name, num_of_harmonics, **categories)
+        # The names written by version 1.9.0, unless they are the current names of another measurement
+        # written by this experiment. The empty cell is not considered: no files are written for it.
+        written = [sample.name for sample in self.experiment.samples]
+        if self.experiment.background is not None:
+            written.append(self.experiment.background.name)
+        if LEGACY_PREFIX + self.name in written:
+            logger.info(
+                f"Files named {LEGACY_PREFIX}{self.name}_det_* are not removed for {self.label}, since they are "
+                f"the output of measurement {LEGACY_PREFIX}{self.name}."
+            )
+        else:
+            filenames += v190_filenames
+        filenames += older_filenames
         for filename in filenames:
             filepath = os.path.join(self.experiment.output_dir, filename)
             if os.path.isfile(filepath):
                 os.remove(filepath)
                 logger.info(f"Removed {filepath}, left by an earlier reduction.")
+        # The subdirectories of the higher harmonics written by versions 1.6.0 to 1.8.0
+        for harmonic in range(2, num_of_harmonics + 1):
+            dirpath = os.path.join(self.experiment.output_dir, legacy_bank_dirname(harmonic))
+            if os.path.isdir(dirpath) and not os.listdir(dirpath):
+                os.rmdir(dirpath)
+                logger.info(f"Removed the empty directory {dirpath}, left by an earlier reduction.")
 
     def _dump_stitched(self, data: IQData, suffix: str, description: str) -> None:
-        """Write a stitched profile to ``UN_<name>_<suffix>.txt``, or log why it is skipped.
+        """Write a stitched profile to ``<name>_<suffix>.txt``, or log why it is skipped.
 
         Parameters
         ----------
@@ -593,7 +635,7 @@ class Sample(BaseModel):
         description : str
             Description of the profile, used in log messages.
         """
-        filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_{suffix}.txt")
+        filepath = os.path.join(self.experiment.output_dir, reduced_data_filename(self.name, suffix))
         if not data.q:
             logger.info(f"No {description} profile is available for {self.label}; skipping that data dump.")
             return

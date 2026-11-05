@@ -70,6 +70,7 @@ src/usansred/
 ├── stitch.py         # stitching of the per-harmonic I(Q) profiles
 ├── summary.py        # summary.xlsx report generation
 └── io/
+    ├── filenames.py  # names of the reduced data files, current and legacy
     ├── read.py       # CSV/JSON setup parsing
     ├── save.py       # Mantid SaveAscii/SumSpectra helpers
     └── usansred.json # JSON schema for setup files
@@ -148,23 +149,40 @@ The main reduction model is in `src/usansred/reduce.py`.
 
 Output names currently include:
 
-- `UN_<sample>_det_1_unscaled.txt`
-- `UN_<sample>_det_1.txt`
-- `UN_<sample>_det_<n>_unscaled.txt` and `UN_<sample>_det_<n>.txt` for harmonics
+- `<sample>_det_1_unscaled.txt`
+- `<sample>_det_1.txt`
+- `<sample>_det_<n>_unscaled.txt` and `<sample>_det_<n>.txt` for harmonics
   `n = 2..4`, only when `save_all_harmonics` is enabled. These are written flat in
   the output directory, not in per-bank subdirectories.
-- `UN_<sample>_det_1_background_subtracted.txt` (only when a background or
-  empty cell was subtracted), and `UN_<sample>_det_<n>_background_subtracted.txt`
+- `<sample>_det_1_background_subtracted.txt` (only when a background or
+  empty cell was subtracted), and `<sample>_det_<n>_background_subtracted.txt`
   for harmonics `n = 2..4` when `save_all_harmonics` is enabled.
-- `UN_<sample>_det_stitched.txt` and
-  `UN_<sample>_det_background_subtracted_stitched.txt`, the harmonics stitched
+- `<sample>_det_stitched.txt` and
+  `<sample>_det_background_subtracted_stitched.txt`, the harmonics stitched
   into one profile (`src/usansred/stitch.py`), only when `save_all_harmonics` is
   enabled and at least harmonics 1 and 2 could be stitched. The second file is
   only written when a background or empty cell was subtracted, so it is never
   written for the background.
 - `summary.xlsx`, covering the `_det_1` and stitched files. Its worksheet names
-  drop `UN_` and `.txt` and are shortened to Excel's 31-character limit by the
-  rules in `src/usansred/summary.py`.
+  drop `.txt` and are shortened to Excel's 31-character limit by the rules in
+  `src/usansred/summary.py`.
+
+All names are built by `reduced_data_filename` in `src/usansred/io/filenames.py`.
+Before writing, `Sample._remove_earlier_output_files` deletes the files of each
+measurement left by an earlier reduction, including those of usansred 1.9.0 and
+earlier, listed by `legacy_filenames`. Those names start with `UN_` (`LEGACY_PREFIX`):
+
+- the same names with the prefix (version 1.9.0, and harmonic 1 of earlier versions),
+  kept when a sample or the background is named `UN_<name>`, since they are its
+  output (an empty cell with that name does not count: no files are written for it);
+- `UN_<name>_det_1_lb.txt` and `UN_<name>_det_1_lbs.txt` (up to 1.8.0), and
+  `bank_<n>/UN_<name>.txt` and `bank_<n>/UN_<name>_unscaled.txt` (1.6.0 to 1.8.0),
+  always deleted; an empty `bank_<n>/` is removed.
+
+Measurement names may not contain `/` or `\`: `check_measurement_name` in
+`filenames.py` rejects them, both in the setup-file validator
+(`src/usansred/models/reduction_config.py`) and whenever a file name is built.
+`summary.generate_report` reads the names with `read_config`.
 
 ## Coding Standards
 
@@ -240,6 +258,9 @@ Testing expectations:
 - Stitching changes: update `tests/unit/test_stitch.py`, and
   `tests/unit/test_sample.py` (`TestStitchOrders`) for the `Sample` integration.
 - Summary/report changes: update `tests/unit/test_summary.py`.
+- Output file name changes: update `tests/unit/io/test_filenames.py`, and
+  `tests/unit/test_sample.py` (`TestRemoveEarlierOutputFiles`) for the removal of
+  earlier output files.
 - CLI/end-to-end changes: update `tests/integration/test_reduce.py`.
 - Mantid save helper changes: update `tests/unit/io/test_save.py`.
 

@@ -38,8 +38,8 @@ subtraction:
 Subtracting the empty cell from both the sample and the background would double-subtract it.
 The empty cell is still used to compute the transmission coefficients in that case.
 
-**Output files.** Reduced output files (``UN_*_det_1*.txt``) are written for the samples and for
+**Output files.** Reduced output files (``*_det_1*.txt``) are written for the samples and for
 the background, but never for the empty cell. The background-subtracted file
-(``UN_*_det_1_background_subtracted.txt``) is only written for measurements from which a
+(``*_det_1_background_subtracted.txt``) is only written for measurements from which a
 background or empty cell was actually subtracted. Higher harmonics are written only when
 ``save_all_harmonics`` is enabled.

@@ -5,6 +5,7 @@ from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from usansred.enums import MeasurementType
+from usansred.io.filenames import check_measurement_name
 from usansred.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,13 +28,18 @@ class _ScanBase(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: Annotated[str, Field(min_length=1, description="Sample/background name.")]
+    name: Annotated[str, Field(min_length=1, description="Sample/background name. Must not contain '/' or '\\'.")]
     start_scan_num: Annotated[int, Field(description="Starting scan number (numeric string or integer is valid).")]
     num_of_scans: Annotated[
         int,
         Field(ge=1, description="Number of consecutive scans in the sequence (numeric string or integer is valid)."),
     ]
     exclude: list[int] = Field(default_factory=list, description="Optional list of scans to skip during reduction.")
+
+    @field_validator("name")
+    @classmethod
+    def _no_path_separators(cls, v: str) -> str:
+        return check_measurement_name(v)
 
     @field_validator("start_scan_num", "num_of_scans", mode="before")
     @classmethod

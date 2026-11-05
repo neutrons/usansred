@@ -1,13 +1,12 @@
 """summary.py: summary of the reduced data."""
 
-import csv
-import json
 import logging
 import os
 
 import pandas
 
 from usansred.io.filenames import reduced_data_filenames
+from usansred.io.read import read_config
 from usansred.utils.logging import get_logger
 
 __author__ = "Yingrui Shang"
@@ -35,7 +34,7 @@ SHEET_NAME_SHORTENING_RULES = [
 def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
     """Derive a valid Excel worksheet name from the name of a reduced data file.
 
-    1. The ``.txt`` extension and the ``UN_`` prefix are removed.
+    1. The ``.txt`` extension is removed.
     2. Characters that Excel does not allow in worksheet names are replaced by ``_``, as is an
        apostrophe at the start or end of the name.
     3. While the name is longer than 31 characters, the substitutions of
@@ -48,13 +47,13 @@ def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
        the smallest integer, starting at 1, that gives a name not in ``used_names``, so the
        result depends only on ``filename`` and ``used_names``.
 
-    For example, ``UN_S115_pc3_det_background_subtracted_stitched.txt`` becomes
+    For example, ``S115_pc3_det_background_subtracted_stitched.txt`` becomes
     ``S115_pc3_bkgr_subtracted_stitch``.
 
     Parameters
     ----------
     filename : str
-        Name of a reduced data file, e.g. ``UN_S115_pc3_det_1.txt``.
+        Name of a reduced data file, e.g. ``S115_pc3_det_1.txt``.
     used_names : set[str] | None
         Worksheet names already in the workbook, in lower case since Excel compares worksheet
         names without regard to case. The returned name is added to it. If None, uniqueness is
@@ -65,7 +64,7 @@ def format_sheet_name(filename: str, used_names: set[str] | None = None) -> str:
     str
         The worksheet name.
     """
-    name = filename.removesuffix(".txt").removeprefix("UN_")
+    name = filename.removesuffix(".txt")
     for character in INVALID_SHEET_NAME_CHARACTERS:
         name = name.replace(character, "_")
     # Excel does not allow a worksheet name to start or end with an apostrophe
@@ -125,7 +124,7 @@ def get_filenames_from_samples(sample_name: str) -> list[str]:
     Raises
     ------
     ValueError
-        If ``sample_name`` is empty or None.
+        If ``sample_name`` is empty or None, or contains a path separator, ``/`` or ``\\``.
     """
     if sample_name:
         return reduced_data_filenames(sample_name, num_of_harmonics=1)
@@ -159,6 +158,12 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
 
     if not output_dir:
         output_dir = os.path.join(data_dir, "reduced")
+
+    # Collect the files of the background and the samples, before creating summary.xlsx. The setup
+    # file is read as for the reduction, so the same rows are skipped and the same names rejected
+    config = read_config(config_file_path)
+    names = ([config.background.name] if config.background is not None else []) + [s.name for s in config.samples]
+    sample_files = [filename for name in names for filename in get_filenames_from_samples(name)]
 
     # Make sure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -196,27 +201,6 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
 
     main_chart_subtracted.set_y_axis({"name": "I (1/cm)", "log_base": 10})
     main_chart_subtracted.set_title({"name": "Background Subtracted"})
-
-    # Collect sample files from the config file
-    if ext.lower() == ".json":
-        with open(config_file_path) as json_file:
-            data = json.load(json_file)
-            sample_files = []
-
-            background = data.get("background", {})
-            background_name = background.get("name")
-            if background_name:
-                sample_files.extend(get_filenames_from_samples(background_name))
-
-            for sample in data.get("samples", []):
-                sample_name = sample.get("name", "")
-                sample_files.extend(get_filenames_from_samples(sample_name))
-    else:
-        sample_files = []
-        with open(config_file_path, newline="") as csv_file:
-            csv_reader = csv.reader(csv_file, delimiter=",")
-            for row in filter(lambda r: len(r) > 1 and not r[0].startswith("#"), csv_reader):
-                sample_files.extend(get_filenames_from_samples(row[1]))
 
     # Process each sample file and add data to the corresponding charts
     used_sheet_names = {"unscaled", "original", "bg subtracted"}  # the chart sheets
