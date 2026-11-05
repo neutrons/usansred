@@ -106,12 +106,12 @@ When adding a new test that requires a new data file, or when replacing an exist
 some update to an existing test.
 
 As an example, consider the data files used in
-`tests/usansred/test_reduce.py::test_main() <https://github.com/neutrons/usansred/blob/next/tests/usansred/test_reduce.py>`_:
+`tests/integration/test_reduce.py::test_main() <https://github.com/neutrons/usansred/blob/next/tests/integration/test_reduce.py>`_:
 
 .. code-block:: bash
 
-   tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
-   tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_unscaled.txt
+   tests/usansred-data/IPTS-30410/shared/reduced/EmptyPCell_det_1.txt
+   tests/usansred-data/IPTS-30410/shared/reduced/EmptyPCell_det_1_unscaled.txt
    ...
 
 If we wish to replace any of those files with new versions, we simple overwrite the file(s) in the data repository
@@ -120,8 +120,8 @@ located inside the temporary directory ``tmp_path`` that is automatically create
 
 .. code-block:: bash
 
-   $ cp /path/to/new/UN_EmptyPCell_det_1.txt tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
-   $ cp /path/to/new/UN_EmptyPCell_det_1_unscaled.txt tests/usansred-data/IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_unscaled.txt
+   $ cp /path/to/new/EmptyPCell_det_1.txt tests/usansred-data/IPTS-30410/shared/reduced/EmptyPCell_det_1.txt
+   $ cp /path/to/new/EmptyPCell_det_1_unscaled.txt tests/usansred-data/IPTS-30410/shared/reduced/EmptyPCell_det_1_unscaled.txt
 
 Assuming we only wish to modify these two files, the next step is to commit these changes in our local repository
 *usansred-data* and then push the changes to the remote repository.
@@ -129,8 +129,8 @@ Assuming we only wish to modify these two files, the next step is to commit thes
 .. code-block:: bash
 
    $ cd /path/to/usansred/tests/usansred-data
-   $ git add IPTS-30410/shared/reduced/UN_EmptyPCell_det_1.txt
-   $ git add IPTS-30410/shared/reduced/UN_EmptyPCell_det_1_unscaled.txt
+   $ git add IPTS-30410/shared/reduced/EmptyPCell_det_1.txt
+   $ git add IPTS-30410/shared/reduced/EmptyPCell_det_1_unscaled.txt
    $ git commit -m "Updated data files for test_reduce.py::test_main()"
    $ git push origin
 
@@ -194,4 +194,5 @@ After this, point your browser to
 Creating a stable release
 -------------------------
 - Follow the `Software Maturity Model <https://ornl-neutrons.atlassian.net/wiki/spaces/NDPD/pages/23363585/Software+Maturity+Model>`_ for continous versioning as well as creating release candidates and stable releases.
-- Update the :ref:`Release Notes <release_notes>` with major fixes, updates and additions since last stable release.
+- Write the release notes, with the major fixes, updates and additions since the last stable release, on the
+  `GitHub releases page <https://github.com/neutrons/usansred/releases>`_.

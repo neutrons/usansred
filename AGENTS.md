@@ -148,23 +148,27 @@ The main reduction model is in `src/usansred/reduce.py`.
 
 Output names currently include:
 
-- `UN_<sample>_det_1_unscaled.txt`
-- `UN_<sample>_det_1.txt`
-- `UN_<sample>_det_<n>_unscaled.txt` and `UN_<sample>_det_<n>.txt` for harmonics
+- `<sample>_det_1_unscaled.txt`
+- `<sample>_det_1.txt`
+- `<sample>_det_<n>_unscaled.txt` and `<sample>_det_<n>.txt` for harmonics
   `n = 2..4`, only when `save_all_harmonics` is enabled. These are written flat in
   the output directory, not in per-bank subdirectories.
-- `UN_<sample>_det_1_background_subtracted.txt` (only when a background or
-  empty cell was subtracted), and `UN_<sample>_det_<n>_background_subtracted.txt`
+- `<sample>_det_1_background_subtracted.txt` (only when a background or
+  empty cell was subtracted), and `<sample>_det_<n>_background_subtracted.txt`
   for harmonics `n = 2..4` when `save_all_harmonics` is enabled.
-- `UN_<sample>_det_stitched.txt` and
-  `UN_<sample>_det_background_subtracted_stitched.txt`, the harmonics stitched
+- `<sample>_det_stitched.txt` and
+  `<sample>_det_background_subtracted_stitched.txt`, the harmonics stitched
   into one profile (`src/usansred/stitch.py`), only when `save_all_harmonics` is
   enabled and at least harmonics 1 and 2 could be stitched. The second file is
   only written when a background or empty cell was subtracted, so it is never
   written for the background.
 - `summary.xlsx`, covering the `_det_1` and stitched files. Its worksheet names
-  drop `UN_` and `.txt` and are shortened to Excel's 31-character limit by the
-  rules in `src/usansred/summary.py`.
+  drop `.txt` and are shortened to Excel's 31-character limit by the rules in
+  `src/usansred/summary.py`.
+
+All names are built by `reduced_data_filename` in `src/usansred/io/filenames.py`.
+usansred 1.9.0 and earlier wrote the same names with the prefix `UN_`
+(`LEGACY_PREFIX`); a re-reduction deletes those files of each measurement.
 
 ## Coding Standards
 

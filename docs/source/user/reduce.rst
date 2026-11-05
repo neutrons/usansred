@@ -209,11 +209,11 @@ Once reduction is finished, subdirectory ``result/`` is created containing the f
 - ``summary.xlsx`` containing sketchy plots of the data for a quick review.
 - Reduced data files. For example:
 
-  + ``UN_X5D2_8_det_1_unscaled.txt`` (**_unscaled.txt**) is the stitched,
+  + ``X5D2_8_det_1_unscaled.txt`` (**_unscaled.txt**) is the stitched,
     monitor-normalized detector data before scaling. It is written when detector
     data is present.
-  + ``UN_X5D2_8_det_1.txt`` (**.txt**) is the stitched data (scaled).
-  + ``UN_X5D2_8_det_1_background_subtracted.txt`` (**_background_subtracted.txt**)
+  + ``X5D2_8_det_1.txt`` (**.txt**) is the stitched data (scaled).
+  + ``X5D2_8_det_1_background_subtracted.txt`` (**_background_subtracted.txt**)
     is the data after background (or empty-cell) subtraction.
     It is only written when a background or empty cell was actually subtracted.
 
@@ -224,10 +224,10 @@ the harmonic number in place of the ``1``:
 
 .. code-block:: text
 
-   UN_X5D2_8_det_1_unscaled.txt   UN_X5D2_8_det_1.txt   UN_X5D2_8_det_1_background_subtracted.txt
-   UN_X5D2_8_det_2_unscaled.txt   UN_X5D2_8_det_2.txt   UN_X5D2_8_det_2_background_subtracted.txt
-   UN_X5D2_8_det_3_unscaled.txt   UN_X5D2_8_det_3.txt   UN_X5D2_8_det_3_background_subtracted.txt
-   UN_X5D2_8_det_4_unscaled.txt   UN_X5D2_8_det_4.txt   UN_X5D2_8_det_4_background_subtracted.txt
+   X5D2_8_det_1_unscaled.txt   X5D2_8_det_1.txt   X5D2_8_det_1_background_subtracted.txt
+   X5D2_8_det_2_unscaled.txt   X5D2_8_det_2.txt   X5D2_8_det_2_background_subtracted.txt
+   X5D2_8_det_3_unscaled.txt   X5D2_8_det_3.txt   X5D2_8_det_3_background_subtracted.txt
+   X5D2_8_det_4_unscaled.txt   X5D2_8_det_4.txt   X5D2_8_det_4_background_subtracted.txt
 
 Background subtraction is performed harmonic by harmonic: harmonic *n* of the background (or
 empty cell) is subtracted from harmonic *n* of the sample, never from a different harmonic,
@@ -236,9 +236,9 @@ because only same-order curves share a comparable momentum-transfer axis.
 With ``save_all_harmonics``, the harmonics are also stitched into a single profile, written to two
 more files (see :ref:`stitching the harmonics <stitching-harmonics>`):
 
-- ``UN_X5D2_8_det_stitched.txt`` holds the scaled harmonics, stitched. It is written only when at
+- ``X5D2_8_det_stitched.txt`` holds the scaled harmonics, stitched. It is written only when at
   least harmonics 1 and 2 could be stitched.
-- ``UN_X5D2_8_det_background_subtracted_stitched.txt`` holds the background-subtracted
+- ``X5D2_8_det_background_subtracted_stitched.txt`` holds the background-subtracted
   harmonics, stitched. It is additionally only written when a background or empty cell was
   subtracted.
 
@@ -246,9 +246,12 @@ When a reduction writes into an output directory that already holds reduced data
 deletes every file listed above (for all four harmonics) of each sample and of the background in
 the setup file, then writes its own files. This prevents files from an earlier reduction, for
 example the higher harmonics of a reduction with ``save_all_harmonics``, from remaining next to the
-new files and appearing in ``summary.xlsx``. Files of measurements that are not in the setup file,
-and files with other names, are left untouched. Do not save edited data under these names in the
-output directory, since the next reduction deletes them.
+new files and appearing in ``summary.xlsx``. The same files under the names written by usansred
+1.9.0 and earlier, which start with ``UN_`` (for example ``UN_X5D2_8_det_1.txt``), are deleted as
+well, so that an output directory reduced by an earlier version does not keep a second copy of
+each profile. Files of measurements that are not in the setup file, and files with other names,
+are left untouched. Do not save edited data under these names in the output directory, since the
+next reduction deletes them.
 
 The Summary Report
 ~~~~~~~~~~~~~~~~~~
@@ -260,10 +263,10 @@ stitched curves are drawn with markers only, since the points of different harmo
 interleaved where the harmonics overlap. In every chart, a curve is named after its file, without
 the ``.txt`` extension.
 
-Worksheet names are derived from the file names. The ``UN_`` prefix and the ``.txt`` extension are
-removed, so ``UN_X5D2_8_det_1.txt`` becomes ``X5D2_8_det_1``. Excel limits worksheet names to 31
-characters; a longer name is shortened by applying the following substitutions, one at a time
-and in this order, until it fits:
+Worksheet names are derived from the file names. The ``.txt`` extension is removed, so
+``X5D2_8_det_1.txt`` becomes ``X5D2_8_det_1``. Excel limits worksheet names to 31 characters; a
+longer name is shortened by applying the following substitutions, one at a time and in this order,
+until it fits:
 
 1. ``background`` becomes ``bkgr``;
 2. ``stitched`` becomes ``stitch``;
@@ -271,7 +274,7 @@ and in this order, until it fits:
 4. ``subtracted`` becomes ``sub``.
 
 The substitutions apply only to the part of the name after the measurement name, which is never
-altered. For example, ``UN_S115_pc3_det_background_subtracted_stitched.txt`` becomes
+altered. For example, ``S115_pc3_det_background_subtracted_stitched.txt`` becomes
 ``S115_pc3_bkgr_subtracted_stitch``. A name still longer than 31 characters after all four
 substitutions, which happens only for long measurement names, is cut and given a number to keep
 it unique.
@@ -294,16 +297,16 @@ applied. The units of the output files are therefore:
    * - File
      - First column
      - Intensity and uncertainty
-   * - ``UN_<name>_det_<n>_unscaled.txt``
+   * - ``<name>_det_<n>_unscaled.txt``
      - centered analyzer angle :math:`\theta - \theta_0`, in arcsec
      - detector counts per monitor count
-   * - ``UN_<name>_det_<n>.txt``
+   * - ``<name>_det_<n>.txt``
      - :math:`Q_n`, in ``1/angstrom``
      - detector counts per monitor count, per cm per sr
-   * - ``UN_<name>_det_<n>_background_subtracted.txt``
+   * - ``<name>_det_<n>_background_subtracted.txt``
      - :math:`Q_n`, in ``1/angstrom``
      - detector counts per monitor count, per cm per sr
-   * - ``UN_<name>_det_stitched.txt`` and ``UN_<name>_det_background_subtracted_stitched.txt``
+   * - ``<name>_det_stitched.txt`` and ``<name>_det_background_subtracted_stitched.txt``
      - :math:`Q`, in ``1/angstrom``
      - detector counts per monitor count, per cm per sr, on the scale of harmonic 1
 

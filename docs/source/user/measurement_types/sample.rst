@@ -57,16 +57,16 @@ For a sample named ``<sample>``, the following files are written to the output f
 first harmonic, and, when ``save_all_harmonics`` is enabled, for each higher harmonic (2 to 4) that
 has data:
 
-- ``UN_<sample>_det_<n>_unscaled.txt``: stitched, monitor-normalized detector data before scaling.
-- ``UN_<sample>_det_<n>.txt``: the stitched data after scaling.
-- ``UN_<sample>_det_<n>_background_subtracted.txt``: the data after subtraction of the
+- ``<sample>_det_<n>_unscaled.txt``: stitched, monitor-normalized detector data before scaling.
+- ``<sample>_det_<n>.txt``: the stitched data after scaling.
+- ``<sample>_det_<n>_background_subtracted.txt``: the data after subtraction of the
   background or empty cell. Only written when one of them was subtracted.
 
 When ``save_all_harmonics`` is enabled, the harmonics are also stitched into a single profile (see
 :ref:`stitching the harmonics <stitching-harmonics>`), written to:
 
-- ``UN_<sample>_det_stitched.txt``: the scaled harmonics, stitched.
-- ``UN_<sample>_det_background_subtracted_stitched.txt``: the background-subtracted harmonics,
+- ``<sample>_det_stitched.txt``: the scaled harmonics, stitched.
+- ``<sample>_det_background_subtracted_stitched.txt``: the background-subtracted harmonics,
   stitched. Only written when a background or empty cell was subtracted.
 
 Neither file is written if not even harmonics 1 and 2 could be stitched.

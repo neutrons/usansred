@@ -65,12 +65,12 @@ For a background named ``<background>``, the following files are written to the 
 the first harmonic, and, when ``save_all_harmonics`` is enabled, for each higher harmonic (2 to 4)
 that has data:
 
-- ``UN_<background>_det_<n>_unscaled.txt``: stitched, monitor-normalized detector data before
+- ``<background>_det_<n>_unscaled.txt``: stitched, monitor-normalized detector data before
   scaling.
-- ``UN_<background>_det_<n>.txt``: the stitched data after scaling.
+- ``<background>_det_<n>.txt``: the stitched data after scaling.
 
 When ``save_all_harmonics`` is enabled, the scaled harmonics are also stitched into a single
-profile, ``UN_<background>_det_stitched.txt`` (see
+profile, ``<background>_det_stitched.txt`` (see
 :ref:`stitching the harmonics <stitching-harmonics>`). It is not written if not even harmonics 1
 and 2 could be stitched.
 

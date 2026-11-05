@@ -130,9 +130,9 @@ For sample ``S115_dry`` of the reference dataset, all four harmonics are joined:
          magenta, and yellow lines, and the stitched profile as black markers.
    :width: 100%
 
-   Scaled profiles of the four harmonics of sample ``S115_dry`` (lines, ``UN_S115_dry_det_<n>.txt``)
+   Scaled profiles of the four harmonics of sample ``S115_dry`` (lines, ``S115_dry_det_<n>.txt``)
    before stitching, each at its own intensity scale, and the stitched profile (markers,
-   ``UN_S115_dry_det_stitched.txt``), in which each harmonic is multiplied by the scale factor
+   ``S115_dry_det_stitched.txt``), in which each harmonic is multiplied by the scale factor
    :math:`s` given in the legend. Zero-intensity points are not shown on the logarithmic axes.
 
 When Stitching Stops
@@ -194,9 +194,9 @@ Harmonic 4, which would have been joined next, is not attempted.
          end at lower Q than the stitched profile.
    :width: 100%
 
-   Scaled profiles of the four harmonics of sample ``S115_pc3`` (lines, ``UN_S115_pc3_det_<n>.txt``)
+   Scaled profiles of the four harmonics of sample ``S115_pc3`` (lines, ``S115_pc3_det_<n>.txt``)
    before stitching, each at its own intensity scale, and the stitched profile (markers,
-   ``UN_S115_pc3_det_stitched.txt``), which holds harmonics 1 and 2 only. The last non-zero point
+   ``S115_pc3_det_stitched.txt``), which holds harmonics 1 and 2 only. The last non-zero point
    of harmonic 3 lies at 3.23e-4 ``1/angstrom``, below the highest Q of the stitched profile.
    Zero-intensity points are not shown on the logarithmic axes.
 
@@ -247,12 +247,12 @@ Output Files
 The stitched profiles are written to two additional files; the per-harmonic ``_det_<n>`` files are
 not changed:
 
-- ``UN_<name>_det_stitched.txt``: the scaled harmonics, stitched.
-- ``UN_<name>_det_background_subtracted_stitched.txt``: the background-subtracted harmonics,
+- ``<name>_det_stitched.txt``: the scaled harmonics, stitched.
+- ``<name>_det_background_subtracted_stitched.txt``: the background-subtracted harmonics,
   stitched. Only written for samples from which a background or empty cell was subtracted.
 
-Both have the same columns and units as the ``UN_<name>_det_<n>.txt`` and
-``UN_<name>_det_<n>_background_subtracted.txt`` files (see
+Both have the same columns and units as the ``<name>_det_<n>.txt`` and
+``<name>_det_<n>_background_subtracted.txt`` files (see
 :ref:`units of the reduced data <units-of-reduced-data>`): Q in ``1/angstrom``, intensity, and
 uncertainty.
 
