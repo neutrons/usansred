@@ -22,6 +22,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from usansred.io.filenames import reduced_data_filename  # noqa: E402
 from usansred.reduce import Experiment  # noqa: E402
 
 REPOSITORY = Path(__file__).resolve().parent.parent
@@ -120,11 +121,11 @@ def plot_sample(output_dir: Path, name: str) -> Path:
         The written figure.
     """
     scale_factors, failed_harmonic = stitching_outcome(output_dir / f"reduction_{name}.log", name)
-    q_stitched, i_stitched = read_profile(output_dir / f"UN_{name}_det_stitched.txt")
+    q_stitched, i_stitched = read_profile(output_dir / reduced_data_filename(name, "det_stitched"))
 
     figure, axis = plt.subplots(figsize=(7.0, 4.8), layout="constrained")
     for harmonic, color in zip(range(1, NUM_HARMONICS + 1), HARMONIC_COLORS):
-        q, i = read_profile(output_dir / f"UN_{name}_det_{harmonic}.txt")
+        q, i = read_profile(output_dir / reduced_data_filename(name, f"det_{harmonic}"))
         if harmonic in scale_factors:
             status = "reference" if harmonic == 1 else f"joined, s = {scale_factors[harmonic]:.3g}"
         elif harmonic == failed_harmonic:

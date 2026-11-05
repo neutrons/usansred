@@ -1,6 +1,11 @@
 """Tests for the names of the reduced data files."""
 
-from usansred.io.filenames import reduced_data_filenames
+from usansred.io.filenames import reduced_data_filename, reduced_data_filenames
+
+
+def test_reduced_data_filename():
+    assert reduced_data_filename("S115_pc3", "det_2_unscaled") == "UN_S115_pc3_det_2_unscaled.txt"
+    assert reduced_data_filename("S", "det_stitched") == "UN_S_det_stitched.txt"
 
 
 def test_reduced_data_filenames_single_harmonic():

@@ -1,6 +1,27 @@
 """filenames.py: names of the reduced data files written for a measurement."""
 
 
+def reduced_data_filename(name: str, suffix: str) -> str:
+    """Name of one reduced data file of a measurement, ``UN_<name>_<suffix>.txt``.
+
+    Every reduced data file name is built here, so that the naming scheme is defined in one place.
+
+    Parameters
+    ----------
+    name : str
+        Name of the measurement.
+    suffix : str
+        Part of the name after the measurement name, without the extension, e.g. ``det_1``,
+        ``det_2_unscaled``, or ``det_background_subtracted_stitched``.
+
+    Returns
+    -------
+    str
+        The file name, without directory.
+    """
+    return f"UN_{name}_{suffix}.txt"
+
+
 def reduced_data_filenames(
     name: str,
     num_of_harmonics: int,
@@ -46,13 +67,13 @@ def reduced_data_filenames(
     filenames = []
     for harmonic in range(1, num_of_harmonics + 1):
         if scaled_data:
-            filenames.append(f"UN_{name}_det_{harmonic}.txt")
+            filenames.append(reduced_data_filename(name, f"det_{harmonic}"))
         if background_subtracted_data:
-            filenames.append(f"UN_{name}_det_{harmonic}_background_subtracted.txt")
+            filenames.append(reduced_data_filename(name, f"det_{harmonic}_background_subtracted"))
         if detector_data:
-            filenames.append(f"UN_{name}_det_{harmonic}_unscaled.txt")
+            filenames.append(reduced_data_filename(name, f"det_{harmonic}_unscaled"))
     if scaled_data:
-        filenames.append(f"UN_{name}_det_stitched.txt")
+        filenames.append(reduced_data_filename(name, "det_stitched"))
     if background_subtracted_data:
-        filenames.append(f"UN_{name}_det_background_subtracted_stitched.txt")
+        filenames.append(reduced_data_filename(name, "det_background_subtracted_stitched"))
     return filenames

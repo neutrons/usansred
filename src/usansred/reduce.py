@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 from scipy.optimize import curve_fit
 
 from usansred.enums import MeasurementType
-from usansred.io.filenames import reduced_data_filenames
+from usansred.io.filenames import reduced_data_filename, reduced_data_filenames
 from usansred.io.read import read_config
 from usansred.models import EventCounts, IQData, MonitorData, ReductionConfig, XYData
 from usansred.stitch import apply_stitch, interpolate_error, stitch_profiles
@@ -486,7 +486,9 @@ class Sample(BaseModel):
                 if not has_data(self.detector_data[harmonic - 1]):
                     missing_harmonics.append(harmonic)
                     continue
-                filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_{harmonic}_unscaled.txt")
+                filepath = os.path.join(
+                    self.experiment.output_dir, reduced_data_filename(self.name, f"det_{harmonic}_unscaled")
+                )
                 self.dump_data_to_csv(filepath, self.detector_data[harmonic - 1])
             missing_harmonics.extend(range(len(self.detector_data) + 1, num_of_harmonics + 1))
             if missing_harmonics:
@@ -501,7 +503,7 @@ class Sample(BaseModel):
                 if not has_data(self.data_scaled[harmonic - 1]):
                     missing_harmonics.append(harmonic)
                     continue
-                filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_det_{harmonic}.txt")
+                filepath = os.path.join(self.experiment.output_dir, reduced_data_filename(self.name, f"det_{harmonic}"))
                 self.dump_data_to_csv(filepath, self.data_scaled[harmonic - 1])
             missing_harmonics.extend(range(len(self.data_scaled) + 1, num_of_harmonics + 1))
             if missing_harmonics:
@@ -521,7 +523,8 @@ class Sample(BaseModel):
                         missing_harmonics.append(harmonic)
                         continue
                     filepath = os.path.join(
-                        self.experiment.output_dir, f"UN_{self.name}_det_{harmonic}_background_subtracted.txt"
+                        self.experiment.output_dir,
+                        reduced_data_filename(self.name, f"det_{harmonic}_background_subtracted"),
                     )
                     self.dump_data_to_csv(filepath, self.data_bg_subtracted[harmonic - 1])
                 missing_harmonics.extend(range(len(self.data_bg_subtracted) + 1, num_of_harmonics + 1))
@@ -593,7 +596,7 @@ class Sample(BaseModel):
         description : str
             Description of the profile, used in log messages.
         """
-        filepath = os.path.join(self.experiment.output_dir, f"UN_{self.name}_{suffix}.txt")
+        filepath = os.path.join(self.experiment.output_dir, reduced_data_filename(self.name, suffix))
         if not data.q:
             logger.info(f"No {description} profile is available for {self.label}; skipping that data dump.")
             return
