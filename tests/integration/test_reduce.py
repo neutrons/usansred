@@ -147,18 +147,19 @@ def test_main(mock_parse_args, data_server, tmp_path):
     reduce()
     # compare the content of output files with files containing expected results
     goldendir = os.path.join(os.path.dirname(mock_args.path), "reduced")  # where the expected content resides
-    for name in ["S115_pc3", "S115_dry", "EmptyPCell"]:
-        file_suffixes = {
-            "unscaled data": "_unscaled",
-            "scaled data": "",
-            "background subtracted": "_background_subtracted",
-        }
-        for suffix in file_suffixes.values():
+    # Unscaled, scaled, and (for the samples only) background-subtracted data
+    file_suffixes = {
+        "S115_pc3": ["_unscaled", "", "_background_subtracted"],
+        "S115_dry": ["_unscaled", "", "_background_subtracted"],
+        "EmptyPCell": ["_unscaled", ""],
+    }
+    for name, suffixes in file_suffixes.items():
+        for suffix in suffixes:
             filename = f"{name}_det_1{suffix}.txt"
             output, expected = os.path.join(tmp_path, filename), os.path.join(goldendir, filename)
-            if os.path.exists(expected):
-                assert os.path.exists(output), f"Missing expected output file: {output}"
-                compare_lines(output, expected)
+            assert os.path.exists(expected), f"Missing reference file: {expected}"
+            assert os.path.exists(output), f"Missing expected output file: {output}"
+            compare_lines(output, expected)
 
     # The background-subtracted file is written for the samples ...
     for name in ["S115_pc3", "S115_dry"]:
