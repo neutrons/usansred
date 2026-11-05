@@ -27,13 +27,22 @@ class _ScanBase(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: Annotated[str, Field(min_length=1, description="Sample/background name.")]
+    name: Annotated[str, Field(min_length=1, description="Sample/background name. Must not contain '/' or '\\'.")]
     start_scan_num: Annotated[int, Field(description="Starting scan number (numeric string or integer is valid).")]
     num_of_scans: Annotated[
         int,
         Field(ge=1, description="Number of consecutive scans in the sequence (numeric string or integer is valid)."),
     ]
     exclude: list[int] = Field(default_factory=list, description="Optional list of scans to skip during reduction.")
+
+    @field_validator("name")
+    @classmethod
+    def _no_path_separators(cls, v: str) -> str:
+        # The name is part of the output file names, so a separator would place files outside
+        # the output directory, e.g. "../x" or "/tmp/x"
+        if "/" in v or "\\" in v:
+            raise ValueError("name must not contain path separators ('/' or '\\')")
+        return v
 
     @field_validator("start_scan_num", "num_of_scans", mode="before")
     @classmethod

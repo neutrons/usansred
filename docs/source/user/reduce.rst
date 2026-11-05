@@ -80,6 +80,9 @@ Each background and sample object contains descriptive keys for each field.
      "save_all_harmonics": "<boolean>"         // optional; save reduced data for higher harmonics and the stitched profile; default: false
    }
 
+The names of the samples, the background, and the empty cell are part of the names of the output
+files, so they must not contain the path separators ``/`` or ``\``.
+
 For example, create a file named ``setup.json`` with the following content:
 
 .. code-block:: json
@@ -141,7 +144,7 @@ The old CSV format provides only part of the information that can be encoded in 
 Information is entered in rows, with items in a row separated by `,`:
 
 1. Sample type: either `b` for background (empty sample) or `s` for sample.
-2. Sample name: a name for your own reference.
+2. Sample name: a name for your own reference. It must not contain ``/`` or ``\``.
 3. Starting scan number: the first scan number associated with this sample.
 4. Number of scans: the total number of scans associated with this sample, including the first one.
    For instance: ``36308,5`` instructs ``reduceUSANS`` to reduce together runs ``36308``, ``36309``, ``36310``,  ``36311``, and ``36312``.
@@ -249,8 +252,11 @@ example the higher harmonics of a reduction with ``save_all_harmonics``, from re
 new files and appearing in ``summary.xlsx``. The same files under the names written by usansred
 1.9.0 and earlier, which start with ``UN_`` (for example ``UN_X5D2_8_det_1.txt``), are deleted as
 well, so that an output directory reduced by an earlier version does not keep a second copy of
-each profile. Files of measurements that are not in the setup file, and files with other names,
-are left untouched. Do not save edited data under these names in the output directory, since the
+each profile. As a consequence, reducing a measurement named ``x`` also deletes the files of a
+measurement named ``UN_x``, such as ``UN_x_det_1.txt``, when ``UN_x`` is not in the setup file,
+since they cannot be told apart from files of ``x`` written by an earlier version. Apart from this,
+files of measurements that are not in the setup file, and files with other names, are left
+untouched. Do not save edited data under these names in the output directory, since the
 next reduction deletes them.
 
 The Summary Report

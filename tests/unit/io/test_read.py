@@ -232,3 +232,43 @@ def test_read_config_with_empty_cell():
     assert samples[0].name == "sample1"
     assert samples[1].name == "sample2"
     assert samples[1].exclude == [45307, 45308]
+
+
+@pytest.mark.parametrize("name", ["../x", "/tmp/x", "a/b", "a\\b"])
+@pytest.mark.parametrize("entry", ["samples", "background", "empty_cell"])
+def test_read_config_json_name_with_path_separator_raises(tmp_path, entry, name):
+    """A name with a path separator is rejected, since it would place output files outside the output directory."""
+    measurement = {"name": name, "start_scan_num": 45306, "num_of_scans": 6, "thickness": 0.1}
+    config = {"samples": [{**measurement, "name": "sample1"}]}
+    if entry == "samples":
+        config["samples"] = [measurement]
+    elif entry == "background":
+        config["background"] = measurement
+    else:
+        config["empty_cell"] = {key: measurement[key] for key in ("name", "start_scan_num", "num_of_scans")}
+    json_file = _write_json_config(tmp_path, config)
+
+    with pytest.raises(ValueError, match="name must not contain path separators"):
+        read_config(json_file)
+
+
+@pytest.mark.parametrize("name", ["../x", "a\\b"])
+def test_read_config_csv_name_with_path_separator_raises(tmp_path, name):
+    """A CSV row whose name has a path separator is rejected."""
+    csv_file = tmp_path / "setup.csv"
+    csv_file.write_text(f"s,{name},45306,6,0.1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="name must not contain path separators"):
+        read_config(csv_file)
+
+
+def test_read_config_name_without_path_separator_accepted(tmp_path):
+    """Names with dots, apostrophes, or the legacy prefix UN_ remain valid."""
+    json_file = _write_json_config(
+        tmp_path,
+        {"samples": [{"name": "UN_S1's.v2", "start_scan_num": 45306, "num_of_scans": 6, "thickness": 0.1}]},
+    )
+
+    config = read_config(json_file)
+
+    assert config.samples[0].name == "UN_S1's.v2"

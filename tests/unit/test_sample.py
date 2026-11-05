@@ -1568,3 +1568,43 @@ class TestRemoveEarlierOutputFiles:
             sample.dump_reduced_data_to_csv()
 
         assert not any(path.exists() for path in stale)
+
+    def test_legacy_names_kept_when_output_of_another_sample(
+        self, mock_experiment_2banks, tmp_path, caplog, monkeypatch
+    ):
+        """Files named UN_test_* are kept when a sample named UN_test is in the experiment, since they are its output.
+
+        ``Experiment.dump_reduced_data`` writes the samples in setup order, so ``UN_test`` is written before ``test``.
+        """
+        other_output = self._write_stale(tmp_path, ["UN_test_det_1.txt", "UN_test_det_1_unscaled.txt"])
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path)
+        mock_experiment_2banks.samples = [_make_sample(mock_experiment_2banks, "UN_test", []), sample]
+        monkeypatch.setattr(usansred.reduce.logger, "propagate", True)
+        caplog.set_level(logging.INFO)
+
+        sample.dump_reduced_data_to_csv()
+
+        assert all(path.read_text() == "stale\n" for path in other_output)
+        assert "Files named UN_test_* are not removed for sample test" in caplog.text
+
+    def test_legacy_names_kept_when_output_of_the_background(self, mock_experiment_2banks, tmp_path):
+        """Files named UN_test_* are kept when the background is named UN_test."""
+        other_output = self._write_stale(tmp_path, ["UN_test_det_1.txt"])
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path)
+        mock_experiment_2banks.samples = [sample]
+        mock_experiment_2banks.background = _make_sample(mock_experiment_2banks, "UN_test", [])
+
+        sample.dump_reduced_data_to_csv()
+
+        assert other_output[0].read_text() == "stale\n"
+
+    def test_legacy_names_removed_when_empty_cell_has_the_prefixed_name(self, mock_experiment_2banks, tmp_path):
+        """An empty cell named UN_test does not keep the legacy files of test, since no files are written for it."""
+        stale = self._write_stale(tmp_path, ["UN_test_det_1.txt"])
+        sample = TestStitchOrders._sample(mock_experiment_2banks, tmp_path)
+        mock_experiment_2banks.samples = [sample]
+        mock_experiment_2banks.empty_cell = _make_sample(mock_experiment_2banks, "UN_test", [])
+
+        sample.dump_reduced_data_to_csv()
+
+        assert not stale[0].exists()

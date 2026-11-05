@@ -564,10 +564,11 @@ class Sample(BaseModel):
 
         The same files under the names written by usansred up to version 1.9.0, which start with
         ``LEGACY_PREFIX`` (``UN_``), are removed as well, so that an earlier reduction by such a
-        version does not leave a second copy of each profile. A limitation: if the experiment
-        also holds a measurement whose name is ``UN_`` followed by this measurement's name, its
-        files are among those removed, and they are written again only if that measurement is
-        written afterwards.
+        version does not leave a second copy of each profile. These names are also the current
+        names of the files of a measurement named ``UN_<name>``. If the experiment writes such a
+        measurement, the legacy names are not removed, since they are its output. Otherwise a
+        file such as ``UN_<name>_det_1.txt`` cannot be told apart from a legacy file, and is
+        removed.
 
         Parameters
         ----------
@@ -585,8 +586,19 @@ class Sample(BaseModel):
             scaled_data=scaled_data,
             background_subtracted_data=background_subtracted_data,
         )
-        # Names written by usansred up to version 1.9.0
-        filenames += [LEGACY_PREFIX + filename for filename in filenames]
+        # Names written by usansred up to version 1.9.0, unless they are the current names of another
+        # measurement written by this experiment. The empty cell is not considered: no files are
+        # written for it.
+        written = [sample.name for sample in self.experiment.samples]
+        if self.experiment.background is not None:
+            written.append(self.experiment.background.name)
+        if LEGACY_PREFIX + self.name in written:
+            logger.info(
+                f"Files named {LEGACY_PREFIX}{self.name}_* are not removed for {self.label}, since they are the "
+                f"output of measurement {LEGACY_PREFIX}{self.name}."
+            )
+        else:
+            filenames += [LEGACY_PREFIX + filename for filename in filenames]
         for filename in filenames:
             filepath = os.path.join(self.experiment.output_dir, filename)
             if os.path.isfile(filepath):

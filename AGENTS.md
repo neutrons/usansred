@@ -168,7 +168,10 @@ Output names currently include:
 
 All names are built by `reduced_data_filename` in `src/usansred/io/filenames.py`.
 usansred 1.9.0 and earlier wrote the same names with the prefix `UN_`
-(`LEGACY_PREFIX`); a re-reduction deletes those files of each measurement.
+(`LEGACY_PREFIX`); a re-reduction deletes those files of each measurement, unless
+they are the output of a measurement named `UN_<name>` in the same setup file.
+Measurement names may not contain `/` or `\` (validator in
+`src/usansred/models/reduction_config.py`).
 
 ## Coding Standards
 
