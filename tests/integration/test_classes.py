@@ -12,10 +12,10 @@ class TestExperiment:
         self.experiment = Experiment(config_file=data_server.path_to("setup-empty-cell.json"))
 
     def test_event_counts(self):
-        assert self.experiment.samples[0].counts.monitor == 8556560
-        assert self.experiment.samples[0].counts.detector == 201120
-        assert self.experiment.samples[0].counts.transmission == 2622355
+        assert self.experiment.samples[0].counts.monitor == 52349385
+        assert self.experiment.samples[0].counts.detector == 192153
+        assert self.experiment.samples[0].counts.transmission == 17349594
 
     def test_transmission_calculation(self):
         sample = self.experiment.samples[0]
-        assert pytest.approx(sample.transmission, abs=1e-5) == 0.991167
+        assert pytest.approx(sample.transmission, abs=1e-5) == 0.989339

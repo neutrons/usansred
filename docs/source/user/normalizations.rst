@@ -154,10 +154,10 @@ equivalent of the wide-angle transmission.
 Example
 ^^^^^^^
 
-The table below compares, scan by scan, the transmission of sample ``S115_dry`` (runs 41712 to
-41715) relative to ``EmptyPCell`` (runs 41740 to 41743), from the reference dataset of the
-``usansred-data`` repository. [#]_ The first two scans cross the direct beam, so a large share of the neutrons
-is reflected into the main detector. The last two scans are at wide angles, where the main
+The table below compares, scan by scan, the transmission of sample ``S115_dry`` (runs 41713 to
+41718) relative to ``EmptyPCell`` (runs 41741 to 41746), from the reference dataset of the
+``usansred-data`` repository. [#]_ The first scan crosses the direct beam, so a large share of the neutrons
+is reflected into the main detector. The other five scans are at wide angles, where the main
 detector receives almost no neutrons.
 
 .. list-table::
@@ -171,35 +171,47 @@ detector receives almost no neutrons.
      - :math:`T` from both detectors
      - :math:`T` from transmission detector only
    * - 1
-     - 0.289
-     - 0.240
-     - 0.3168
-     - 0.990
-     - 1.058
-   * - 2
      - 0.390
      - 0.312
      - 0.3156
      - 1.003
      - 1.131
-   * - 3
+   * - 2
      - 0.001
      - 0.019
      - 0.3351
      - 0.984
      - 0.966
-   * - 4
+   * - 3
      - 0.000
      - 0.004
      - 0.3391
      - 0.985
      - 0.981
+   * - 4
+     - 0.000
+     - 0.001
+     - 0.3396
+     - 0.986
+     - 0.986
+   * - 5
+     - 0.000
+     - 0.000
+     - 0.3396
+     - 0.987
+     - 0.987
+   * - 6
+     - 0.000
+     - 0.000
+     - 0.3399
+     - 0.986
+     - 0.986
 
 Using both detectors, the coefficient stays between 0.984 and 1.003 in every scan. Using the
-transmission detector alone, it ranges from 0.97 to 1.13, with values above 1 in the scans that
-cross the direct beam: the sample scatters neutrons out of the narrow acceptance of the analyzer,
-so fewer reach the main detector and more reach the transmission detector. Summed over the four
-scans, as ``usansred`` does, the transmission coefficient of ``S115_dry`` is :math:`T = 0.988`.
+transmission detector alone, it ranges from 0.97 to 1.13, with a value above 1 in the scan that
+crosses the direct beam: the sample scatters neutrons out of the narrow acceptance of the analyzer,
+so fewer reach the main detector and more reach the transmission detector. Summed over the six
+scans, as ``usansred`` does, the transmission coefficient of ``S115_dry`` is :math:`T = 0.987`.
 
 .. [#] The setup file of this dataset lists ``EmptyPCell`` as the background, so its reference
    reduction applies :math:`T = 1`. The example treats ``EmptyPCell`` as an empty cell for
@@ -210,8 +222,8 @@ Assumptions and Limitations
 
 - **Detector response.** The counts of the main detector and of the transmission detector are
   added with equal weights. In the example above, the transmitted fraction of the empty cell is
-  about 6% lower in the scans that cross the direct beam (0.316) than in the scans at wide angles
-  (0.335 to 0.339). Neutrons reflected toward the main detector are therefore recorded with a
+  6% to 7% lower in the scan that crosses the direct beam (0.316) than in the scans at wide angles
+  (0.335 to 0.340). Neutrons reflected toward the main detector are therefore recorded with a
   lower overall efficiency than those reaching the transmission detector, either because of the
   detector efficiencies or because of losses in the analyzer. This effect largely cancels in
   :math:`T` as long as the sample and the empty cell are measured with the same sequence of scans.
@@ -240,7 +252,7 @@ Where to Find the Transmission Coefficient
 The transmission coefficient of each sample and of the background is written to its log file,
 ``reduction_<name>.log`` in the output folder, as::
 
-   Transmission coefficient for sample S115_dry: 0.9881
+   Transmission coefficient for sample S115_dry: 0.9868
 
 It is not included in ``summary.xlsx`` or in the reduced data files.
 

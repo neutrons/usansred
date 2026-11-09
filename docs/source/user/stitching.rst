@@ -123,16 +123,16 @@ the reference dataset, fitting the factors again on the background-subtracted ha
 them by less than two standard deviations of their statistical uncertainty, estimated by
 repeating both fits on data perturbed within their uncertainties.
 
-For sample ``S115_dry`` of the reference dataset, all four harmonics are joined:
+For sample ``S115_pc3`` of the reference dataset, all four harmonics are joined:
 
-.. figure:: media/stitching_S115_dry.png
-   :alt: Log-log plot of sample S115_dry with the profiles of harmonics 1 to 4 as violet, green,
+.. figure:: media/stitching_S115_pc3.png
+   :alt: Log-log plot of sample S115_pc3 with the profiles of harmonics 1 to 4 as violet, green,
          magenta, and yellow lines, and the stitched profile as black markers.
    :width: 100%
 
-   Scaled profiles of the four harmonics of sample ``S115_dry`` (lines, ``S115_dry_det_<n>.txt``)
+   Scaled profiles of the four harmonics of sample ``S115_pc3`` (lines, ``S115_pc3_det_<n>.txt``)
    before stitching, each at its own intensity scale, and the stitched profile (markers,
-   ``S115_dry_det_stitched.txt``), in which each harmonic is multiplied by the scale factor
+   ``S115_pc3_det_stitched.txt``), in which each harmonic is multiplied by the scale factor
    :math:`s` given in the legend. Zero-intensity points are not shown on the logarithmic axes.
 
 When Stitching Stops
@@ -162,7 +162,7 @@ weak to record counts at high Q: their high-Q points have zero counts and are no
 so the highest valid Q of a weak harmonic can lie below that of the reference profile. Such a
 harmonic would add no new Q range to the stitched profile, only points noisier than those
 already in it. For example, the valid points of sample
-``S115_pc3`` of the reference dataset are:
+``S115_dry`` of the reference dataset are:
 
 .. list-table::
    :header-rows: 1
@@ -172,32 +172,31 @@ already in it. For example, the valid points of sample
      - Valid points
      - Highest valid Q (``1/angstrom``)
    * - 1
-     - 65 of 65
-     - 4.04e-4
+     - 85 of 85
+     - 3.21e-3
    * - 2
-     - 56 of 65
-     - 8.08e-4
+     - 63 of 85
+     - 6.09e-3
    * - 3
-     - 17 of 65
-     - 3.23e-4
+     - 23 of 85
+     - 9.13e-3
    * - 4
-     - 3 of 65
-     - 2.65e-5
+     - 7 of 85
+     - 8.79e-3
 
-Harmonic 3 ends below the profile stitched from harmonics 1 and 2, which reaches
-8.08e-4 ``1/angstrom``, so the stitched profile of this sample holds harmonics 1 and 2.
-Harmonic 4, which would have been joined next, is not attempted.
+Harmonic 4 ends below the profile stitched from harmonics 1 to 3, which reaches
+9.13e-3 ``1/angstrom``, so the stitched profile of this sample holds harmonics 1 to 3.
 
-.. figure:: media/stitching_S115_pc3.png
-   :alt: Log-log plot of sample S115_pc3 with the profiles of harmonics 1 to 4 as violet, green,
-         magenta, and yellow lines, and the stitched profile as black markers. Harmonics 3 and 4
-         end at lower Q than the stitched profile.
+.. figure:: media/stitching_S115_dry.png
+   :alt: Log-log plot of sample S115_dry with the profiles of harmonics 1 to 4 as violet, green,
+         magenta, and yellow lines, and the stitched profile as black markers. Harmonic 4 ends
+         at lower Q than the stitched profile.
    :width: 100%
 
-   Scaled profiles of the four harmonics of sample ``S115_pc3`` (lines, ``S115_pc3_det_<n>.txt``)
+   Scaled profiles of the four harmonics of sample ``S115_dry`` (lines, ``S115_dry_det_<n>.txt``)
    before stitching, each at its own intensity scale, and the stitched profile (markers,
-   ``S115_pc3_det_stitched.txt``), which holds harmonics 1 and 2 only. The last non-zero point
-   of harmonic 3 lies at 3.23e-4 ``1/angstrom``, below the highest Q of the stitched profile.
+   ``S115_dry_det_stitched.txt``), which holds harmonics 1 to 3 only. The last non-zero point
+   of harmonic 4 lies at 8.79e-3 ``1/angstrom``, below the highest Q of the stitched profile.
    Zero-intensity points are not shown on the logarithmic axes.
 
 The figures are produced by ``scripts/plot_stitching_examples.py``, which reduces the reference
@@ -212,19 +211,21 @@ harmonics stitched:
 
 .. code-block:: text
 
-   Joined order 2: scale factor 16.6985, overlap [3.67804e-06, 0.000403765] 1/angstrom, fitted over
-   [5.65419e-05, 0.000403765] 1/angstrom with 39 points.
-   Stitched orders [1, 2] of sample S115_pc3 with scale factors [1.0, 16.6985].
+   Joined order 2: scale factor 12.7049, overlap [3.93238e-06, 0.00321314] 1/angstrom, fitted over
+   [5.65419e-05, 0.00321314] 1/angstrom with 61 points.
+   Joined order 3: scale factor 18.6617, overlap [5.89856e-06, 0.00608782] 1/angstrom, fitted over
+   [5.65419e-05, 0.00608782] 1/angstrom with 110 points.
+   Stitched orders [1, 2, 3] of sample S115_dry with scale factors [1.0, 12.7049, 18.6617].
 
 A harmonic that cannot be joined is reported with the reason, the harmonics in the stitched
 profile, and those left out:
 
 .. code-block:: text
 
-   Cannot join order 3 onto the stitched profile of sample S115_pc3: order 3 does not extend the
-   stitched profile to higher Q (its highest non-zero-count point is at 0.000322827 1/angstrom,
-   while the stitched profile reaches 0.00080753 1/angstrom). Stitching stops; the stitched
-   profile contains orders [1, 2], and orders [3, 4] are left out.
+   Cannot join order 4 onto the stitched profile of sample S115_dry: order 4 does not extend the
+   stitched profile to higher Q (its highest non-zero-count point is at 0.008791 1/angstrom,
+   while the stitched profile reaches 0.00913173 1/angstrom). Stitching stops; the stitched
+   profile contains orders [1, 2, 3], and orders [4] are left out.
 
 A harmonic above 2 that does not extend the profile to higher Q is logged as a warning, since this
 is the usual outcome for weak harmonics. All other failures, and any failure to join harmonic 2,

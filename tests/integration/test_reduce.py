@@ -35,14 +35,15 @@ def compare_lines(file1, file2, threshold=0.01):
     """Compare corresponding numbers in two files line by line."""
     numbers_list1 = read_numbers_from_file(file1)
     numbers_list2 = read_numbers_from_file(file2)
+    if len(numbers_list1) != len(numbers_list2):
+        raise ValueError(f"{file1} has {len(numbers_list1)} lines, but {file2} has {len(numbers_list2)} lines")
 
     for i, (line1, line2) in enumerate(zip(numbers_list1, numbers_list2), start=1):
         for num1, num2 in zip(line1, line2):
-            try:
-                relative_diff = abs(num1 - num2) / max(abs(num1), abs(num2))
-            except ZeroDivisionError:
-                pass
-            if relative_diff > threshold:
+            largest = max(abs(num1), abs(num2))
+            if largest == 0.0:
+                continue  # both numbers are zero, so they are equal
+            if abs(num1 - num2) / largest > threshold:
                 raise ValueError(f"Line {i}, Number {num1:.6f} differs significantly from {num2:.6f}")
 
 
@@ -265,6 +266,7 @@ def test_main_logbin_deprecation_warning(mock_parse_args, caplog):
 @pytest.mark.datarepo
 @mock_patch("usansred.reduce.parse_args")
 def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
+    """Reduce setup.json with save_all_harmonics and check the harmonic files, the stitching, and its log messages."""
     source_config = Path(data_server.path_to("setup.json"))
     source_data_dir = source_config.parent
     reduction_data_dir = tmp_path / "data"
@@ -294,7 +296,7 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
             harmonic_file = output_dir / f"{name}_det_{harmonic}_unscaled.txt"
             assert harmonic_file.is_file()
             assert harmonic_file.stat().st_size > 0
-            assert len(harmonic_file.read_text(encoding="utf-8").splitlines()) == 65
+            assert len(harmonic_file.read_text(encoding="utf-8").splitlines()) == 85
 
             scaled_file = output_dir / f"{name}_det_{harmonic}.txt"
             assert scaled_file.is_file()
@@ -319,9 +321,9 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
     # measurement's reduction log. The scale factors are regression values for the reference
     # dataset: a change to the stitching method changes them.
     expected_scale_factors = {
-        "S115_pc3": ("sample", [1.0, 16.6985]),
-        "S115_dry": ("sample", [1.0, 11.8484, 29.9429, 82.3565]),
-        "EmptyPCell": ("background", [1.0, 3.7645]),
+        "S115_pc3": ("sample", [1.0, 13.1302, 19.4724, 6.0633]),
+        "S115_dry": ("sample", [1.0, 12.7049, 18.6617]),
+        "EmptyPCell": ("background", [1.0, 1.17611, 0.455378, 0.21082]),
     }
     q_cut = unscattered_beam_q_cutoff(3.6)  # default primary wavelength of Experiment, in angstrom
     for name, (label, expected) in expected_scale_factors.items():
@@ -336,11 +338,11 @@ def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
             subtracted = np.array(read_numbers_from_file(output_dir / f"{name}_det_background_subtracted_stitched.txt"))
             np.testing.assert_allclose(subtracted[:, 0], stitched[:, 0], rtol=1e-12)
     assert not (output_dir / "EmptyPCell_det_background_subtracted_stitched.txt").exists()
-    # Harmonic 3 of S115_pc3 does not extend the stitched profile to higher Q
-    pc3_log = (output_dir / "reduction_S115_pc3.log").read_text(encoding="utf-8")
-    assert "Stitched orders [1, 2] of sample S115_pc3" in pc3_log
-    assert "order 3 does not extend the stitched profile to higher Q" in pc3_log
-    assert "Stitched orders [1, 2, 3, 4] of sample S115_dry" in (output_dir / "reduction_S115_dry.log").read_text(
+    # Harmonic 4 of S115_dry does not extend the stitched profile to higher Q
+    dry_log = (output_dir / "reduction_S115_dry.log").read_text(encoding="utf-8")
+    assert "Stitched orders [1, 2, 3] of sample S115_dry" in dry_log
+    assert "order 4 does not extend the stitched profile to higher Q" in dry_log
+    assert "Stitched orders [1, 2, 3, 4] of sample S115_pc3" in (output_dir / "reduction_S115_pc3.log").read_text(
         encoding="utf-8"
     )
     assert_no_legacy_names(output_dir)
