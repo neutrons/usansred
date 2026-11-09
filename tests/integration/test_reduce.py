@@ -266,6 +266,7 @@ def test_main_logbin_deprecation_warning(mock_parse_args, caplog):
 @pytest.mark.datarepo
 @mock_patch("usansred.reduce.parse_args")
 def test_main_save_all_harmonics(mock_parse_args, data_server, tmp_path):
+    """Reduce setup.json with save_all_harmonics and check the harmonic files, the stitching, and its log messages."""
     source_config = Path(data_server.path_to("setup.json"))
     source_data_dir = source_config.parent
     reduction_data_dir = tmp_path / "data"

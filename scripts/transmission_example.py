@@ -14,6 +14,8 @@ prints, for each pair of scans, the quantities of the table in section "Example"
 
 Scan ``k`` of the sample is paired with scan ``k`` of the empty cell. The table is printed as an
 RST ``list-table``, followed by the coefficient summed over all scans, as computed by ``usansred``.
+The script stops with an error if any count of a scan is zero, e.g. because an event-count file is
+missing, since the table would then show wrong values.
 
 Usage::
 
@@ -61,15 +63,32 @@ def transmission_detector_fraction(scan: Scan) -> float:
     return counts.transmission / counts.monitor
 
 
+def check_counts(scans: list[Scan], name: str) -> None:
+    """Raise ``ValueError`` if the monitor, main-detector, or transmission-detector count of a scan is zero.
+
+    ``usansred`` sets the count of a missing event-count file to zero and logs a warning; a zero
+    count would make the table show wrong values, or divide by zero.
+    """
+    for scan in scans:
+        counts = scan.counts
+        zero = [label for label in ("monitor", "detector", "transmission") if getattr(counts, label) == 0]
+        if zero:
+            raise ValueError(
+                f"Scan {scan.number} of {name} has zero {', '.join(zero)} counts; check its event-count files."
+            )
+
+
 def main() -> None:
     """Print the scan-by-scan transmission table and the summed transmission coefficient."""
     setup_file = Path(sys.argv[1]) if len(sys.argv) > 1 else SETUP_FILE
     if not setup_file.exists():
         raise FileNotFoundError(f"{setup_file} not found; run `git submodule update --init` first.")
-    logging.disable(logging.CRITICAL)
+    logging.disable(logging.INFO)  # keep the warnings and errors, e.g. about missing event-count files
     experiment = Experiment(config_file=str(setup_file))
     empty_cell = experiment.empty_cell
     sample = next(s for s in experiment.samples if s.name == SAMPLE)
+    check_counts(empty_cell.scans, empty_cell.name)
+    check_counts(sample.scans, SAMPLE)
     if len(sample.scans) != len(empty_cell.scans):
         raise ValueError(f"{SAMPLE} has {len(sample.scans)} scans, but {empty_cell.name} has {len(empty_cell.scans)}")
 
