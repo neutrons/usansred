@@ -85,7 +85,7 @@ class RunSequence:
     runs : dict[str, dict]
         Content of ``scan_<N>.json``: one entry per run, keyed by the run number.
     sample : dict
-        Content of the sample file paired with the sequence.
+        Content of ``sample_<N>.json``, or an empty dictionary if the file is missing.
     """
 
     first_run: int
@@ -97,6 +97,8 @@ def collect_sequences(outdir: str) -> list[RunSequence]:
     """Collect the sequences of runs recorded by step 1 in an output directory.
 
     There is one sequence for each file ``scan_<N>.json``, where ``N`` is an integer, ordered by ``N``.
+    Its sample information is read from ``sample_<N>.json``, with the same ``N``; if that file is missing,
+    the sample information is empty, and a warning is logged.
     ``scan_-1.json`` is ignored: it holds the runs whose log ``BL1A:CS:Scan:USANS:FirstRun`` is -1,
     which are not part of any sequence. A file whose ``N`` is not an integer is ignored, with a warning.
 
@@ -131,8 +133,11 @@ def collect_sequences(outdir: str) -> list[RunSequence]:
         if first_run == NO_SEQUENCE:
             logger.info(f"Ignoring {filename}: its {len(runs)} runs are not part of any sequence (FirstRun = -1)")
             continue
-        # Defect 2 of #107: the sample information is read from the scan file, not from sample_<N>.json
-        sample = get_sequence_info(scan_file)
+        sample_filename = f"sample_{first_run}.json"
+        sample = get_sequence_info(os.path.join(outdir, sample_filename))
+        if sample is None:
+            logger.warning(f"{sample_filename} not found: the sample of {filename} takes the default values")
+            sample = {}
         sequences.append(RunSequence(first_run=first_run, runs=runs, sample=sample))
     return sequences
 
@@ -140,7 +145,10 @@ def collect_sequences(outdir: str) -> list[RunSequence]:
 def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
     """Build the setup of the reduction of the sequences.
 
-    Every sequence is a sample: the setup has no background and no empty cell.
+    Every sequence is a sample: the setup has no background and no empty cell. The runs of a sample
+    span the run numbers of its sequence, from the lowest to the highest; the run numbers of that span
+    missing from the sequence are excluded. ``Sample`` reads ``num_of_scans`` consecutive runs from
+    ``start_scan_num`` and skips the excluded ones, so ``num_of_scans`` is the length of the whole span.
 
     Parameters
     ----------
@@ -155,16 +163,18 @@ def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
     samples = []
     for index, sequence in enumerate(sequences):
         sample_info = sequence.sample
-        name = sample_info["title"] if "title" in sample_info else f"Sample{index}"
-        # Thickness in cm. Defect 3 of #107: int() truncates the thickness
-        thickness = int(sample_info["thickness"]) if "thickness" in sample_info else 0.1
+        # Thickness in cm
+        thickness = float(sample_info["thickness"]) if "thickness" in sample_info else 0.1
+        run_numbers = sorted(int(run) for run in sequence.runs)
+        first, last = run_numbers[0], run_numbers[-1]
         samples.append(
             SampleConfig(
-                name=name,
-                # The run recorded first, and one run fewer than recorded (#107)
-                start_scan_num=list(sequence.runs)[0],
-                num_of_scans=len(sequence.runs) - 1,
+                # The names are taken from the run titles in a later change (#107)
+                name=f"Sample{index}",
+                start_scan_num=first,
+                num_of_scans=last - first + 1,
                 thickness=thickness,
+                exclude=sorted(set(range(first, last + 1)) - set(run_numbers)),
             )
         )
     return ReductionConfig(samples=samples)
@@ -208,8 +218,7 @@ def reduce_sequences(setup_file: str, outdir: str) -> None:
     exp = reduce.Experiment(config_file=setup_file)
     exp.reduce(output_dir=autodir)
 
-    # Defect 1 of #107: Experiment has no attribute outputFolder
-    generate_report(config_file_path=setup_file, output_dir=exp.outputFolder)
+    generate_report(config_file_path=setup_file, output_dir=exp.output_dir)
 
 
 def main():

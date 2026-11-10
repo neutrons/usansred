@@ -45,10 +45,21 @@ def log(monkeypatch, caplog) -> pytest.LogCaptureFixture:
     return caplog
 
 
-def write_scan_file(outdir: Path, first_run: int, num_of_runs: int = 1) -> None:
-    """Write a scan_<N>.json file for a sequence of consecutive runs starting at ``first_run``."""
-    runs = {str(run): {"iq": f"USANS_{run}_detector_3.6.txt"} for run in range(first_run, first_run + num_of_runs)}
-    (outdir / f"scan_{first_run}.json").write_text(json.dumps(runs))
+def write_scan_file(outdir: Path, first_run: int, num_of_runs: int = 1, runs: list[int] | None = None) -> None:
+    """Write a scan_<N>.json file for a sequence starting at ``first_run``.
+
+    The sequence holds ``runs``, in the order given, or else ``num_of_runs`` consecutive runs.
+    """
+    if runs is None:
+        runs = list(range(first_run, first_run + num_of_runs))
+    entries = {str(run): {"iq": f"USANS_{run}_detector_3.6.txt"} for run in runs}
+    (outdir / f"scan_{first_run}.json").write_text(json.dumps(entries))
+
+
+def write_sample_file(outdir: Path, first_run: int, **sample_info) -> None:
+    """Change the values of the sample_<N>.json file of a fixture sequence."""
+    sample_file = outdir / f"sample_{first_run}.json"
+    sample_file.write_text(json.dumps(json.loads(sample_file.read_text()) | sample_info))
 
 
 class TestCollectSequences:
@@ -83,6 +94,19 @@ class TestCollectSequences:
     def test_no_scan_file(self, tmp_path):
         assert collect_sequences(str(tmp_path)) == []
 
+    def test_reads_sample_files(self, outdir):
+        sequences = collect_sequences(str(outdir))
+
+        assert [sequence.sample["title"] for sequence in sequences] == list(TITLES.values())
+
+    def test_missing_sample_file(self, outdir, log):
+        (outdir / "sample_41741.json").unlink()
+
+        sequences = collect_sequences(str(outdir))
+
+        assert sequences[1].sample == {}
+        assert any("sample_41741.json" in message for message in log.messages)
+
 
 class TestBuildSetup:
     def test_every_sequence_is_a_sample(self, outdir):
@@ -95,10 +119,7 @@ class TestBuildSetup:
         assert config.empty_cell is None
 
     def test_sequence_flagged_as_background_is_a_sample(self, outdir):
-        sample_file = outdir / "sample_41741.json"
-        sample_info = json.loads(sample_file.read_text())
-        sample_info["background"] = 1
-        sample_file.write_text(json.dumps(sample_info))
+        write_sample_file(outdir, 41741, background=1)
 
         config = build_setup(collect_sequences(str(outdir)))
 
@@ -113,19 +134,52 @@ class TestBuildSetup:
         assert len(config.samples) == 1
         assert config.background is None
 
-    def test_drops_last_run(self, outdir):
-        """Current behavior: the last recorded run of each sequence is left out."""
-        config = build_setup(collect_sequences(str(outdir)))
-
-        assert [sample.num_of_scans for sample in config.samples] == [5, 5, 5]
-
-    @pytest.mark.xfail(strict=True, reason="#107: the last run of each sequence is dropped")
     def test_keeps_every_run(self, outdir):
         config = build_setup(collect_sequences(str(outdir)))
 
         assert [sample.num_of_scans for sample in config.samples] == list(SEQUENCES.values())
+        assert [sample.exclude for sample in config.samples] == [[], [], []]
 
-    @pytest.mark.xfail(strict=True, reason="#107: the sample information is read from the scan files")
+    def test_excludes_missing_runs(self, tmp_path):
+        write_scan_file(tmp_path, 100, runs=[100, 101, 103])
+
+        (sample,) = build_setup(collect_sequences(str(tmp_path))).samples
+
+        assert sample.start_scan_num == 100
+        assert sample.num_of_scans == 4
+        assert sample.exclude == [102]
+
+    def test_order_of_runs_in_scan_file(self, tmp_path):
+        write_scan_file(tmp_path, 100, runs=[103, 100, 101])
+        write_scan_file(tmp_path, 200, runs=[200, 201, 203])
+
+        first, second = build_setup(collect_sequences(str(tmp_path))).samples
+
+        assert (first.start_scan_num, first.num_of_scans, first.exclude) == (100, 4, [102])
+        assert (second.start_scan_num, second.num_of_scans, second.exclude) == (200, 4, [202])
+
+    def test_thickness_from_sample_file(self, outdir):
+        write_sample_file(outdir, 41741, thickness=0.3)
+
+        config = build_setup(collect_sequences(str(outdir)))
+
+        assert [sample.thickness for sample in config.samples] == [0.1, 0.3, 0.1]
+
+    def test_thickness_as_string(self, outdir):
+        write_sample_file(outdir, 41741, thickness="0.3")
+
+        config = build_setup(collect_sequences(str(outdir)))
+
+        assert config.samples[1].thickness == 0.3
+
+    def test_default_thickness_without_sample_file(self, outdir):
+        (outdir / "sample_41741.json").unlink()
+
+        config = build_setup(collect_sequences(str(outdir)))
+
+        assert config.samples[1].thickness == 0.1
+
+    @pytest.mark.xfail(strict=True, reason="#107: the sequences are named after the run titles in Stage 5")
     def test_names_from_sample_files(self, outdir):
         config = build_setup(collect_sequences(str(outdir)))
 
@@ -144,6 +198,15 @@ class TestWriteSetupFile:
         assert Path(setup_file) == outdir / "auto.json"
         assert read_config(setup_file) == config
 
+    def test_writes_excluded_runs(self, tmp_path):
+        write_scan_file(tmp_path, 100, runs=[100, 101, 103])
+        config = build_setup(collect_sequences(str(tmp_path)))
+
+        setup_file = write_setup_file(config, str(tmp_path))
+
+        assert json.loads(Path(setup_file).read_text())["samples"][0]["exclude"] == [102]
+        assert read_config(setup_file) == config
+
     def test_writes_no_csv(self, outdir):
         write_setup_file(build_setup(collect_sequences(str(outdir))), str(outdir))
 
@@ -151,7 +214,6 @@ class TestWriteSetupFile:
 
 
 class TestReduceSequences:
-    @pytest.mark.xfail(strict=True, raises=AttributeError, reason="#107: Experiment has no attribute outputFolder")
     def test_report_written_with_reduced_data(self, outdir, monkeypatch):
         reduced_into = []
         reports = []
