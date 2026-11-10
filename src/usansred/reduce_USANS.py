@@ -1,11 +1,12 @@
-import csv
 import json
 import logging
 import math
 import os
+import re
 import sys
 import traceback
 import warnings
+from dataclasses import dataclass, field
 
 import numpy as np
 from mantid.simpleapi import (
@@ -21,6 +22,7 @@ from plot_publisher import plot1d
 
 from usansred import reduce
 from usansred.io.save import save_ascii, save_summed_spectra
+from usansred.models.reduction_config import ReductionConfig, SampleConfig
 from usansred.summary import generate_report
 from usansred.utils.logging import get_logger
 
@@ -57,6 +59,157 @@ def get_sequence_info(seq_file):
         return None
 
     return seq_dict
+
+
+# Name of the setup file written by step 2, in the output directory
+SETUP_FILENAME = "auto.json"
+
+# Name of the directory, in the output directory, where step 2 writes the reduced data
+REDUCTION_DIRNAME = "auto"
+
+# Files in which step 1 records the runs of a sequence, named after the first run of the sequence
+SCAN_FILE_PATTERN = re.compile(r"^scan_(?P<first_run>.+)\.json$")
+
+# Value of the log BL1A:CS:Scan:USANS:FirstRun for a run that is not part of any sequence
+NO_SEQUENCE = -1
+
+
+@dataclass
+class RunSequence:
+    """The information recorded by step 1 for one sequence of runs.
+
+    Parameters
+    ----------
+    first_run : int
+        Run number of the first run of the sequence, the ``N`` of ``scan_<N>.json``.
+    runs : dict[str, dict]
+        Content of ``scan_<N>.json``: one entry per run, keyed by the run number.
+    sample : dict
+        Content of the sample file paired with the sequence.
+    """
+
+    first_run: int
+    runs: dict[str, dict] = field(default_factory=dict)
+    sample: dict = field(default_factory=dict)
+
+
+def collect_sequences(outdir: str) -> list[RunSequence]:
+    """Collect the sequences of runs recorded by step 1 in an output directory.
+
+    There is one sequence for each file ``scan_<N>.json``, where ``N`` is an integer, ordered by ``N``.
+    ``scan_-1.json`` is ignored: it holds the runs whose log ``BL1A:CS:Scan:USANS:FirstRun`` is -1,
+    which are not part of any sequence. A file whose ``N`` is not an integer is ignored, with a warning.
+
+    Parameters
+    ----------
+    outdir : str
+        Output directory of the preprocessing script.
+
+    Returns
+    -------
+    list[RunSequence]
+        The sequences, ordered by the run number of their first run.
+    """
+    scan_files = []
+    for filename in os.listdir(outdir):
+        match = SCAN_FILE_PATTERN.match(filename)
+        if match is None:
+            continue
+        try:
+            first_run = int(match.group("first_run"))
+        except ValueError:
+            logger.warning(f"Ignoring {filename}: {match.group('first_run')} is not a run number")
+            continue
+        scan_files.append((first_run, filename))
+    # Order by run number, not by file name, which would put scan_10001.json before scan_9990.json
+    scan_files.sort()
+
+    sequences = []
+    for first_run, filename in scan_files:
+        scan_file = os.path.join(outdir, filename)
+        runs = get_sequence_info(scan_file)
+        if first_run == NO_SEQUENCE:
+            logger.info(f"Ignoring {filename}: its {len(runs)} runs are not part of any sequence (FirstRun = -1)")
+            continue
+        # Defect 2 of #107: the sample information is read from the scan file, not from sample_<N>.json
+        sample = get_sequence_info(scan_file)
+        sequences.append(RunSequence(first_run=first_run, runs=runs, sample=sample))
+    return sequences
+
+
+def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
+    """Build the setup of the reduction of the sequences.
+
+    Every sequence is a sample: the setup has no background and no empty cell.
+
+    Parameters
+    ----------
+    sequences : list[RunSequence]
+        The sequences, as returned by ``collect_sequences``.
+
+    Returns
+    -------
+    ReductionConfig
+        The setup, with one sample per sequence.
+    """
+    samples = []
+    for index, sequence in enumerate(sequences):
+        sample_info = sequence.sample
+        name = sample_info["title"] if "title" in sample_info else f"Sample{index}"
+        # Thickness in cm. Defect 3 of #107: int() truncates the thickness
+        thickness = int(sample_info["thickness"]) if "thickness" in sample_info else 0.1
+        samples.append(
+            SampleConfig(
+                name=name,
+                # The run recorded first, and one run fewer than recorded (#107)
+                start_scan_num=list(sequence.runs)[0],
+                num_of_scans=len(sequence.runs) - 1,
+                thickness=thickness,
+            )
+        )
+    return ReductionConfig(samples=samples)
+
+
+def write_setup_file(config: ReductionConfig, outdir: str) -> str:
+    """Write the setup of the reduction as ``auto.json`` in the output directory.
+
+    Parameters
+    ----------
+    config : ReductionConfig
+        The setup, as returned by ``build_setup``.
+    outdir : str
+        Output directory of the preprocessing script.
+
+    Returns
+    -------
+    str
+        Path of the setup file.
+    """
+    setup_file = os.path.join(outdir, SETUP_FILENAME)
+    with open(setup_file, "w") as fd:
+        fd.write(config.model_dump_json(indent=2, exclude_none=True))
+        fd.write("\n")
+    return setup_file
+
+
+def reduce_sequences(setup_file: str, outdir: str) -> None:
+    """Reduce the setup file into ``<outdir>/auto``, and write the summary report.
+
+    Parameters
+    ----------
+    setup_file : str
+        Path of the setup file, as returned by ``write_setup_file``.
+    outdir : str
+        Output directory of the preprocessing script.
+    """
+    autodir = os.path.join(outdir, REDUCTION_DIRNAME)
+    os.makedirs(autodir, exist_ok=True)
+
+    exp = reduce.Experiment(config_file=setup_file)
+    exp.reduce(output_dir=autodir)
+
+    # Defect 1 of #107: Experiment has no attribute outputFolder
+    generate_report(config_file_path=setup_file, output_dir=exp.outputFolder)
 
 
 def main():
@@ -329,79 +482,13 @@ def main():
                 iq_fd.close()
                 iq_fd_simple.close()
 
-    # list all the sequence files
-    json_files = [
-        pos_json for pos_json in os.listdir(outdir) if pos_json.endswith(".json") and pos_json.startswith("scan")
-    ]
-    json_files.sort()
-    json_files = [os.path.join(outdir, ff) for ff in json_files]
-
-    sample_json_files = [
-        pos_json for pos_json in os.listdir(outdir) if pos_json.endswith(".json") and pos_json.startswith("sample")
-    ]
-    sample_json_files.sort()
-    sample_json_files = [os.path.join(outdir, ff) for ff in json_files]
-
-    # construct the csv file
-    seq_len = []
-    seq_thickness = []
-    seq_titles = []
-    seq_start_runnums = []
-    seq_background_flag = []
-
-    for idx, ff in enumerate(json_files):
-        seq_dict = get_sequence_info(ff)
-        try:
-            sample_dict = get_sequence_info(sample_json_files[idx])
-        except:  # noqa E722
-            sample_dict = {}
-
-        seq_len.append(len(seq_dict) - 1)
-
-        if "title" in sample_dict:
-            seq_titles.append(sample_dict["title"])
-        else:
-            seq_titles.append("Sample" + str(idx))
-        if "thickness" in sample_dict:
-            seq_thickness.append(int(sample_dict["thickness"]))
-        else:
-            seq_thickness.append(0.1)
-        if "background_flag" in sample_dict:
-            seq_background_flag.append(int(sample_dict["background"]))
-        else:
-            seq_background_flag.append(0)
-
-        seq_start_runnums.append(list(seq_dict)[0])
-    # in case there is no background designated, assign the first sample
-    if sum(seq_background_flag) == 0.0:
-        seq_background_flag[0] = 1
-    else:
-        pass
-
-    autocsvfile = os.path.join(outdir, "auto.csv")
-
-    with open(autocsvfile, "w", newline="") as autocsv:
-        datawriter = csv.writer(autocsv, delimiter=",")
-
-        for flag, title, first_run, ll, thickness in zip(
-            seq_background_flag, seq_start_runnums, seq_titles, seq_len, seq_thickness
-        ):
-            flag = "b" if flag == 1 else "s"
-            rr = [str(col) for col in [flag, first_run, title, ll, thickness]]
-            datawriter.writerow(rr)
-
-    sys.path.insert(2, "/SNS/USANS/shared/autoreduce/usans-reduction")
-
-    autodir = os.path.join(outdir, "auto")
-    if not os.path.exists(autodir):
-        os.makedirs(autodir)
-
-    exp = reduce.Experiment(config_file=autocsvfile)
-    exp.reduce(output_dir=autodir)
-
-    generate_report(config_file_path=autocsvfile, output_dir=exp.outputFolder)
-
-    # seq_dict = get_sequence_info(os.path.join(outdir, "scan_%s.json" % sequence_first_run))
+    # Reduce all the sequences of the output directory
+    sequences = collect_sequences(outdir)
+    if not sequences:
+        logger.warning(f"No sequence of runs in {outdir}: nothing to reduce")
+        return
+    setup_file = write_setup_file(build_setup(sequences), outdir)
+    reduce_sequences(setup_file, outdir)
 
 
 if __name__ == "__main__":
