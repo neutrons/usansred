@@ -159,8 +159,13 @@ class TestReadFirstRun:
 class TestMainSkipsRuns:
     @pytest.mark.parametrize(
         ("first_run", "reason"),
-        [([-1], f"its log {FIRST_RUN_LOG} is -1"), (None, f"it has no log {FIRST_RUN_LOG}")],
-        ids=["no_sequence", "no_log"],
+        [
+            ([-1], f"its log {FIRST_RUN_LOG} is -1, which is not a run number"),
+            ([41845, 0], f"its log {FIRST_RUN_LOG} is 0, which is not a run number"),
+            ([-5], f"its log {FIRST_RUN_LOG} is -5, which is not a run number"),
+            (None, f"it has no log {FIRST_RUN_LOG}"),
+        ],
+        ids=["minus_one", "zero", "negative", "no_log"],
     )
     def test_run_outside_a_sequence(self, tmp_path, monkeypatch, log, first_run, reason):
         event_file = write_event_file(tmp_path / "USANS_41712.nxs.h5", first_run)
@@ -268,6 +273,17 @@ class TestCollectSequences:
         assert NO_SEQUENCE_RUNS.isdisjoint(run for sequence in sequences for run in sequence.runs)
         assert any("scan_-1.json" in message and "3 runs" in message for message in log.messages)
 
+    def test_ignores_first_run_zero(self, outdir, log):
+        # In IPTS-30410, runs 41845-41855 have FirstRun = 0
+        write_scan_file(outdir, 0, runs=[41845, 41846, 41847])
+
+        sequences = collect_sequences(str(outdir))
+
+        assert [sequence.first_run for sequence in sequences] == list(SEQUENCES)
+        assert any(
+            "scan_0.json" in message and "3 runs" in message and "FirstRun = 0" in message for message in log.messages
+        )
+
     def test_orders_by_run_number(self, tmp_path):
         write_scan_file(tmp_path, 10001)
         write_scan_file(tmp_path, 9990)
@@ -372,10 +388,10 @@ class TestBuildSetup:
 
         assert config.samples[1].thickness == 0.1
 
-    def test_saves_all_harmonics(self, outdir):
+    def test_saves_only_harmonic_1(self, outdir):
         config = build_setup(collect_sequences(str(outdir)))
 
-        assert config.save_all_harmonics is True
+        assert config.save_all_harmonics is False
 
 
 class TestSampleNames:
@@ -471,14 +487,14 @@ class TestSampleNames:
 
 
 class TestWriteSetupFile:
-    def test_writes_auto_json(self, outdir):
+    def test_writes_autoconfig_json(self, outdir):
         config = build_setup(collect_sequences(str(outdir)))
 
         setup_file = write_setup_file(config, str(outdir))
 
-        assert Path(setup_file) == outdir / "auto.json"
+        assert Path(setup_file) == outdir / "autoconfig.json"
         assert read_config(setup_file) == config
-        assert read_config(setup_file).save_all_harmonics is True
+        assert read_config(setup_file).save_all_harmonics is False
 
     def test_writes_excluded_runs(self, tmp_path):
         write_scan_file(tmp_path, 100, runs=[100, 101, 103])

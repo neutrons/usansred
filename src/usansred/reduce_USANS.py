@@ -63,7 +63,7 @@ def get_sequence_info(seq_file):
 
 
 # Name of the setup file written by step 2, in the output directory
-SETUP_FILENAME = "auto.json"
+SETUP_FILENAME = "autoconfig.json"
 
 # Name of the directory, in the output directory, where step 2 writes the reduced data
 REDUCTION_DIRNAME = "auto"
@@ -73,9 +73,6 @@ SCAN_FILE_PATTERN = re.compile(r"^scan_(?P<first_run>.+)\.json$")
 
 # Log holding the run number of the first run of the sequence that a run belongs to
 FIRST_RUN_LOG = "BL1A:CS:Scan:USANS:FirstRun"
-
-# Value of the log FIRST_RUN_LOG for a run that is not part of any sequence
-NO_SEQUENCE = -1
 
 # Log holding the thickness of the sample, in cm
 THICKNESS_LOG = "BL1A:CS:Scan:USANS:SampleThickness"
@@ -98,8 +95,9 @@ def read_first_run(filename: str) -> int | None:
     Returns
     -------
     int | None
-        The last value of the log: the run number of the first run of the sequence, or -1 for a run
-        that is not part of any sequence. ``None`` if the file has no such log, or the log no value.
+        The last value of the log: the run number of the first run of the sequence, or a value that is not
+        a positive integer, such as -1, for a run that is not part of any sequence. ``None`` if the file
+        has no such log, or the log no value.
 
     Raises
     ------
@@ -204,8 +202,9 @@ def collect_sequences(outdir: str) -> list[RunSequence]:
     There is one sequence for each file ``scan_<N>.json``, where ``N`` is an integer, ordered by ``N``.
     Its sample information is read from ``sample_<N>.json``, with the same ``N``; if that file is missing,
     the sample information is empty, and a warning is logged.
-    ``scan_-1.json`` is ignored: it holds the runs whose log ``BL1A:CS:Scan:USANS:FirstRun`` is -1,
-    which are not part of any sequence. A file whose ``N`` is not an integer is ignored, with a warning.
+    A file whose ``N`` is not a positive integer, such as ``scan_-1.json``, is ignored: it holds the runs
+    whose log ``BL1A:CS:Scan:USANS:FirstRun`` is not a run number, which are not part of any sequence.
+    A file whose ``N`` is not an integer is ignored, with a warning.
 
     Parameters
     ----------
@@ -235,8 +234,10 @@ def collect_sequences(outdir: str) -> list[RunSequence]:
     for first_run, filename in scan_files:
         scan_file = os.path.join(outdir, filename)
         runs = get_sequence_info(scan_file)
-        if first_run == NO_SEQUENCE:
-            logger.info(f"Ignoring {filename}: its {len(runs)} runs are not part of any sequence (FirstRun = -1)")
+        if first_run <= 0:
+            logger.info(
+                f"Ignoring {filename}: its {len(runs)} runs are not part of any sequence (FirstRun = {first_run})"
+            )
             continue
         sample_filename = f"sample_{first_run}.json"
         sample = get_sequence_info(os.path.join(outdir, sample_filename))
@@ -382,7 +383,7 @@ def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
     Returns
     -------
     ReductionConfig
-        The setup, with one sample per sequence, and the files of every harmonic saved.
+        The setup, with one sample per sequence, and only the files of harmonic 1 saved.
     """
     samples = []
     taken = set()
@@ -403,11 +404,11 @@ def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
                 exclude=sorted(set(range(first, last + 1)) - set(run_numbers)),
             )
         )
-    return ReductionConfig(samples=samples, save_all_harmonics=True)
+    return ReductionConfig(samples=samples, save_all_harmonics=False)
 
 
 def write_setup_file(config: ReductionConfig, outdir: str) -> str:
-    """Write the setup of the reduction as ``auto.json`` in the output directory.
+    """Write the setup of the reduction as ``autoconfig.json`` in the output directory.
 
     Parameters
     ----------
@@ -462,8 +463,11 @@ def main():
 
     # The runs outside a sequence are neither preprocessed nor reduced (#107)
     first_run = read_first_run(filename)
-    if first_run is None or first_run == NO_SEQUENCE:
-        reason = f"it has no log {FIRST_RUN_LOG}" if first_run is None else f"its log {FIRST_RUN_LOG} is -1"
+    if first_run is None or first_run <= 0:
+        if first_run is None:
+            reason = f"it has no log {FIRST_RUN_LOG}"
+        else:
+            reason = f"its log {FIRST_RUN_LOG} is {first_run}, which is not a run number"
         logger.info(f"{filename} is not processed: {reason}, so the run is not part of any sequence")
         return
 
