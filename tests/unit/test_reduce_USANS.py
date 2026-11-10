@@ -6,8 +6,10 @@ the sequences to the reduction.
 
 import json
 import logging
+import re
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 
 import h5py
@@ -543,7 +545,7 @@ class TestReduceSequence:
 
         autodir = str(tmp_path / "auto")
         assert reduction.reduced == [(sequence_file, autodir)]
-        assert reduction.reports == [{"config_file_path": setup_file, "output_dir": autodir}]
+        assert reduction.reports == [{"config_file_path": setup_file, "output_dir": autodir, "include_unscaled": False}]
 
 
 class StandInReduction:
@@ -604,7 +606,9 @@ class TestReduceRunSequence:
 
         autodir = str(outdir / "auto")
         assert reduction.reduced == [(str(outdir / "autoconfig_41741.json"), autodir)]
-        assert reduction.reports == [{"config_file_path": str(outdir / "autoconfig.json"), "output_dir": autodir}]
+        assert reduction.reports == [
+            {"config_file_path": str(outdir / "autoconfig.json"), "output_dir": autodir, "include_unscaled": False}
+        ]
 
     def test_inserts_in_order_of_first_run(self, tmp_path):
         for first_run, title in ((100, "First"), (300, "Third"), (200, "Second")):
@@ -757,3 +761,33 @@ class TestReduceRunSequence:
         assert set(outdir.iterdir()) == files_before
         assert reduction.reduced == []
         assert any("41900" in message and "nothing to reduce" in message for message in log.records_at_warning())
+
+
+class TestSummary:
+    def test_summary_covers_every_sequence(self, outdir, monkeypatch, log):
+        """The reduced files of 41713 and 41741 are in auto/, those of 41832 are missing."""
+        autodir = outdir / "auto"
+        autodir.mkdir()
+        for name in ("S115_dry", "EmptyPCell"):
+            for suffix in ("det_1", "det_1_unscaled"):
+                rows = [f"{1e-5 * (k + 1)},{100.0 / (k + 1)},{1.0 / (k + 1)}" for k in range(10)]
+                (autodir / f"{name}_{suffix}.txt").write_text("\n".join(rows) + "\n")
+
+        class StandInExperiment:
+            """Stands in for usansred.reduce.Experiment, leaving the files of auto/ as they are."""
+
+            def __init__(self, **_kwargs):
+                self.output_dir = None
+
+            def reduce(self, output_dir: str | None = None) -> None:
+                self.output_dir = output_dir
+
+        monkeypatch.setattr(reduce_USANS.reduce, "Experiment", StandInExperiment)
+
+        reduce_run_sequence(str(outdir), 41741)
+
+        with zipfile.ZipFile(autodir / "summary.xlsx") as archive:
+            workbook = archive.read("xl/workbook.xml").decode()
+        assert re.findall(r'<sheet name="([^"]*)"', workbook) == ["Original", "S115_dry_det_1", "EmptyPCell_det_1"]
+        assert any("S115_pc3_det_1.txt" in message and "does not exist" in message for message in log.messages)
+        assert not [path for path in autodir.iterdir() if path.name != "summary.xlsx" and path.suffix == ".xlsx"]

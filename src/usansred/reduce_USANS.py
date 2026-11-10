@@ -594,7 +594,8 @@ def reduce_sequence(sequence_file: str, setup_file: str, outdir: str) -> None:
     sequence_file : str
         Path of the setup file of the sequence, ``autoconfig_<N>.json``.
     setup_file : str
-        Path of the setup file of every sequence, ``autoconfig.json``, from which the summary is written.
+        Path of the setup file of every sequence, ``autoconfig.json``, from which the summary is written,
+        without the ``_unscaled`` files.
     outdir : str
         Output directory of the preprocessing script.
     """
@@ -604,7 +605,8 @@ def reduce_sequence(sequence_file: str, setup_file: str, outdir: str) -> None:
     exp = reduce.Experiment(config_file=sequence_file)
     exp.reduce(output_dir=autodir)
 
-    generate_report(config_file_path=setup_file, output_dir=exp.output_dir)
+    # The summary leaves out the _unscaled files (#107)
+    generate_report(config_file_path=setup_file, output_dir=exp.output_dir, include_unscaled=False)
 
 
 def reduce_run_sequence(outdir: str, first_run: int) -> None:
