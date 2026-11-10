@@ -22,6 +22,7 @@ from matplotlib import use
 from plot_publisher import plot1d
 
 from usansred import reduce
+from usansred.io.read import read_config
 from usansred.io.save import save_ascii, save_summed_spectra
 from usansred.models.reduction_config import ReductionConfig, SampleConfig
 from usansred.summary import generate_report
@@ -196,12 +197,50 @@ class RunSequence:
     sample: dict = field(default_factory=dict)
 
 
+def collect_sequence(outdir: str, first_run: int) -> RunSequence | None:
+    """Collect one sequence of runs recorded by step 1, from ``scan_<N>.json`` and ``sample_<N>.json``.
+
+    If ``sample_<N>.json`` is missing, the sample information is empty, and a warning is logged.
+    The runs of ``scan_<N>.json`` numbered below ``N`` cannot be part of the sequence: they are left out,
+    with a warning.
+
+    Parameters
+    ----------
+    outdir : str
+        Output directory of the preprocessing script.
+    first_run : int
+        Run number of the first run of the sequence, the ``N`` of the file names.
+
+    Returns
+    -------
+    RunSequence | None
+        The sequence, or ``None`` if ``scan_<N>.json`` is missing or holds no run of the sequence.
+    """
+    scan_filename = f"scan_{first_run}.json"
+    runs = get_sequence_info(os.path.join(outdir, scan_filename))
+    if runs is None:
+        return None
+    earlier = sorted(int(run) for run in runs if int(run) < first_run)
+    if earlier:
+        logger.warning(f"Runs {earlier} of {scan_filename} come before the first run, {first_run}, and are left out")
+        runs = {run: entry for run, entry in runs.items() if int(run) >= first_run}
+    if not runs:
+        logger.warning(f"{scan_filename} holds no run of the sequence")
+        return None
+
+    sample_filename = f"sample_{first_run}.json"
+    sample = get_sequence_info(os.path.join(outdir, sample_filename))
+    if sample is None:
+        logger.warning(f"{sample_filename} not found: the sample of {scan_filename} takes the default values")
+        sample = {}
+    return RunSequence(first_run=first_run, runs=runs, sample=sample)
+
+
 def collect_sequences(outdir: str) -> list[RunSequence]:
     """Collect the sequences of runs recorded by step 1 in an output directory.
 
-    There is one sequence for each file ``scan_<N>.json``, where ``N`` is an integer, ordered by ``N``.
-    Its sample information is read from ``sample_<N>.json``, with the same ``N``; if that file is missing,
-    the sample information is empty, and a warning is logged.
+    There is one sequence for each file ``scan_<N>.json``, where ``N`` is an integer, ordered by ``N``,
+    collected by ``collect_sequence``.
     A file whose ``N`` is not a positive integer, such as ``scan_-1.json``, is ignored: it holds the runs
     whose log ``BL1A:CS:Scan:USANS:FirstRun`` is not a run number, which are not part of any sequence.
     A file whose ``N`` is not an integer is ignored, with a warning.
@@ -216,7 +255,7 @@ def collect_sequences(outdir: str) -> list[RunSequence]:
     list[RunSequence]
         The sequences, ordered by the run number of their first run.
     """
-    scan_files = []
+    first_runs = []
     for filename in os.listdir(outdir):
         match = SCAN_FILE_PATTERN.match(filename)
         if match is None:
@@ -226,25 +265,21 @@ def collect_sequences(outdir: str) -> list[RunSequence]:
         except ValueError:
             logger.warning(f"Ignoring {filename}: {match.group('first_run')} is not a run number")
             continue
-        scan_files.append((first_run, filename))
-    # Order by run number, not by file name, which would put scan_10001.json before scan_9990.json
-    scan_files.sort()
-
-    sequences = []
-    for first_run, filename in scan_files:
-        scan_file = os.path.join(outdir, filename)
-        runs = get_sequence_info(scan_file)
         if first_run <= 0:
+            runs = get_sequence_info(os.path.join(outdir, filename))
             logger.info(
                 f"Ignoring {filename}: its {len(runs)} runs are not part of any sequence (FirstRun = {first_run})"
             )
             continue
-        sample_filename = f"sample_{first_run}.json"
-        sample = get_sequence_info(os.path.join(outdir, sample_filename))
-        if sample is None:
-            logger.warning(f"{sample_filename} not found: the sample of {filename} takes the default values")
-            sample = {}
-        sequences.append(RunSequence(first_run=first_run, runs=runs, sample=sample))
+        first_runs.append(first_run)
+    # Order by run number, not by file name, which would put scan_10001.json before scan_9990.json
+    first_runs.sort()
+
+    sequences = []
+    for first_run in first_runs:
+        sequence = collect_sequence(outdir, first_run)
+        if sequence is not None:
+            sequences.append(sequence)
     return sequences
 
 
@@ -341,7 +376,7 @@ def sequence_name(sequence: RunSequence, index: int, taken: set[str]) -> str:
     index : int
         Position of the sequence in the setup, from 0.
     taken : set[str]
-        Names of the samples of the earlier sequences.
+        Names of the other entries of the setup.
 
     Returns
     -------
@@ -359,21 +394,53 @@ def sequence_name(sequence: RunSequence, index: int, taken: set[str]) -> str:
         while f"{name}_{counter}" in taken:
             counter += 1
         logger.warning(
-            f"The name {name} is already taken by an earlier sequence: "
+            f"The name {name} is already taken by another entry: "
             f"the sample of sequence {sequence.first_run} is named {name}_{counter}"
         )
         name = f"{name}_{counter}"
     return name
 
 
+def sequence_entry(sequence: RunSequence, name: str) -> SampleConfig:
+    """Build the entry of a sequence in a setup file.
+
+    The runs of the entry span the run numbers from ``N``, the first run of the sequence, to the highest
+    run number of the sequence; the run numbers of that span missing from the sequence, ``N`` included,
+    are excluded. ``Sample`` reads ``num_of_scans`` consecutive runs from ``start_scan_num`` and skips the
+    excluded ones, so ``num_of_scans`` is the length of the whole span. Starting the span at ``N`` lets
+    step 2 find the entry of a sequence by its ``start_scan_num``.
+
+    Parameters
+    ----------
+    sequence : RunSequence
+        The sequence, as returned by ``collect_sequence``.
+    name : str
+        Name of the sample.
+
+    Returns
+    -------
+    SampleConfig
+        The entry, with the thickness of ``sample_<N>.json``, in cm, or 0.1 cm without one.
+    """
+    sample_info = sequence.sample
+    # Thickness in cm
+    thickness = float(sample_info["thickness"]) if "thickness" in sample_info else DEFAULT_THICKNESS
+    run_numbers = {int(run) for run in sequence.runs}
+    first, last = sequence.first_run, max(run_numbers)
+    return SampleConfig(
+        name=name,
+        start_scan_num=first,
+        num_of_scans=last - first + 1,
+        thickness=thickness,
+        exclude=sorted(set(range(first, last + 1)) - run_numbers),
+    )
+
+
 def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
     """Build the setup of the reduction of the sequences.
 
-    Every sequence is a sample: the setup has no background and no empty cell. Each sample is named
-    after the title of its sequence (see ``sequence_name``). The runs of a sample
-    span the run numbers of its sequence, from the lowest to the highest; the run numbers of that span
-    missing from the sequence are excluded. ``Sample`` reads ``num_of_scans`` consecutive runs from
-    ``start_scan_num`` and skips the excluded ones, so ``num_of_scans`` is the length of the whole span.
+    Every sequence is a sample, built by ``sequence_entry``: the setup has no background and no empty
+    cell. Each sample is named after the title of its sequence (see ``sequence_name``).
 
     Parameters
     ----------
@@ -388,64 +455,199 @@ def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
     samples = []
     taken = set()
     for index, sequence in enumerate(sequences):
-        sample_info = sequence.sample
-        # Thickness in cm
-        thickness = float(sample_info["thickness"]) if "thickness" in sample_info else DEFAULT_THICKNESS
-        run_numbers = sorted(int(run) for run in sequence.runs)
-        first, last = run_numbers[0], run_numbers[-1]
         name = sequence_name(sequence, index, taken)
         taken.add(name)
-        samples.append(
-            SampleConfig(
-                name=name,
-                start_scan_num=first,
-                num_of_scans=last - first + 1,
-                thickness=thickness,
-                exclude=sorted(set(range(first, last + 1)) - set(run_numbers)),
-            )
-        )
+        samples.append(sequence_entry(sequence, name))
     return ReductionConfig(samples=samples, save_all_harmonics=False)
 
 
-def write_setup_file(config: ReductionConfig, outdir: str) -> str:
-    """Write the setup of the reduction as ``autoconfig.json`` in the output directory.
+def update_setup(config: ReductionConfig, sequence: RunSequence) -> tuple[ReductionConfig, SampleConfig]:
+    """Rewrite or insert the entry of a sequence in the setup of every sequence.
+
+    The entry of the sequence is the sample whose ``start_scan_num`` is ``N``, the first run of the
+    sequence. It is rewritten by ``sequence_entry``, and keeps its name. Without such a sample, the entry
+    is inserted in order of first run, and named by ``sequence_name`` against the names of the other
+    entries, at its position. The other entries are left unchanged.
 
     Parameters
     ----------
     config : ReductionConfig
-        The setup, as returned by ``build_setup``.
-    outdir : str
-        Output directory of the preprocessing script.
+        The setup of every sequence, as read from ``autoconfig.json``.
+    sequence : RunSequence
+        The sequence, as returned by ``collect_sequence``.
 
     Returns
     -------
-    str
-        Path of the setup file.
+    tuple[ReductionConfig, SampleConfig]
+        The updated setup, and the entry of the sequence.
     """
-    setup_file = os.path.join(outdir, SETUP_FILENAME)
-    with open(setup_file, "w") as fd:
-        fd.write(config.model_dump_json(indent=2, exclude_none=True))
-        fd.write("\n")
-    return setup_file
+    samples = list(config.samples)
+    matches = [index for index, sample in enumerate(samples) if sample.start_scan_num == sequence.first_run]
+    if matches:
+        index = matches[0]
+        if len(matches) > 1:
+            names = [samples[other].name for other in matches[1:]]
+            logger.warning(
+                f"Samples {names} of {SETUP_FILENAME} also start at run {sequence.first_run}: "
+                f"only {samples[index].name} is updated"
+            )
+        entry = sequence_entry(sequence, samples[index].name)
+        samples[index] = entry
+    else:
+        index = sum(1 for sample in samples if sample.start_scan_num < sequence.first_run)
+        taken = {sample.name for sample in samples}
+        taken.update(other.name for other in (config.background, config.empty_cell) if other is not None)
+        entry = sequence_entry(sequence, sequence_name(sequence, index, taken))
+        samples.insert(index, entry)
+        logger.info(f"Sequence {sequence.first_run} added to {SETUP_FILENAME} as {entry.name}")
+    return config.model_copy(update={"samples": samples}), entry
 
 
-def reduce_sequences(setup_file: str, outdir: str) -> None:
-    """Reduce the setup file into ``<outdir>/auto``, and write the summary report.
+def sequence_setup(entry: SampleConfig, config: ReductionConfig, existing: ReductionConfig | None) -> ReductionConfig:
+    """Build the setup of the reduction of one sequence, written to ``autoconfig_<N>.json``.
+
+    Parameters
+    ----------
+    entry : SampleConfig
+        The entry of the sequence, as returned by ``update_setup``.
+    config : ReductionConfig
+        The setup of every sequence. A new setup copies its background, empty cell and
+        ``save_all_harmonics``.
+    existing : ReductionConfig | None
+        The setup read from ``autoconfig_<N>.json``, or ``None`` if the file does not exist. Only its
+        samples are replaced, so that the rest, including changes made by hand, is kept.
+
+    Returns
+    -------
+    ReductionConfig
+        The setup, with the entry as its only sample.
+    """
+    if existing is not None:
+        return existing.model_copy(update={"samples": [entry]})
+    return ReductionConfig(
+        samples=[entry],
+        background=config.background,
+        empty_cell=config.empty_cell,
+        save_all_harmonics=config.save_all_harmonics,
+    )
+
+
+def read_setup_file(setup_file: str) -> ReductionConfig | None:
+    """Read a setup file written by step 2, if it exists.
 
     Parameters
     ----------
     setup_file : str
-        Path of the setup file, as returned by ``write_setup_file``.
+        Path of the setup file.
+
+    Returns
+    -------
+    ReductionConfig | None
+        The setup, or ``None`` if the file does not exist.
+
+    Raises
+    ------
+    OSError
+        If the file cannot be read.
+    ValueError
+        If the file is not valid JSON, or is rejected by the schema of the setup files. The file is left
+        unchanged, so that changes made by hand are not discarded.
+    """
+    if not os.path.exists(setup_file):
+        return None
+    try:
+        return read_config(setup_file)
+    except (OSError, ValueError):
+        logger.error(f"{setup_file} cannot be read, and is left unchanged: correct it, or remove it to rebuild it")
+        raise
+
+
+def write_config(config: ReductionConfig, setup_file: str) -> None:
+    """Write a setup file, to a temporary file in the same directory renamed at the end.
+
+    A reader of the file never sees it partly written.
+
+    Parameters
+    ----------
+    config : ReductionConfig
+        The setup.
+    setup_file : str
+        Path of the setup file.
+    """
+    # The process ID keeps the temporary files of two overlapping calls apart
+    temporary_file = f"{setup_file}.{os.getpid()}.tmp"
+    try:
+        with open(temporary_file, "x") as fd:
+            fd.write(config.model_dump_json(indent=2, exclude_none=True))
+            fd.write("\n")
+        os.replace(temporary_file, setup_file)
+    finally:
+        if os.path.exists(temporary_file):
+            os.remove(temporary_file)
+
+
+def reduce_sequence(sequence_file: str, setup_file: str, outdir: str) -> None:
+    """Reduce the setup of one sequence into ``<outdir>/auto``, and write the summary report of every sequence.
+
+    Parameters
+    ----------
+    sequence_file : str
+        Path of the setup file of the sequence, ``autoconfig_<N>.json``.
+    setup_file : str
+        Path of the setup file of every sequence, ``autoconfig.json``, from which the summary is written.
     outdir : str
         Output directory of the preprocessing script.
     """
     autodir = os.path.join(outdir, REDUCTION_DIRNAME)
     os.makedirs(autodir, exist_ok=True)
 
-    exp = reduce.Experiment(config_file=setup_file)
+    exp = reduce.Experiment(config_file=sequence_file)
     exp.reduce(output_dir=autodir)
 
     generate_report(config_file_path=setup_file, output_dir=exp.output_dir)
+
+
+def reduce_run_sequence(outdir: str, first_run: int) -> None:
+    """Step 2: update the setup files of the sequence of a run, and reduce that sequence alone.
+
+    The entry of the sequence is rewritten or inserted in ``autoconfig.json``, which lists every
+    sequence (see ``update_setup``). If ``autoconfig.json`` is missing, it is first built from every
+    ``scan_<N>.json`` of the output directory. ``autoconfig_<N>.json`` is created, or its samples
+    replaced (see ``sequence_setup``), and is reduced into ``<outdir>/auto``. The files of the other
+    sequences in ``<outdir>/auto`` are left unchanged.
+
+    Parameters
+    ----------
+    outdir : str
+        Output directory of the preprocessing script.
+    first_run : int
+        Run number of the first run of the sequence, the value of the log ``BL1A:CS:Scan:USANS:FirstRun``
+        of the run.
+
+    Raises
+    ------
+    OSError, ValueError
+        If ``autoconfig.json`` or ``autoconfig_<N>.json`` cannot be read (see ``read_setup_file``).
+        Neither file is then written.
+    """
+    sequence = collect_sequence(outdir, first_run)
+    if sequence is None:
+        logger.error(f"No run of sequence {first_run} recorded in {outdir}: nothing to reduce")
+        return
+
+    setup_file = os.path.join(outdir, SETUP_FILENAME)
+    sequence_file = os.path.join(outdir, f"autoconfig_{first_run}.json")
+    # Read both files before writing either, so that an unreadable file leaves both unchanged
+    config = read_setup_file(setup_file)
+    existing = read_setup_file(sequence_file)
+    if config is None:
+        logger.info(f"{SETUP_FILENAME} not found: building it from every sequence of {outdir}")
+        config = build_setup(collect_sequences(outdir))
+
+    config, entry = update_setup(config, sequence)
+    write_config(config, setup_file)
+    write_config(sequence_setup(entry, config, existing), sequence_file)
+    reduce_sequence(sequence_file, setup_file, outdir)
 
 
 def main():
@@ -728,13 +930,8 @@ def main():
                 iq_fd.close()
                 iq_fd_simple.close()
 
-    # Reduce all the sequences of the output directory
-    sequences = collect_sequences(outdir)
-    if not sequences:
-        logger.warning(f"No sequence of runs in {outdir}: nothing to reduce")
-        return
-    setup_file = write_setup_file(build_setup(sequences), outdir)
-    reduce_sequences(setup_file, outdir)
+    # Reduce the sequence of the run alone
+    reduce_run_sequence(outdir, first_run)
 
 
 if __name__ == "__main__":

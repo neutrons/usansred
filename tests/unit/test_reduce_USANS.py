@@ -24,9 +24,10 @@ from usansred.reduce_USANS import (
     main,
     read_first_run,
     record_run,
-    reduce_sequences,
+    reduce_run_sequence,
+    reduce_sequence,
     sample_thickness,
-    write_setup_file,
+    write_config,
 )
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "preprocessing"
@@ -358,6 +359,22 @@ class TestBuildSetup:
         assert sample.num_of_scans == 4
         assert sample.exclude == [102]
 
+    def test_span_starts_at_first_run(self, tmp_path):
+        """Run 100, the first run of the sequence, was not recorded."""
+        write_scan_file(tmp_path, 100, runs=[101, 102])
+
+        (sample,) = build_setup(collect_sequences(str(tmp_path))).samples
+
+        assert (sample.start_scan_num, sample.num_of_scans, sample.exclude) == (100, 3, [100])
+
+    def test_leaves_out_runs_before_first_run(self, tmp_path, log):
+        write_scan_file(tmp_path, 100, runs=[99, 100, 101])
+
+        (sample,) = build_setup(collect_sequences(str(tmp_path))).samples
+
+        assert (sample.start_scan_num, sample.num_of_scans, sample.exclude) == (100, 2, [])
+        assert any("[99]" in message and "scan_100.json" in message for message in log.records_at_warning())
+
     def test_order_of_runs_in_scan_file(self, tmp_path):
         write_scan_file(tmp_path, 100, runs=[103, 100, 101])
         write_scan_file(tmp_path, 200, runs=[200, 201, 203])
@@ -486,53 +503,257 @@ class TestSampleNames:
         assert not any("different" in message for message in log.records_at_warning())
 
 
-class TestWriteSetupFile:
-    def test_writes_autoconfig_json(self, outdir):
+class TestWriteConfig:
+    def test_writes_setup_file(self, outdir):
         config = build_setup(collect_sequences(str(outdir)))
+        setup_file = str(outdir / "autoconfig.json")
 
-        setup_file = write_setup_file(config, str(outdir))
+        write_config(config, setup_file)
 
-        assert Path(setup_file) == outdir / "autoconfig.json"
         assert read_config(setup_file) == config
         assert read_config(setup_file).save_all_harmonics is False
 
     def test_writes_excluded_runs(self, tmp_path):
         write_scan_file(tmp_path, 100, runs=[100, 101, 103])
         config = build_setup(collect_sequences(str(tmp_path)))
+        setup_file = tmp_path / "autoconfig.json"
 
-        setup_file = write_setup_file(config, str(tmp_path))
+        write_config(config, str(setup_file))
 
-        assert json.loads(Path(setup_file).read_text())["samples"][0]["exclude"] == [102]
-        assert read_config(setup_file) == config
+        assert json.loads(setup_file.read_text())["samples"][0]["exclude"] == [102]
+        assert read_config(str(setup_file)) == config
 
-    def test_writes_no_csv(self, outdir):
-        write_setup_file(build_setup(collect_sequences(str(outdir))), str(outdir))
+    def test_replaces_file_and_leaves_no_temporary_file(self, outdir):
+        setup_file = outdir / "autoconfig.json"
+        setup_file.write_text("earlier content")
+        files_before = set(outdir.iterdir())
 
-        assert not (outdir / "auto.csv").exists()
+        write_config(build_setup(collect_sequences(str(outdir))), str(setup_file))
+
+        assert set(outdir.iterdir()) == files_before
+        assert len(read_config(str(setup_file)).samples) == len(SEQUENCES)
 
 
-class TestReduceSequences:
-    def test_report_written_with_reduced_data(self, outdir, monkeypatch):
-        reduced_into = []
-        reports = []
+class TestReduceSequence:
+    def test_reduces_sequence_and_reports_every_sequence(self, tmp_path, monkeypatch):
+        reduction = StandInReduction(monkeypatch)
+        sequence_file, setup_file = str(tmp_path / "autoconfig_100.json"), str(tmp_path / "autoconfig.json")
+
+        reduce_sequence(sequence_file, setup_file, str(tmp_path))
+
+        autodir = str(tmp_path / "auto")
+        assert reduction.reduced == [(sequence_file, autodir)]
+        assert reduction.reports == [{"config_file_path": setup_file, "output_dir": autodir}]
+
+
+class StandInReduction:
+    """Stands in for usansred.reduce.Experiment and generate_report, recording their calls."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch):
+        self.reduced = []
+        self.reports = []
+        reduction = self
 
         class StandInExperiment:
-            """Stands in for usansred.reduce.Experiment, recording the output directory of the reduction."""
-
             def __init__(self, config_file: str):
                 self.config_file = config_file
                 self.output_dir = None
 
             def reduce(self, output_dir: str | None = None) -> None:
                 self.output_dir = output_dir
-                reduced_into.append(output_dir)
+                reduction.reduced.append((self.config_file, output_dir))
 
         monkeypatch.setattr(reduce_USANS.reduce, "Experiment", StandInExperiment)
-        monkeypatch.setattr(reduce_USANS, "generate_report", lambda **kwargs: reports.append(kwargs))
-        setup_file = write_setup_file(build_setup(collect_sequences(str(outdir))), str(outdir))
+        monkeypatch.setattr(reduce_USANS, "generate_report", lambda **kwargs: reduction.reports.append(kwargs))
 
-        reduce_sequences(setup_file, str(outdir))
+
+def read_setup(outdir: Path, first_run: int | None = None) -> dict:
+    """Content of autoconfig.json, or of autoconfig_<N>.json for the sequence starting at ``first_run``."""
+    filename = "autoconfig.json" if first_run is None else f"autoconfig_{first_run}.json"
+    return json.loads((outdir / filename).read_text())
+
+
+def write_setup(outdir: Path, setup: dict, first_run: int | None = None) -> None:
+    """Write autoconfig.json, or autoconfig_<N>.json, by hand."""
+    filename = "autoconfig.json" if first_run is None else f"autoconfig_{first_run}.json"
+    (outdir / filename).write_text(json.dumps(setup))
+
+
+def entry(name: str, start_scan_num: int, num_of_scans: int, exclude: list[int] | None = None) -> dict:
+    """An entry of a setup file, as step 2 writes it, with the default thickness."""
+    sample = {"name": name, "start_scan_num": start_scan_num, "num_of_scans": num_of_scans, "thickness": 0.1}
+    return sample | {"exclude": exclude or []}
+
+
+@pytest.mark.usefixtures("reduction")
+class TestReduceRunSequence:
+    @pytest.fixture
+    def reduction(self, monkeypatch) -> StandInReduction:
+        return StandInReduction(monkeypatch)
+
+    def test_builds_missing_setup_from_every_sequence(self, outdir):
+        reduce_run_sequence(str(outdir), 41741)
+
+        assert [sample["start_scan_num"] for sample in read_setup(outdir)["samples"]] == list(SEQUENCES)
+        assert read_setup(outdir, 41741) == {"samples": [entry("EmptyPCell", 41741, 6)], "save_all_harmonics": False}
+        assert not (outdir / "autoconfig_41713.json").exists()
+        assert not (outdir / "autoconfig_41832.json").exists()
+
+    def test_reduces_only_the_sequence(self, outdir, reduction):
+        reduce_run_sequence(str(outdir), 41741)
 
         autodir = str(outdir / "auto")
-        assert reduced_into == [autodir]
-        assert reports == [{"config_file_path": setup_file, "output_dir": autodir}]
+        assert reduction.reduced == [(str(outdir / "autoconfig_41741.json"), autodir)]
+        assert reduction.reports == [{"config_file_path": str(outdir / "autoconfig.json"), "output_dir": autodir}]
+
+    def test_inserts_in_order_of_first_run(self, tmp_path):
+        for first_run, title in ((100, "First"), (300, "Third"), (200, "Second")):
+            write_scan_file(tmp_path, first_run, num_of_runs=2, titles=title)
+            reduce_run_sequence(str(tmp_path), first_run)
+
+        assert read_setup(tmp_path)["samples"] == [
+            entry("First", 100, 2),
+            entry("Second", 200, 2),
+            entry("Third", 300, 2),
+        ]
+
+    def test_rewrites_only_the_entry_of_the_sequence(self, outdir):
+        reduce_run_sequence(str(outdir), 41713)
+        setup = read_setup(outdir)
+        setup["samples"][1]["thickness"] = 0.5
+        setup["samples"][2]["name"] = "Renamed"
+        write_setup(outdir, setup)
+        write_scan_file(outdir, 41713, num_of_runs=7)
+
+        reduce_run_sequence(str(outdir), 41713)
+
+        samples = read_setup(outdir)["samples"]
+        assert samples[0] == entry("S115_dry", 41713, 7)
+        assert samples[1:] == setup["samples"][1:]
+        assert read_setup(outdir, 41713)["samples"] == [entry("S115_dry", 41713, 7)]
+
+    def test_run_of_earlier_sequence_updates_its_entry(self, outdir):
+        reduce_run_sequence(str(outdir), 41832)
+        write_scan_file(outdir, 41713, num_of_runs=7)
+
+        reduce_run_sequence(str(outdir), 41713)
+
+        assert [sample["num_of_scans"] for sample in read_setup(outdir)["samples"]] == [7, 6, 6]
+        assert read_setup(outdir, 41713)["samples"] == [entry("S115_dry", 41713, 7)]
+        assert read_setup(outdir, 41832)["samples"] == [entry("S115_pc3", 41832, 6)]
+
+    def test_name_fixed_once_inserted(self, tmp_path):
+        write_scan_file(tmp_path, 100, num_of_runs=2, titles="First")
+        reduce_run_sequence(str(tmp_path), 100)
+        write_scan_file(tmp_path, 100, num_of_runs=3, titles="Changed")
+
+        reduce_run_sequence(str(tmp_path), 100)
+
+        assert read_setup(tmp_path)["samples"] == [entry("First", 100, 3)]
+        assert read_setup(tmp_path, 100)["samples"] == [entry("First", 100, 3)]
+
+    def test_names_at_insertion(self, tmp_path, log):
+        write_scan_file(tmp_path, 100, titles="S115")
+        reduce_run_sequence(str(tmp_path), 100)
+        write_scan_file(tmp_path, 200, titles="S115")
+        reduce_run_sequence(str(tmp_path), 200)
+        write_scan_file(tmp_path, 300)
+
+        reduce_run_sequence(str(tmp_path), 300)
+
+        assert [sample["name"] for sample in read_setup(tmp_path)["samples"]] == ["S115", "S115_2", "Sample_2"]
+        assert any("S115_2" in message for message in log.records_at_warning())
+
+    def test_name_not_taken_by_background(self, tmp_path):
+        write_setup(
+            tmp_path,
+            {"samples": [entry("S115", 100, 1)], "background": entry("Empty", 50, 1) | {"thickness": 0.1}},
+        )
+        write_scan_file(tmp_path, 200, titles="Empty")
+
+        reduce_run_sequence(str(tmp_path), 200)
+
+        assert read_setup(tmp_path)["samples"][1]["name"] == "Empty_2"
+
+    def test_same_run_twice_gives_same_files(self, outdir):
+        reduce_run_sequence(str(outdir), 41741)
+        setup, sequence_setup = (outdir / "autoconfig.json").read_text(), (outdir / "autoconfig_41741.json").read_text()
+
+        reduce_run_sequence(str(outdir), 41741)
+
+        assert (outdir / "autoconfig.json").read_text() == setup
+        assert (outdir / "autoconfig_41741.json").read_text() == sequence_setup
+
+    def test_first_run_recorded_later(self, tmp_path):
+        write_scan_file(tmp_path, 100, runs=[101, 102], titles="S115")
+        reduce_run_sequence(str(tmp_path), 100)
+        assert read_setup(tmp_path)["samples"] == [entry("S115", 100, 3, exclude=[100])]
+        write_scan_file(tmp_path, 100, runs=[101, 102, 100], titles="S115")
+
+        reduce_run_sequence(str(tmp_path), 100)
+
+        assert read_setup(tmp_path)["samples"] == [entry("S115", 100, 3)]
+        assert read_setup(tmp_path, 100)["samples"] == [entry("S115", 100, 3)]
+
+    def test_new_sequence_setup_copies_options(self, outdir):
+        background = entry("Empty", 41741, 6)
+        empty_cell = {"name": "Cell", "start_scan_num": 41741, "num_of_scans": 6}
+        write_setup(
+            outdir,
+            {
+                "samples": [entry("S115_dry", 41713, 6)],
+                "background": background,
+                "empty_cell": empty_cell,
+                "save_all_harmonics": True,
+            },
+        )
+
+        reduce_run_sequence(str(outdir), 41832)
+
+        sequence_setup = read_setup(outdir, 41832)
+        assert sequence_setup["samples"] == [entry("S115_pc3", 41832, 6)]
+        assert sequence_setup["background"] == background
+        assert sequence_setup["empty_cell"] == empty_cell | {"exclude": []}
+        assert sequence_setup["save_all_harmonics"] is True
+
+    def test_existing_sequence_setup_keeps_all_but_samples(self, outdir):
+        reduce_run_sequence(str(outdir), 41832)
+        sequence_setup = read_setup(outdir, 41832)
+        sequence_setup["background"] = entry("Empty", 41741, 6)
+        sequence_setup["save_all_harmonics"] = True
+        write_setup(outdir, sequence_setup, 41832)
+        write_scan_file(outdir, 41832, num_of_runs=7)
+
+        reduce_run_sequence(str(outdir), 41832)
+
+        assert read_setup(outdir, 41832) == sequence_setup | {"samples": [entry("S115_pc3", 41832, 7)]}
+
+    @pytest.mark.parametrize("first_run", [None, 41713], ids=["autoconfig", "autoconfig_N"])
+    @pytest.mark.parametrize("content", ["{not json", '{"samples": []}'], ids=["invalid_json", "rejected"])
+    def test_unreadable_setup_file(self, outdir, reduction, log, first_run, content):
+        filename = "autoconfig.json" if first_run is None else f"autoconfig_{first_run}.json"
+        (outdir / filename).write_text(content)
+        files_before = set(outdir.iterdir())
+
+        with pytest.raises(ValueError):  # noqa: PT011 - the messages of json and pydantic differ
+            reduce_run_sequence(str(outdir), 41713)
+
+        assert (outdir / filename).read_text() == content
+        assert set(outdir.iterdir()) == files_before
+        assert reduction.reduced == []
+        assert any(filename in message and "cannot be read" in message for message in log.records_at_warning())
+
+    def test_no_temporary_file_left(self, outdir):
+        reduce_run_sequence(str(outdir), 41741)
+        reduce_run_sequence(str(outdir), 41741)
+
+        assert not [path for path in outdir.iterdir() if path.suffix == ".tmp"]
+
+    def test_sequence_not_recorded(self, outdir, reduction, log):
+        files_before = set(outdir.iterdir())
+
+        reduce_run_sequence(str(outdir), 41900)
+
+        assert set(outdir.iterdir()) == files_before
+        assert reduction.reduced == []
+        assert any("41900" in message and "nothing to reduce" in message for message in log.records_at_warning())
