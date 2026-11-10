@@ -247,10 +247,129 @@ def collect_sequences(outdir: str) -> list[RunSequence]:
     return sequences
 
 
+# Prefix of the titles of the runs recorded during a scan of the analyzer, removed from the sample names
+ALIGN_PREFIX = "Align:"
+
+# Characters of a title replaced with "_" in the sample name: path separators, and ":"
+REPLACED_CHARACTERS = ("/", "\\", ":")
+
+
+def sequence_title(sequence: RunSequence) -> str | None:
+    """Find the title of a sequence: the title of its first run, the run with the lowest run number.
+
+    If that run has no title (``scan_<N>.json`` written before the titles were recorded), the title of
+    ``sample_<N>.json`` is used, and this is logged. The runs whose title differs from the title of the
+    first run are listed in a warning; the runs without a title are left out of that comparison, which is
+    logged.
+
+    Parameters
+    ----------
+    sequence : RunSequence
+        The sequence, as returned by ``collect_sequences``.
+
+    Returns
+    -------
+    str | None
+        The title, or ``None`` if neither the first run nor ``sample_<N>.json`` has one.
+    """
+    runs = sorted((int(run), entry) for run, entry in sequence.runs.items())
+    first_run, first_entry = runs[0]
+    title = first_entry.get("title")
+    if title is None:
+        title = sequence.sample.get("title")
+        # Without a title in sample_<N>.json either, sequence_name warns that the sequence has no title
+        if title is not None:
+            logger.info(
+                f"Run {first_run} has no title in scan_{sequence.first_run}.json: the sequence takes the title "
+                f"of sample_{sequence.first_run}.json, {title!r}"
+            )
+        return title
+
+    untitled = [run for run, entry in runs if "title" not in entry]
+    if untitled:
+        logger.info(f"Runs {untitled} of sequence {sequence.first_run} have no title, and are not compared")
+    differing = [run for run, entry in runs if "title" in entry and entry["title"] != title]
+    if differing:
+        logger.warning(
+            f"Runs {differing} of sequence {sequence.first_run} have a title different from {title!r}, "
+            f"the title of run {first_run}"
+        )
+    return title
+
+
+def clean_title(title: str) -> str:
+    """Turn a title into a sample name.
+
+    White space at the start and end, and a leading ``Align:``, are removed; ``/``, ``\\`` and ``:`` are
+    replaced with ``_``. The removal of ``Align:`` and the replacements are logged.
+
+    Parameters
+    ----------
+    title : str
+        Title of a sequence, as returned by ``sequence_title``.
+
+    Returns
+    -------
+    str
+        The name, which may be empty.
+    """
+    name = title.strip()
+    if name.startswith(ALIGN_PREFIX):
+        name = name.removeprefix(ALIGN_PREFIX).strip()
+        logger.info(f"{ALIGN_PREFIX} removed from the title {title!r}")
+    if any(character in name for character in REPLACED_CHARACTERS):
+        replaced = name
+        for character in REPLACED_CHARACTERS:
+            name = name.replace(character, "_")
+        logger.info(f"'/', '\\' and ':' replaced with '_' in {replaced!r}: {name!r}")
+    return name
+
+
+def sequence_name(sequence: RunSequence, index: int, taken: set[str]) -> str:
+    """Name the sample of a sequence after its title.
+
+    The name is the title cleaned by ``clean_title``. If there is no title, or the name is empty,
+    the name is ``Sample_<index>``, with a warning. If the name is in ``taken``, the first of
+    ``<name>_2``, ``<name>_3``, ... that is not is used instead, with a warning, so that the files of
+    one sample do not overwrite those of another.
+
+    Parameters
+    ----------
+    sequence : RunSequence
+        The sequence, as returned by ``collect_sequences``.
+    index : int
+        Position of the sequence in the setup, from 0.
+    taken : set[str]
+        Names of the samples of the earlier sequences.
+
+    Returns
+    -------
+    str
+        The name, which is not in ``taken``.
+    """
+    title = sequence_title(sequence)
+    name = clean_title(title) if title is not None else ""
+    if not name:
+        name = f"Sample_{index}"
+        logger.warning(f"Sequence {sequence.first_run} has no title: its sample is named {name}")
+
+    if name in taken:
+        counter = 2
+        while f"{name}_{counter}" in taken:
+            counter += 1
+        logger.warning(
+            f"The name {name} is already taken by an earlier sequence: "
+            f"the sample of sequence {sequence.first_run} is named {name}_{counter}"
+        )
+        name = f"{name}_{counter}"
+    return name
+
+
 def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
     """Build the setup of the reduction of the sequences.
 
-    Every sequence is a sample: the setup has no background and no empty cell. The runs of a sample
+    Every sequence is a sample: the setup has no background and no empty cell. Each sample is named
+    after the title of its sequence (see ``sequence_name``). The runs of a sample
     span the run numbers of its sequence, from the lowest to the highest; the run numbers of that span
     missing from the sequence are excluded. ``Sample`` reads ``num_of_scans`` consecutive runs from
     ``start_scan_num`` and skips the excluded ones, so ``num_of_scans`` is the length of the whole span.
@@ -263,26 +382,28 @@ def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
     Returns
     -------
     ReductionConfig
-        The setup, with one sample per sequence.
+        The setup, with one sample per sequence, and the files of every harmonic saved.
     """
     samples = []
+    taken = set()
     for index, sequence in enumerate(sequences):
         sample_info = sequence.sample
         # Thickness in cm
         thickness = float(sample_info["thickness"]) if "thickness" in sample_info else DEFAULT_THICKNESS
         run_numbers = sorted(int(run) for run in sequence.runs)
         first, last = run_numbers[0], run_numbers[-1]
+        name = sequence_name(sequence, index, taken)
+        taken.add(name)
         samples.append(
             SampleConfig(
-                # The names are taken from the run titles in a later change (#107)
-                name=f"Sample{index}",
+                name=name,
                 start_scan_num=first,
                 num_of_scans=last - first + 1,
                 thickness=thickness,
                 exclude=sorted(set(range(first, last + 1)) - set(run_numbers)),
             )
         )
-    return ReductionConfig(samples=samples)
+    return ReductionConfig(samples=samples, save_all_harmonics=True)
 
 
 def write_setup_file(config: ReductionConfig, outdir: str) -> str:

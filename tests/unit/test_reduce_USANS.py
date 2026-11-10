@@ -49,24 +49,59 @@ def outdir(tmp_path: Path) -> Path:
     return tmp_path
 
 
+class LogCapture:
+    """The messages logged by the preprocessing script."""
+
+    def __init__(self, caplog: pytest.LogCaptureFixture):
+        self.caplog = caplog
+
+    @property
+    def messages(self) -> list[str]:
+        """Messages at level INFO and above."""
+        return self.caplog.messages
+
+    def records_at_warning(self) -> list[str]:
+        """Messages at level WARNING and above."""
+        return [record.getMessage() for record in self.caplog.records if record.levelno >= logging.WARNING]
+
+
 @pytest.fixture
-def log(monkeypatch, caplog) -> pytest.LogCaptureFixture:
+def log(monkeypatch, caplog) -> LogCapture:
     """Captures the messages logged by the preprocessing script, at level INFO and above."""
     # The logger of the module does not propagate to the root logger, where caplog listens
     monkeypatch.setattr(reduce_USANS.logger, "propagate", True)
     caplog.set_level(logging.INFO)
-    return caplog
+    return LogCapture(caplog)
 
 
-def write_scan_file(outdir: Path, first_run: int, num_of_runs: int = 1, runs: list[int] | None = None) -> None:
+def write_scan_file(
+    outdir: Path,
+    first_run: int,
+    num_of_runs: int = 1,
+    runs: list[int] | None = None,
+    titles: str | list[str | None] | None = None,
+) -> None:
     """Write a scan_<N>.json file for a sequence starting at ``first_run``.
 
-    The sequence holds ``runs``, in the order given, or else ``num_of_runs`` consecutive runs.
+    The sequence holds ``runs``, in the order given, or else ``num_of_runs`` consecutive runs. ``titles``
+    is the title of every run, or a list with the title of each run (``None`` for a run without a title),
+    or ``None`` for runs without a title, as written before the titles were recorded.
     """
     if runs is None:
         runs = list(range(first_run, first_run + num_of_runs))
-    entries = {str(run): {"iq": f"USANS_{run}_detector_3.6.txt"} for run in runs}
+    if not isinstance(titles, list):
+        titles = [titles] * len(runs)
+    entries = {}
+    for run, title in zip(runs, titles, strict=True):
+        entries[str(run)] = {"iq": f"USANS_{run}_detector_3.6.txt"}
+        if title is not None:
+            entries[str(run)]["title"] = title
     (outdir / f"scan_{first_run}.json").write_text(json.dumps(entries))
+
+
+def sample_names(outdir: Path) -> list[str]:
+    """Names of the samples of the setup built from the sequence files of ``outdir``."""
+    return [sample.name for sample in build_setup(collect_sequences(str(outdir))).samples]
 
 
 def write_sample_file(outdir: Path, first_run: int, **sample_info) -> None:
@@ -270,7 +305,7 @@ class TestBuildSetup:
     def test_every_sequence_is_a_sample(self, outdir):
         config = build_setup(collect_sequences(str(outdir)))
 
-        assert [sample.name for sample in config.samples] == ["Sample0", "Sample1", "Sample2"]
+        assert [sample.name for sample in config.samples] == ["S115_dry", "EmptyPCell", "S115_pc3"]
         assert [sample.start_scan_num for sample in config.samples] == list(SEQUENCES)
         assert [sample.thickness for sample in config.samples] == [0.1, 0.1, 0.1]
         assert config.background is None
@@ -337,14 +372,102 @@ class TestBuildSetup:
 
         assert config.samples[1].thickness == 0.1
 
-    @pytest.mark.xfail(strict=True, reason="#107: the sequences are named after the run titles in Stage 5")
-    def test_names_from_sample_files(self, outdir):
+    def test_saves_all_harmonics(self, outdir):
         config = build_setup(collect_sequences(str(outdir)))
 
-        # The titles are written to the setup file with some changes (Align: removed), so only
-        # the part after the prefix is compared
-        for sample, title in zip(config.samples, TITLES.values()):
-            assert title.removeprefix("Align:") in sample.name
+        assert config.save_all_harmonics is True
+
+
+class TestSampleNames:
+    def test_names_from_sample_files(self, outdir, log):
+        """The fixtures were written before the run titles were recorded in scan_<N>.json."""
+        names = sample_names(outdir)
+
+        assert names == [title.removeprefix("Align:") for title in TITLES.values()]
+        assert any("sample_41713.json" in message and "Align:S115_dry" in message for message in log.messages)
+
+    def test_name_from_first_run(self, outdir):
+        write_scan_file(outdir, 41741, num_of_runs=6, titles="EmptyCell")
+
+        assert sample_names(outdir)[1] == "EmptyCell"
+
+    def test_first_run_is_lowest_run_number(self, tmp_path):
+        write_scan_file(tmp_path, 100, runs=[102, 100, 101], titles=["Third", "First", "Second"])
+
+        assert sample_names(tmp_path) == ["First"]
+
+    def test_removes_align_prefix(self, tmp_path, log):
+        write_scan_file(tmp_path, 100, titles="Align:S115_dry")
+
+        assert sample_names(tmp_path) == ["S115_dry"]
+        assert any("Align:" in message and "removed" in message for message in log.messages)
+
+    def test_removes_white_space(self, tmp_path):
+        write_scan_file(tmp_path, 100, titles="  Align: S115 dry \t")
+
+        assert sample_names(tmp_path) == ["S115 dry"]
+
+    def test_replaces_separators(self, tmp_path, log):
+        write_scan_file(tmp_path, 100, titles="a/b\\c:d")
+
+        assert sample_names(tmp_path) == ["a_b_c_d"]
+        assert any("replaced" in message and "a_b_c_d" in message for message in log.messages)
+
+    @pytest.mark.parametrize("title", [None, "", "   ", "Align:"], ids=["none", "empty", "white_space", "align"])
+    def test_no_title(self, tmp_path, log, title):
+        write_scan_file(tmp_path, 100, titles="First")
+        write_scan_file(tmp_path, 200, titles=title)
+
+        assert sample_names(tmp_path) == ["First", "Sample_1"]
+        assert any("200" in message and "Sample_1" in message for message in log.records_at_warning())
+
+    def test_repeated_names(self, tmp_path, log):
+        for first_run in (100, 200, 300):
+            write_scan_file(tmp_path, first_run, titles="EmptyCell")
+
+        assert sample_names(tmp_path) == ["EmptyCell", "EmptyCell_2", "EmptyCell_3"]
+        warnings = log.records_at_warning()
+        assert any("200" in message and "EmptyCell_2" in message for message in warnings)
+        assert any("300" in message and "EmptyCell_3" in message for message in warnings)
+
+    def test_repeated_names_after_cleaning(self, tmp_path):
+        write_scan_file(tmp_path, 100, titles="a/b")
+        write_scan_file(tmp_path, 200, titles="Align:a:b")
+
+        assert sample_names(tmp_path) == ["a_b", "a_b_2"]
+
+    def test_counter_skips_name_of_a_title(self, tmp_path):
+        write_scan_file(tmp_path, 100, titles="EmptyCell")
+        write_scan_file(tmp_path, 200, titles="EmptyCell_2")
+        write_scan_file(tmp_path, 300, titles="EmptyCell")
+
+        assert sample_names(tmp_path) == ["EmptyCell", "EmptyCell_2", "EmptyCell_3"]
+
+    def test_title_repeating_a_counter(self, tmp_path):
+        write_scan_file(tmp_path, 100, titles="EmptyCell")
+        write_scan_file(tmp_path, 200, titles="EmptyCell")
+        write_scan_file(tmp_path, 300, titles="EmptyCell_2")
+
+        assert sample_names(tmp_path) == ["EmptyCell", "EmptyCell_2", "EmptyCell_2_2"]
+
+    def test_fallback_repeating_a_title(self, tmp_path):
+        write_scan_file(tmp_path, 100, titles="Sample_1")
+        write_scan_file(tmp_path, 200)
+
+        assert sample_names(tmp_path) == ["Sample_1", "Sample_1_2"]
+
+    def test_differing_titles(self, tmp_path, log):
+        write_scan_file(tmp_path, 100, num_of_runs=4, titles=["S115_dry", "S115_dry", "S115_wet", "S115_pc3"])
+
+        assert sample_names(tmp_path) == ["S115_dry"]
+        assert any("[102, 103]" in message and "'S115_dry'" in message for message in log.records_at_warning())
+
+    def test_runs_without_title_not_compared(self, tmp_path, log):
+        write_scan_file(tmp_path, 100, num_of_runs=3, titles=["S115_dry", None, "S115_dry"])
+
+        assert sample_names(tmp_path) == ["S115_dry"]
+        assert any("[101]" in message and "no title" in message for message in log.messages)
+        assert not any("different" in message for message in log.records_at_warning())
 
 
 class TestWriteSetupFile:
@@ -355,6 +478,7 @@ class TestWriteSetupFile:
 
         assert Path(setup_file) == outdir / "auto.json"
         assert read_config(setup_file) == config
+        assert read_config(setup_file).save_all_harmonics is True
 
     def test_writes_excluded_runs(self, tmp_path):
         write_scan_file(tmp_path, 100, runs=[100, 101, 103])
