@@ -8,6 +8,7 @@ import traceback
 import warnings
 from dataclasses import dataclass, field
 
+import h5py
 import numpy as np
 from mantid.simpleapi import (
     ConvertTableToMatrixWorkspace,
@@ -70,8 +71,112 @@ REDUCTION_DIRNAME = "auto"
 # Files in which step 1 records the runs of a sequence, named after the first run of the sequence
 SCAN_FILE_PATTERN = re.compile(r"^scan_(?P<first_run>.+)\.json$")
 
-# Value of the log BL1A:CS:Scan:USANS:FirstRun for a run that is not part of any sequence
+# Log holding the run number of the first run of the sequence that a run belongs to
+FIRST_RUN_LOG = "BL1A:CS:Scan:USANS:FirstRun"
+
+# Value of the log FIRST_RUN_LOG for a run that is not part of any sequence
 NO_SEQUENCE = -1
+
+# Log holding the thickness of the sample, in cm
+THICKNESS_LOG = "BL1A:CS:Scan:USANS:SampleThickness"
+
+# Thickness of the sample, in cm, when the log THICKNESS_LOG gives none
+DEFAULT_THICKNESS = 0.1
+
+
+def read_first_run(filename: str) -> int | None:
+    """Read the first run of the sequence that a run belongs to, from its event file.
+
+    The log ``BL1A:CS:Scan:USANS:FirstRun`` is read with h5py, without loading the events, so that
+    the runs outside a sequence can be skipped quickly.
+
+    Parameters
+    ----------
+    filename : str
+        Path of the event file of the run.
+
+    Returns
+    -------
+    int | None
+        The last value of the log: the run number of the first run of the sequence, or -1 for a run
+        that is not part of any sequence. ``None`` if the file has no such log, or the log no value.
+
+    Raises
+    ------
+    OSError
+        If the file cannot be opened as an HDF5 file.
+    """
+    with h5py.File(filename, "r") as nexus:
+        path = f"/entry/DASlogs/{FIRST_RUN_LOG}/value"
+        if path not in nexus:
+            return None
+        values = np.atleast_1d(nexus[path][()]).ravel()
+    if values.size == 0:
+        return None
+    return int(values[-1])
+
+
+def sample_thickness(run) -> float:
+    """Read the thickness of the sample, in cm, from the log ``BL1A:CS:Scan:USANS:SampleThickness``.
+
+    Parameters
+    ----------
+    run : mantid.api.Run
+        Run of the workspace of the events.
+
+    Returns
+    -------
+    float
+        The last value of the log, in cm. 0.1 cm if the log is missing, is not a number, or is not
+        above 0, which is logged.
+    """
+    if not run.hasProperty(THICKNESS_LOG):
+        logger.info(f"No log {THICKNESS_LOG}: the thickness is {DEFAULT_THICKNESS} cm")
+        return DEFAULT_THICKNESS
+    value = run.getProperty(THICKNESS_LOG).value
+    # A time-series log holds a sequence of values, of which the last one is taken
+    if not isinstance(value, (str, bytes)) and hasattr(value, "__len__"):
+        value = value[-1] if len(value) > 0 else None
+    try:
+        thickness = float(value)
+    except (TypeError, ValueError):
+        logger.info(f"The log {THICKNESS_LOG} is not a number ({value!r}): the thickness is {DEFAULT_THICKNESS} cm")
+        return DEFAULT_THICKNESS
+    if not (math.isfinite(thickness) and thickness > 0):
+        logger.info(f"The log {THICKNESS_LOG} is not above 0 ({thickness}): the thickness is {DEFAULT_THICKNESS} cm")
+        return DEFAULT_THICKNESS
+    return thickness
+
+
+def record_run(outdir: str, first_run: int, run_number: str, iq_file: str, run_title: str, thickness: float) -> None:
+    """Record a run in the files of its sequence, ``scan_<N>.json`` and ``sample_<N>.json``.
+
+    ``scan_<N>.json`` gets an entry for the run, with its I(Q) file and its title. ``sample_<N>.json``
+    gets the title, the thickness and the background flag 0, replacing the values written before.
+
+    Parameters
+    ----------
+    outdir : str
+        Output directory of the preprocessing script.
+    first_run : int
+        Run number of the first run of the sequence, the ``N`` of the file names.
+    run_number : str
+        Run number of the run.
+    iq_file : str
+        Path of the file of the scan of the main harmonic.
+    run_title : str
+        Title of the run.
+    thickness : float
+        Thickness of the sample, in cm.
+    """
+    update_sequence_info(
+        os.path.join(outdir, f"scan_{first_run}.json"),
+        {str(run_number): {"iq": iq_file, "title": run_title}},
+    )
+    update_sequence_info(
+        os.path.join(outdir, f"sample_{first_run}.json"),
+        {"title": run_title, "background": 0, "thickness": thickness},
+    )
 
 
 @dataclass
@@ -164,7 +269,7 @@ def build_setup(sequences: list[RunSequence]) -> ReductionConfig:
     for index, sequence in enumerate(sequences):
         sample_info = sequence.sample
         # Thickness in cm
-        thickness = float(sample_info["thickness"]) if "thickness" in sample_info else 0.1
+        thickness = float(sample_info["thickness"]) if "thickness" in sample_info else DEFAULT_THICKNESS
         run_numbers = sorted(int(run) for run in sequence.runs)
         first, last = run_numbers[0], run_numbers[-1]
         samples.append(
@@ -233,6 +338,13 @@ def main():
     else:
         filename = sys.argv[1]
         outdir = sys.argv[2]
+
+    # The runs outside a sequence are neither preprocessed nor reduced (#107)
+    first_run = read_first_run(filename)
+    if first_run is None or first_run == NO_SEQUENCE:
+        reason = f"it has no log {FIRST_RUN_LOG}" if first_run is None else f"its log {FIRST_RUN_LOG} is -1"
+        logger.info(f"{filename} is not processed: {reason}, so the run is not part of any sequence")
+        return
 
     # Don't load monitors unless we really need them
     try:
@@ -406,13 +518,13 @@ def main():
                             traceback.print_exc()
 
                         # Save scan info to use for stitching later
-                        update_sequence_info(
-                            os.path.join(outdir, "scan_%s.json" % sequence_first_run),
-                            {run_number: {"iq": file_path}},
-                        )
-                        update_sequence_info(
-                            os.path.join(outdir, "sample_%s.json" % sequence_first_run),
-                            {"title": run_title, "background": 0, "thickness": 0.1},
+                        record_run(
+                            outdir,
+                            sequence_first_run,
+                            run_number,
+                            file_path,
+                            run_title,
+                            sample_thickness(mtd["USANS"].getRun()),
                         )
 
                         for i_theta in range(len(x_data)):

@@ -1,18 +1,31 @@
-"""Tests of step 2 of the preprocessing script: from the sequence files to the reduction (#107)."""
+"""Tests of the preprocessing script (#107).
+
+Step 1 preprocesses one run and records it in the files of its sequence. Step 2 goes from the files of
+the sequences to the reduction.
+"""
 
 import json
 import logging
 import shutil
+import sys
 from pathlib import Path
 
+import h5py
+import numpy as np
 import pytest
 
 from usansred import reduce_USANS
 from usansred.io.read import read_config
 from usansred.reduce_USANS import (
+    FIRST_RUN_LOG,
+    THICKNESS_LOG,
     build_setup,
     collect_sequences,
+    main,
+    read_first_run,
+    record_run,
     reduce_sequences,
+    sample_thickness,
     write_setup_file,
 )
 
@@ -60,6 +73,151 @@ def write_sample_file(outdir: Path, first_run: int, **sample_info) -> None:
     """Change the values of the sample_<N>.json file of a fixture sequence."""
     sample_file = outdir / f"sample_{first_run}.json"
     sample_file.write_text(json.dumps(json.loads(sample_file.read_text()) | sample_info))
+
+
+def write_event_file(path: Path, first_run: list[int] | None) -> Path:
+    """Write an HDF5 file holding only the log FirstRun of an event file, with the values given.
+
+    Without values, the file has no such log.
+    """
+    with h5py.File(path, "w") as nexus:
+        logs = nexus.create_group("entry/DASlogs")
+        if first_run is not None:
+            logs.create_dataset(f"{FIRST_RUN_LOG}/value", data=np.array(first_run, dtype=np.int32))
+    return path
+
+
+class TestReadFirstRun:
+    def test_no_sequence(self, tmp_path):
+        event_file = write_event_file(tmp_path / "USANS_41712.nxs.h5", [-1])
+
+        assert read_first_run(str(event_file)) == -1
+
+    def test_sequence(self, tmp_path):
+        event_file = write_event_file(tmp_path / "USANS_41714.nxs.h5", [41713])
+
+        assert read_first_run(str(event_file)) == 41713
+
+    def test_last_value(self, tmp_path):
+        event_file = write_event_file(tmp_path / "USANS_41713.nxs.h5", [-1, 41713])
+
+        assert read_first_run(str(event_file)) == 41713
+
+    def test_no_value(self, tmp_path):
+        event_file = write_event_file(tmp_path / "USANS_41713.nxs.h5", [])
+
+        assert read_first_run(str(event_file)) is None
+
+    def test_no_log(self, tmp_path):
+        event_file = write_event_file(tmp_path / "USANS_41713.nxs.h5", None)
+
+        assert read_first_run(str(event_file)) is None
+
+    def test_not_an_hdf5_file(self, tmp_path):
+        event_file = tmp_path / "USANS_41713.nxs.h5"
+        event_file.write_text("not an HDF5 file")
+
+        with pytest.raises(OSError, match="file signature not found"):
+            read_first_run(str(event_file))
+
+
+class TestMainSkipsRuns:
+    @pytest.mark.parametrize(
+        ("first_run", "reason"),
+        [([-1], f"its log {FIRST_RUN_LOG} is -1"), (None, f"it has no log {FIRST_RUN_LOG}")],
+        ids=["no_sequence", "no_log"],
+    )
+    def test_run_outside_a_sequence(self, tmp_path, monkeypatch, log, first_run, reason):
+        event_file = write_event_file(tmp_path / "USANS_41712.nxs.h5", first_run)
+        outdir = tmp_path / "shared"
+        outdir.mkdir()
+
+        def load_event_nexus(*_args, **_kwargs):
+            pytest.fail("the events of a run outside a sequence are loaded")
+
+        monkeypatch.setattr(reduce_USANS, "LoadEventNexus", load_event_nexus)
+        monkeypatch.setattr(sys, "argv", ["reduce_USANS.py", str(event_file), str(outdir)])
+
+        main()
+
+        assert list(outdir.iterdir()) == []
+        assert any("is not processed" in message and reason in message for message in log.messages)
+
+
+class StandInRun:
+    """Stands in for mantid.api.Run, holding the logs given as keyword arguments."""
+
+    class Property:
+        def __init__(self, value):
+            self.value = value
+
+    def __init__(self, **logs):
+        self.logs = logs
+
+    def hasProperty(self, name: str) -> bool:  # noqa: N802
+        return name in self.logs
+
+    def getProperty(self, name: str) -> "StandInRun.Property":  # noqa: N802
+        return self.Property(self.logs[name])
+
+
+class TestSampleThickness:
+    def test_number(self):
+        assert sample_thickness(StandInRun(**{THICKNESS_LOG: [0.3]})) == 0.3
+
+    def test_last_value(self):
+        assert sample_thickness(StandInRun(**{THICKNESS_LOG: [0.2, 0.3]})) == 0.3
+
+    def test_numeric_string(self):
+        assert sample_thickness(StandInRun(**{THICKNESS_LOG: ["0.3"]})) == 0.3
+
+    @pytest.mark.parametrize(
+        "value", [["Not Set"], [], [0.0], [-0.3], [float("nan")]], ids=["not_set", "empty", "zero", "negative", "nan"]
+    )
+    def test_not_a_thickness(self, log, value):
+        assert sample_thickness(StandInRun(**{THICKNESS_LOG: value})) == 0.1
+        assert any(THICKNESS_LOG in message for message in log.messages)
+
+    def test_no_log(self, log):
+        assert sample_thickness(StandInRun()) == 0.1
+        assert any(THICKNESS_LOG in message for message in log.messages)
+
+
+class TestRecordRun:
+    def test_title_in_scan_file(self, tmp_path):
+        record_run(str(tmp_path), 41713, "41713", "USANS_41713_detector_3.6.txt", "Align:S115_dry", 0.3)
+
+        scan = json.loads((tmp_path / "scan_41713.json").read_text())
+        assert scan == {"41713": {"iq": "USANS_41713_detector_3.6.txt", "title": "Align:S115_dry"}}
+
+    def test_thickness_in_sample_file(self, tmp_path):
+        record_run(str(tmp_path), 41713, "41713", "USANS_41713_detector_3.6.txt", "Align:S115_dry", 0.3)
+
+        sample = json.loads((tmp_path / "sample_41713.json").read_text())
+        assert sample == {"title": "Align:S115_dry", "background": 0, "thickness": 0.3}
+
+    def test_second_run(self, tmp_path):
+        record_run(str(tmp_path), 41713, "41713", "USANS_41713_detector_3.6.txt", "Align:S115_dry", 0.1)
+        record_run(str(tmp_path), 41713, "41714", "USANS_41714_detector_3.6.txt", "Align:S115_dry", 0.1)
+
+        scan = json.loads((tmp_path / "scan_41713.json").read_text())
+        assert list(scan) == ["41713", "41714"]
+
+    def test_replaces_thickness_edited_by_hand(self, tmp_path):
+        sample_file = tmp_path / "sample_41713.json"
+        sample_file.write_text(json.dumps({"title": "Align:S115_dry", "background": 0, "thickness": 0.5}))
+
+        record_run(str(tmp_path), 41713, "41714", "USANS_41714_detector_3.6.txt", "Align:S115_dry", 0.1)
+
+        assert json.loads(sample_file.read_text())["thickness"] == 0.1
+
+    def test_step_2_reads_recorded_runs(self, tmp_path):
+        for run in range(41713, 41719):
+            record_run(str(tmp_path), 41713, str(run), f"USANS_{run}_detector_3.6.txt", "Align:S115_dry", 0.3)
+
+        (sample,) = build_setup(collect_sequences(str(tmp_path))).samples
+
+        assert (sample.start_scan_num, sample.num_of_scans, sample.thickness) == (41713, 6, 0.3)
 
 
 class TestCollectSequences:
