@@ -15,6 +15,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pytest
+import requests
 
 from usansred import reduce_USANS
 from usansred.io.read import read_config
@@ -24,11 +25,17 @@ from usansred.reduce_USANS import (
     build_setup,
     collect_sequences,
     main,
+    parse_arguments,
+    raw_scan_plot,
     read_first_run,
     record_run,
+    reduce_and_show,
     reduce_run_sequence,
     reduce_sequence,
+    reduced_sequence_plot,
     sample_thickness,
+    save_figure,
+    upload_figure,
     write_config,
 )
 
@@ -178,13 +185,43 @@ class TestMainSkipsRuns:
         def load_event_nexus(*_args, **_kwargs):
             pytest.fail("the events of a run outside a sequence are loaded")
 
+        def publish_plot(*_args, **_kwargs):
+            pytest.fail("a figure is uploaded for a run outside a sequence")
+
         monkeypatch.setattr(reduce_USANS, "LoadEventNexus", load_event_nexus)
+        monkeypatch.setattr(reduce_USANS, "publish_plot", publish_plot)
         monkeypatch.setattr(sys, "argv", ["reduce_USANS.py", str(event_file), str(outdir)])
 
         main()
 
         assert list(outdir.iterdir()) == []
         assert any("is not processed" in message and reason in message for message in log.messages)
+
+
+class TestCommandLine:
+    def test_arguments(self):
+        args = parse_arguments(["USANS_41713.nxs.h5", "shared"])
+
+        assert (args.event_file, args.outdir, args.no_publish) == ("USANS_41713.nxs.h5", "shared", False)
+
+    def test_no_publish(self):
+        assert parse_arguments(["USANS_41713.nxs.h5", "shared", "--no_publish"]).no_publish is True
+
+    @pytest.mark.parametrize("argv", [[], ["USANS_41713.nxs.h5"], ["a", "b", "c"]], ids=["none", "one", "three"])
+    def test_wrong_number_of_arguments(self, argv):
+        with pytest.raises(SystemExit) as error:
+            parse_arguments(argv)
+
+        assert error.value.code == 2
+
+    def test_missing_event_file(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "argv", ["reduce_USANS.py", str(tmp_path / "USANS_1.nxs.h5"), str(tmp_path)])
+
+        with pytest.raises(SystemExit) as error:
+            main()
+
+        assert error.value.code is None
+        assert "not found" in capsys.readouterr().out
 
 
 class StandInRun:
@@ -791,3 +828,184 @@ class TestSummary:
         assert re.findall(r'<sheet name="([^"]*)"', workbook) == ["Original", "S115_dry_det_1", "EmptyPCell_det_1"]
         assert any("S115_pc3_det_1.txt" in message and "does not exist" in message for message in log.messages)
         assert not [path for path in autodir.iterdir() if path.name != "summary.xlsx" and path.suffix == ".xlsx"]
+
+
+def plot_text(block: str) -> str:
+    """The HTML block of a panel, with the slashes that plotly escapes restored."""
+    return block.replace("\\u002f", "/")
+
+
+def write_det_1_file(path: Path, num_points: int = 5) -> Path:
+    """Write a reduced data file in the format of the reduction: Q, I, dI, and a trailing comma."""
+    rows = [f"{1e-5 * (k + 1)},{100.0 / (k + 1)},{1.0 / (k + 1)}," for k in range(num_points)]
+    path.write_text("\n".join(rows) + "\n")
+    return path
+
+
+class TestPanels:
+    def test_raw_scan(self):
+        block = plot_text(
+            raw_scan_plot("41715", np.array([1.0, 2.0]), np.array([10.0, 20.0]), np.array([1.0, 2.0]), "BL1A:Mot:m2rot")
+        )
+
+        assert '"x":[1.0,2.0],"y":[10.0,20.0]' in block
+        assert '"title":{"text":"BL1A:Mot:m2rot"}' in block
+        assert '"title":{"text":"Counts"}' in block
+        assert block.count('"type":"log"') == 1
+
+    def test_raw_scan_failure(self, monkeypatch, log):
+        def plot1d(*_args, **_kwargs):
+            raise RuntimeError("malformed data")
+
+        monkeypatch.setattr(reduce_USANS, "plot1d", plot1d)
+
+        assert raw_scan_plot("41715", [1.0], [10.0], [1.0], "BL1A:Mot:m2rot") is None
+        assert any("raw scan of run 41715" in message for message in log.records_at_warning())
+
+    def test_reduced_sequence(self, tmp_path):
+        det_1_file = write_det_1_file(tmp_path / "S115_dry_det_1.txt", num_points=2)
+
+        block = plot_text(reduced_sequence_plot("41715", str(det_1_file)))
+
+        assert '"x":[1e-05,2e-05],"y":[100.0,50.0]' in block
+        assert '"title":{"text":"Q (1/A)"}' in block
+        assert '"title":{"text":"I (1/cm)"}' in block
+        assert '"title":{"text":"S115_dry_det_1"}' in block
+        assert block.count('"type":"log"') == 2
+
+    def test_reduced_sequence_with_one_point(self, tmp_path):
+        det_1_file = write_det_1_file(tmp_path / "S115_dry_det_1.txt", num_points=1)
+
+        assert '"x":[1e-05]' in reduced_sequence_plot("41715", str(det_1_file))
+
+    def test_reduced_sequence_missing_file(self, tmp_path, log):
+        assert reduced_sequence_plot("41715", str(tmp_path / "S115_dry_det_1.txt")) is None
+        assert any("S115_dry_det_1.txt" in message for message in log.records_at_warning())
+
+
+class StandInUpload:
+    """Stands in for plot_publisher.publish_plot, recording the uploads, or raising the error given."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, error: Exception | None = None):
+        self.uploads = []
+        self.error = error
+        monkeypatch.setattr(reduce_USANS, "publish_plot", self)
+
+    def __call__(self, instrument: str, run_number: str, files: dict) -> None:
+        if self.error is not None:
+            raise self.error
+        self.uploads.append((instrument, run_number, files))
+
+
+class TestSaveFigure:
+    def test_saves_page_with_panels(self, tmp_path):
+        figure = save_figure("41715", ["<div>raw</div>", "<div>reduced</div>"], str(tmp_path))
+
+        page = (tmp_path / "USANS_41715.html").read_text()
+        assert figure == "<div>raw</div>\n<div>reduced</div>"
+        assert figure in page
+        assert f'<script src="https://cdn.plot.ly/plotly-{reduce_USANS.get_plotlyjs_version()}.min.js">' in page
+
+    def test_leaves_out_missing_panel(self, tmp_path):
+        assert save_figure("41715", ["<div>raw</div>", None], str(tmp_path)) == "<div>raw</div>"
+
+    def test_no_panel(self, tmp_path, log):
+        assert save_figure("41715", [None, None], str(tmp_path)) is None
+        assert list(tmp_path.iterdir()) == []
+        assert any("No panel" in message for message in log.records_at_warning())
+
+    def test_page_cannot_be_written(self, tmp_path, log):
+        assert save_figure("41715", ["<div>raw</div>"], str(tmp_path / "missing")) == "<div>raw</div>"
+        assert any("USANS_41715.html" in message for message in log.records_at_warning())
+
+
+class TestUploadFigure:
+    def test_uploads_under_the_run(self, monkeypatch):
+        upload = StandInUpload(monkeypatch)
+
+        upload_figure("41715", "<div>raw</div>")
+
+        assert upload.uploads == [("USANS", "41715", {"file": "<div>raw</div>"})]
+
+    @pytest.mark.parametrize(
+        "error",
+        [requests.HTTPError("401 Unauthorized"), requests.ConnectionError("no route to host")],
+        ids=["http_error", "connection_error"],
+    )
+    def test_request_failure_is_logged(self, monkeypatch, log, error):
+        StandInUpload(monkeypatch, error)
+
+        upload_figure("41715", "<div>raw</div>")
+
+        assert any("run 41715" in message and "uploaded" in message for message in log.records_at_warning())
+
+    def test_missing_configuration_raises(self, monkeypatch):
+        StandInUpload(monkeypatch, RuntimeError("Failed to find Configuration file"))
+
+        with pytest.raises(RuntimeError, match="Configuration"):
+            upload_figure("41715", "<div>raw</div>")
+
+
+class TestReduceAndShow:
+    @pytest.fixture
+    def upload(self, monkeypatch) -> StandInUpload:
+        return StandInUpload(monkeypatch)
+
+    def stand_in_step_2(self, monkeypatch, result):
+        """Replace step 2 with a function returning ``result``, or raising it if it is an exception."""
+
+        def reduce_run_sequence(*_args):
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        monkeypatch.setattr(reduce_USANS, "reduce_run_sequence", reduce_run_sequence)
+
+    def test_shows_both_panels(self, tmp_path, monkeypatch, upload):
+        det_1_file = write_det_1_file(tmp_path / "S115_dry_det_1.txt")
+        self.stand_in_step_2(monkeypatch, str(det_1_file))
+
+        reduce_and_show(str(tmp_path), 41713, "41715", "<div>raw</div>", no_publish=False)
+
+        ((instrument, run_number, files),) = upload.uploads
+        assert (instrument, run_number) == ("USANS", "41715")
+        assert files["file"].startswith("<div>raw</div>\n")
+        assert "S115_dry_det_1" in files["file"]
+        assert files["file"] in (tmp_path / "USANS_41715.html").read_text()
+
+    def test_no_publish(self, tmp_path, monkeypatch, upload):
+        self.stand_in_step_2(monkeypatch, str(write_det_1_file(tmp_path / "S115_dry_det_1.txt")))
+
+        reduce_and_show(str(tmp_path), 41713, "41715", "<div>raw</div>", no_publish=True)
+
+        assert upload.uploads == []
+        assert (tmp_path / "USANS_41715.html").exists()
+
+    def test_raw_scan_alone_if_step_2_fails(self, tmp_path, monkeypatch, upload):
+        self.stand_in_step_2(monkeypatch, ValueError("autoconfig.json: invalid JSON"))
+
+        with pytest.raises(ValueError, match="autoconfig.json"):
+            reduce_and_show(str(tmp_path), 41713, "41715", "<div>raw</div>", no_publish=False)
+
+        assert upload.uploads == [("USANS", "41715", {"file": "<div>raw</div>"})]
+        assert "<div>raw</div>" in (tmp_path / "USANS_41715.html").read_text()
+
+    def test_raw_scan_alone_if_nothing_reduced(self, tmp_path, monkeypatch, upload):
+        self.stand_in_step_2(monkeypatch, None)
+
+        reduce_and_show(str(tmp_path), 41713, "41715", "<div>raw</div>", no_publish=False)
+
+        assert upload.uploads == [("USANS", "41715", {"file": "<div>raw</div>"})]
+
+    def test_nothing_to_show(self, tmp_path, monkeypatch, upload):
+        self.stand_in_step_2(monkeypatch, None)
+
+        reduce_and_show(str(tmp_path), 41713, "41715", None, no_publish=False)
+
+        assert upload.uploads == []
+        assert list(tmp_path.iterdir()) == []
+
+    def test_step_2_returns_the_det_1_file(self, outdir, monkeypatch):
+        StandInReduction(monkeypatch)
+
+        assert reduce_run_sequence(str(outdir), 41741) == str(outdir / "auto" / "EmptyPCell_det_1.txt")

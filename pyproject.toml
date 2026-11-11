@@ -90,6 +90,8 @@ pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
 plot-publisher = { version = ">=1.4.0" }
+plotly = "*"
+requests = "*"
 
 [tool.pixi.pypi-dependencies]
 usansred = { path = ".", editable = true }
@@ -118,6 +120,8 @@ pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
 plot-publisher = { version = ">=1.4.0" }
+plotly = "*"
+requests = "*"
 
 [tool.pixi.package]
 name = "usansred"

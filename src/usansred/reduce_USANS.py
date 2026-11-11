@@ -1,15 +1,16 @@
+import argparse
 import json
 import logging
 import math
 import os
 import re
 import sys
-import traceback
 import warnings
 from dataclasses import dataclass, field
 
 import h5py
 import numpy as np
+import requests
 from mantid.simpleapi import (
     ConvertTableToMatrixWorkspace,
     CropWorkspace,
@@ -19,9 +20,11 @@ from mantid.simpleapi import (
     mtd,
 )
 from matplotlib import use
-from plot_publisher import plot1d
+from plot_publisher import plot1d, publish_plot
+from plotly.offline import get_plotlyjs_version
 
 from usansred import reduce
+from usansred.io.filenames import reduced_data_filename
 from usansred.io.read import read_config
 from usansred.io.save import save_ascii, save_summed_spectra
 from usansred.models.reduction_config import ReductionConfig, SampleConfig
@@ -609,7 +612,7 @@ def reduce_sequence(sequence_file: str, setup_file: str, outdir: str) -> None:
     generate_report(config_file_path=setup_file, output_dir=exp.output_dir, include_unscaled=False)
 
 
-def reduce_run_sequence(outdir: str, first_run: int) -> None:
+def reduce_run_sequence(outdir: str, first_run: int) -> str | None:
     """Step 2: update the setup files of the sequence of a run, and reduce that sequence alone.
 
     The entry of the sequence is rewritten or inserted in ``autoconfig.json``, which lists every
@@ -626,6 +629,12 @@ def reduce_run_sequence(outdir: str, first_run: int) -> None:
         Run number of the first run of the sequence, the value of the log ``BL1A:CS:Scan:USANS:FirstRun``
         of the run.
 
+    Returns
+    -------
+    str | None
+        Path of the reduced data of harmonic 1 of the sequence, ``<outdir>/auto/<name>_det_1.txt``, or
+        ``None`` if no run of the sequence is recorded, and nothing is reduced.
+
     Raises
     ------
     OSError, ValueError
@@ -635,7 +644,7 @@ def reduce_run_sequence(outdir: str, first_run: int) -> None:
     sequence = collect_sequence(outdir, first_run)
     if sequence is None:
         logger.error(f"No run of sequence {first_run} recorded in {outdir}: nothing to reduce")
-        return
+        return None
 
     setup_file = os.path.join(outdir, SETUP_FILENAME)
     sequence_file = os.path.join(outdir, f"autoconfig_{first_run}.json")
@@ -650,20 +659,206 @@ def reduce_run_sequence(outdir: str, first_run: int) -> None:
     write_config(config, setup_file)
     write_config(sequence_setup(entry, config, existing), sequence_file)
     reduce_sequence(sequence_file, setup_file, outdir)
+    return os.path.join(outdir, REDUCTION_DIRNAME, reduced_data_filename(entry.name, "det_1"))
+
+
+# Instrument name under which the figure is published to the live data server
+INSTRUMENT = "USANS"
+
+
+def raw_scan_plot(run_number: str, angle, counts, errors, scan_var: str) -> str | None:
+    """Build the panel of the raw scan of a run: counts at the detector against the analyzer angle.
+
+    Parameters
+    ----------
+    run_number : str
+        Run number of the run.
+    angle, counts, errors : array-like
+        Angle of the analyzer, in arcsec, and counts at the detector with their errors.
+    scan_var : str
+        Name of the log of the scanned motor, the title of the x axis.
+
+    Returns
+    -------
+    str | None
+        The panel, as an HTML block, or ``None`` if it cannot be built, which is logged.
+    """
+    try:
+        # Plain lists keep the data readable in the HTML block
+        data = [[list(angle), list(counts), list(errors)]]
+        return plot1d(run_number, data, x_title=scan_var, y_title="Counts", y_log=True, publish=False)
+    except Exception:
+        logger.exception(f"The panel of the raw scan of run {run_number} cannot be built")
+        return None
+
+
+def reduced_sequence_plot(run_number: str, det_1_file: str) -> str | None:
+    """Build the panel of the reduced sequence of a run: I(Q) of harmonic 1, on log scales.
+
+    Parameters
+    ----------
+    run_number : str
+        Run number of the run.
+    det_1_file : str
+        Path of the reduced data of harmonic 1, ``<name>_det_1.txt``, with the columns Q in 1/angstrom,
+        I and dI in 1/cm.
+
+    Returns
+    -------
+    str | None
+        The panel, as an HTML block, or ``None`` if the file cannot be read or the panel built, which
+        is logged.
+    """
+    if not os.path.isfile(det_1_file):
+        logger.warning(f"{det_1_file} not found: the figure of run {run_number} has no reduced sequence")
+        return None
+    name = os.path.basename(det_1_file).removesuffix(".txt")
+    try:
+        # The rows end with a comma, so only the first three columns are read
+        q, intensity, error = np.genfromtxt(det_1_file, delimiter=",", usecols=(0, 1, 2), ndmin=2, unpack=True)
+        return plot1d(
+            run_number,
+            [[q.tolist(), intensity.tolist(), error.tolist()]],
+            data_names=[name],
+            x_title="Q (1/A)",
+            y_title="I (1/cm)",
+            x_log=True,
+            y_log=True,
+            title=name,
+            publish=False,
+        )
+    except Exception:
+        logger.exception(f"The panel of {det_1_file} cannot be built")
+        return None
+
+
+def save_figure(run_number: str, panels: list[str | None], outdir: str) -> str | None:
+    """Save the figure of a run as ``<outdir>/USANS_<run>.html``.
+
+    The page loads plotly.js from cdn.plot.ly, at the version of the installed ``plotly``. A failure to
+    write the page is logged.
+
+    Parameters
+    ----------
+    run_number : str
+        Run number of the run.
+    panels : list[str | None]
+        The panels, as HTML blocks; ``None`` for a panel that could not be built.
+    outdir : str
+        Output directory of the preprocessing script.
+
+    Returns
+    -------
+    str | None
+        The figure, the panels joined, or ``None`` if there is no panel, and nothing is saved.
+    """
+    panels = [panel for panel in panels if panel is not None]
+    if not panels:
+        logger.warning(f"No panel to show for run {run_number}: no figure is saved or uploaded")
+        return None
+    figure = "\n".join(panels)
+    page = (
+        "<!DOCTYPE html>\n"
+        '<html lang="en">\n'
+        "<head>\n"
+        '<meta charset="UTF-8">\n'
+        f"<title>{INSTRUMENT} run {run_number}</title>\n"
+        f'<script src="https://cdn.plot.ly/plotly-{get_plotlyjs_version()}.min.js"></script>\n'
+        "</head>\n"
+        "<body>\n"
+        f"{figure}\n"
+        "</body>\n"
+        "</html>\n"
+    )
+    page_file = os.path.join(outdir, f"{INSTRUMENT}_{run_number}.html")
+    try:
+        with open(page_file, "w") as fd:
+            fd.write(page)
+    except OSError:
+        logger.exception(f"{page_file} cannot be written")
+    return figure
+
+
+def upload_figure(run_number: str, figure: str) -> None:
+    """Upload the figure of a run to the live data server, under the run.
+
+    A failure of the request (an error answer, no connection, a timeout) is logged, and the script
+    goes on. A missing or invalid publisher configuration raises an error.
+
+    Parameters
+    ----------
+    run_number : str
+        Run number of the run.
+    figure : str
+        The figure, as returned by ``save_figure``.
+    """
+    try:
+        publish_plot(INSTRUMENT, run_number, files={"file": figure})
+    except requests.RequestException:
+        logger.exception(f"The figure of run {run_number} cannot be uploaded to the live data server")
+
+
+def reduce_and_show(outdir: str, first_run: int, run_number: str, raw_scan: str | None, no_publish: bool) -> None:
+    """Step 2, then the figure of the run: saved, and uploaded unless ``no_publish``.
+
+    The figure has the panel of the raw scan and that of the reduced sequence. It is saved and uploaded
+    even if step 2 fails, with the raw scan alone; the error of step 2 is then raised again, so that the
+    script ends with an error.
+
+    Parameters
+    ----------
+    outdir : str
+        Output directory of the preprocessing script.
+    first_run : int
+        Run number of the first run of the sequence.
+    run_number : str
+        Run number of the run.
+    raw_scan : str | None
+        The panel of the raw scan, as returned by ``raw_scan_plot``.
+    no_publish : bool
+        If true, the figure is saved but not uploaded.
+    """
+    det_1_file = None
+    try:
+        det_1_file = reduce_run_sequence(outdir, first_run)
+    finally:
+        reduced = reduced_sequence_plot(run_number, det_1_file) if det_1_file is not None else None
+        figure = save_figure(run_number, [raw_scan, reduced], outdir)
+        if figure is not None and not no_publish:
+            upload_figure(run_number, figure)
+
+
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    """Read the command line of the preprocessing script.
+
+    Parameters
+    ----------
+    argv : list[str] | None
+        The arguments, or ``None`` for those of the command line.
+
+    Returns
+    -------
+    argparse.Namespace
+        ``event_file``, ``outdir`` and ``no_publish``.
+    """
+    parser = argparse.ArgumentParser(description="Preprocess a USANS run, then reduce its sequence of runs.")
+    parser.add_argument("event_file", help="event file of the run")
+    parser.add_argument("outdir", help="output directory")
+    parser.add_argument(
+        "--no_publish",
+        action="store_true",
+        help=f"do not upload the figure to the live data server; {INSTRUMENT}_<run>.html is still saved",
+    )
+    return parser.parse_args(argv)
 
 
 def main():
-    # check number of arguments
-    if len(sys.argv) != 3:
-        print("Autoreduction code requires a filename and an output directory")
-        sys.exit(1)
-
-    if not (os.path.isfile(sys.argv[1])):
-        print(f"Data file {sys.argv[1]} not found")
+    args = parse_arguments()
+    if not (os.path.isfile(args.event_file)):
+        print(f"Data file {args.event_file} not found")
         sys.exit()
-    else:
-        filename = sys.argv[1]
-        outdir = sys.argv[2]
+    filename = args.event_file
+    outdir = args.outdir
 
     # The runs outside a sequence are neither preprocessed nor reduced (#107)
     first_run = read_first_run(filename)
@@ -682,6 +877,9 @@ def main():
     except:  # noqa E722
         LoadEventNexus(filename, LoadMonitors=False, OutputWorkspace="USANS")
         load_monitors = False
+    run_number = mtd["USANS"].getRun().getProperty("run_number").value
+    # The panel of the raw scan, shown after step 2 with that of the reduced sequence (#107)
+    raw_scan = None
 
     # LoadEventNexus(filename, LoadMonitors=False, OutputWorkspace="USANS")
     # load_monitors = False
@@ -779,7 +977,6 @@ def main():
 
                 start_time = mtd["USANS"].getRun().getProperty("start_time").value
                 experiment = mtd["USANS"].getRun().getProperty("experiment_identifier").value
-                run_number = mtd["USANS"].getRun().getProperty("run_number").value
                 run_title = mtd["USANS"].getRun().getProperty("run_title").value
                 sequence_first_run = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:FirstRun").value[-1]
                 sequence_index = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Index").value[-1]
@@ -833,18 +1030,7 @@ def main():
                         #     InputWorkspace="USANS_scan_detector", JsonFilename=json_file_path, PlotName="main_output"
                         # )
 
-                        try:
-                            plot1d(
-                                run_number,
-                                [[x_data, y_data, e_data]],
-                                instrument="USANS",
-                                x_title=scan_var,
-                                y_title="Counts",
-                                y_log=True,
-                            )
-                        except:  # noqa E722
-                            logger.error("Error calling plot1d, no image plotted")
-                            traceback.print_exc()
+                        raw_scan = raw_scan_plot(run_number, x_data, y_data, e_data, scan_var)
 
                         # Save scan info to use for stitching later
                         record_run(
@@ -932,8 +1118,8 @@ def main():
                 iq_fd.close()
                 iq_fd_simple.close()
 
-    # Reduce the sequence of the run alone
-    reduce_run_sequence(outdir, first_run)
+    # Reduce the sequence of the run alone, and show the figure of the run
+    reduce_and_show(outdir, first_run, run_number, raw_scan, args.no_publish)
 
 
 if __name__ == "__main__":
