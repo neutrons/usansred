@@ -8,7 +8,7 @@ After the experiment, the raw data should be stored in your experiment folder:
 
 .. code-block:: bash
 
-   $ cd /SNS/USANS/IPTS-XXXXXX/shared/autoreduce/
+   $ cd /SNS/USANS/IPTS-*****/shared/autoreduce/
    $ usansred
 
 The steps of the reduction, the normalizations applied to the data, and the stitching of the
@@ -274,6 +274,8 @@ version 1.9.0 wrote for ``x``, also when ``x`` is not in the setup file.
 Apart from this, files of measurements that are not in the setup file, and files with other
 names, are left untouched. Do not save edited data under these names in the output directory, since the
 next reduction deletes them.
+
+.. _summary-report:
 
 The Summary Report
 ~~~~~~~~~~~~~~~~~~

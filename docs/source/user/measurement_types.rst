@@ -75,6 +75,8 @@ error is written to that sample's log file and the reduction continues with the 
 Each reduced measurement writes its log to ``reduction_<name>.log`` in the output folder.
 
 
+.. _collecting-run-sequences:
+
 Collecting Run Sequences
 ------------------------
 
@@ -186,8 +188,9 @@ The runs of a measurement are collected as follows:
 - A measurement starts at the first run of its sequence, the run whose number is the value of
   ``FirstRun``, and includes every run of the sequence. In the table, the empty cell is measured by
   runs 50387 to 50391, and the empty air by runs 50394 to 50397.
-- Runs whose ``FirstRun`` is -1 are not part of any measurement, and are neither preprocessed nor
-  reduced. Neither are runs without the ``FirstRun`` log.
+- Runs whose ``FirstRun`` is 0 or below, such as -1, are not part of any measurement, and are neither
+  preprocessed nor reduced. Neither are runs without the ``FirstRun`` log (see
+  :doc:`Monitoring Runs <monitoring_runs>`).
 
 In a setup file, ``start_scan_num`` is therefore the first run of the sequence, and
 ``num_of_scans`` the number of runs in it. For the empty cell of the table:
