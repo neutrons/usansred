@@ -1,10 +1,12 @@
 import argparse
+import html
 import json
 import logging
 import math
 import os
 import re
 import sys
+import traceback
 import warnings
 from dataclasses import dataclass, field
 
@@ -85,11 +87,12 @@ THICKNESS_LOG = "BL1A:CS:Scan:USANS:SampleThickness"
 DEFAULT_THICKNESS = 0.1
 
 
-def read_first_run(filename: str) -> int | None:
+def read_first_run(filename: str) -> int | float | str | None:
     """Read the first run of the sequence that a run belongs to, from its event file.
 
     The log ``BL1A:CS:Scan:USANS:FirstRun`` is read with h5py, without loading the events, so that
-    the runs outside a sequence can be skipped quickly.
+    the runs outside a sequence can be skipped quickly. The value is returned as stored, so that a value
+    that is not a run number can be reported as it is; ``as_run_number`` converts it.
 
     Parameters
     ----------
@@ -98,10 +101,10 @@ def read_first_run(filename: str) -> int | None:
 
     Returns
     -------
-    int | None
-        The last value of the log: the run number of the first run of the sequence, or a value that is not
-        a positive integer, such as -1, for a run that is not part of any sequence. ``None`` if the file
-        has no such log, or the log no value.
+    int | float | str | None
+        The last value of the log, as stored, text decoded: the run number of the first run of the sequence,
+        or a value that is not a positive integer, such as -1, for a run that is not part of any sequence.
+        ``None`` if the file has no such log, or the log no value.
 
     Raises
     ------
@@ -115,7 +118,36 @@ def read_first_run(filename: str) -> int | None:
         values = np.atleast_1d(nexus[path][()]).ravel()
     if values.size == 0:
         return None
-    return int(values[-1])
+    value = values[-1]
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    # A NumPy scalar becomes the Python int, float or str it holds
+    return value.item() if isinstance(value, np.generic) else value
+
+
+def as_run_number(value) -> int | None:
+    """Convert a value of the log ``BL1A:CS:Scan:USANS:FirstRun`` to a run number.
+
+    Parameters
+    ----------
+    value
+        The value, as returned by ``read_first_run``.
+
+    Returns
+    -------
+    int | None
+        The value as an integer if it is a finite whole number, such as ``41713``, ``41713.0`` or ``"41713"``;
+        ``None`` otherwise, such as for ``41713.5``, NaN or ``"Not Set"``. The sign is not checked.
+    """
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(number) and number.is_integer()):
+        return None
+    return int(number)
 
 
 def sample_thickness(run) -> float:
@@ -732,6 +764,29 @@ def reduced_sequence_plot(run_number: str, det_1_file: str) -> str | None:
         return None
 
 
+# Heading of the block shown in the figure of a run in place of the reduced sequence, when step 2 fails
+REDUCTION_FAILED = "Reduction Failed"
+
+
+def reduction_failure_block(error: BaseException) -> str:
+    """Build the block shown in the figure of a run when step 2 fails: a heading and the traceback.
+
+    The traceback is escaped, so that characters such as ``<`` in a message are shown as text.
+
+    Parameters
+    ----------
+    error : BaseException
+        The error raised by step 2.
+
+    Returns
+    -------
+    str
+        The block, as HTML.
+    """
+    trace = "".join(traceback.format_exception(error))
+    return f"<h2>{REDUCTION_FAILED}</h2>\n<pre>{html.escape(trace)}</pre>"
+
+
 def save_figure(run_number: str, panels: list[str | None], outdir: str) -> str | None:
     """Save the figure of a run as ``<outdir>/USANS_<run>.html``.
 
@@ -801,9 +856,10 @@ def upload_figure(run_number: str, figure: str) -> None:
 def reduce_and_show(outdir: str, first_run: int, run_number: str, raw_scan: str | None, no_publish: bool) -> None:
     """Step 2, then the figure of the run: saved, and uploaded unless ``no_publish``.
 
-    The figure has the panel of the raw scan and that of the reduced sequence. It is saved and uploaded
-    even if step 2 fails, with the raw scan alone; the error of step 2 is then raised again, so that the
-    script ends with an error.
+    The figure has the panel of the raw scan and that of the reduced sequence. If step 2 fails, the
+    reduced sequence is replaced with the heading ``Reduction Failed`` and the traceback of the error, so
+    that the cause can be read on the live data server; the error is then raised again, so that the script
+    ends with an error.
 
     Parameters
     ----------
@@ -818,14 +874,33 @@ def reduce_and_show(outdir: str, first_run: int, run_number: str, raw_scan: str 
     no_publish : bool
         If true, the figure is saved but not uploaded.
     """
-    det_1_file = None
     try:
         det_1_file = reduce_run_sequence(outdir, first_run)
-    finally:
-        reduced = reduced_sequence_plot(run_number, det_1_file) if det_1_file is not None else None
-        figure = save_figure(run_number, [raw_scan, reduced], outdir)
-        if figure is not None and not no_publish:
-            upload_figure(run_number, figure)
+    # The reduction can raise any error; it is shown in the figure, then raised again unchanged
+    except Exception as error:
+        show_figure(run_number, [raw_scan, reduction_failure_block(error)], outdir, no_publish)
+        raise
+    reduced = reduced_sequence_plot(run_number, det_1_file) if det_1_file is not None else None
+    show_figure(run_number, [raw_scan, reduced], outdir, no_publish)
+
+
+def show_figure(run_number: str, panels: list[str | None], outdir: str, no_publish: bool) -> None:
+    """Save the figure of a run, and upload it unless ``no_publish``.
+
+    Parameters
+    ----------
+    run_number : str
+        Run number of the run.
+    panels : list[str | None]
+        The panels, as HTML blocks; ``None`` for a panel that could not be built.
+    outdir : str
+        Output directory of the preprocessing script.
+    no_publish : bool
+        If true, the figure is saved but not uploaded.
+    """
+    figure = save_figure(run_number, panels, outdir)
+    if figure is not None and not no_publish:
+        upload_figure(run_number, figure)
 
 
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
@@ -861,12 +936,15 @@ def main():
     outdir = args.outdir
 
     # The runs outside a sequence are neither preprocessed nor reduced (#107)
-    first_run = read_first_run(filename)
+    value = read_first_run(filename)
+    first_run = as_run_number(value)
     if first_run is None or first_run <= 0:
-        if first_run is None:
+        if value is None:
             reason = f"it has no log {FIRST_RUN_LOG}"
         else:
-            reason = f"its log {FIRST_RUN_LOG} is {first_run}, which is not a run number"
+            # repr() quotes text, so that "Not Set" is told apart from a number
+            shown = repr(value) if isinstance(value, str) else value
+            reason = f"its log {FIRST_RUN_LOG} is {shown}, which is not a run number"
         logger.info(f"{filename} is not processed: {reason}, so the run is not part of any sequence")
         return
 

@@ -205,7 +205,9 @@ The Reduced Sequence
 :math:`I(Q)` of the reduced sequence, ``auto/<name>_det_1.txt``, makes the second panel of the figure
 of the run, below `the raw scan`_. The figure is saved in the output directory as
 ``USANS_<run>.html``, and uploaded to the live data server under the run number, unless
-``--no_publish`` is given. If the auto reduction fails, the figure holds the raw scan alone.
+``--no_publish`` is given. If the auto reduction fails, the figure holds the raw scan and, below it,
+the message ``Reduction Failed`` with the traceback of the error, so that the cause can be read on the
+live data server.
 
 .. figure:: media/monitoring_reduced_bauxite.png
    :alt: Log-log plot of the intensity I, in 1/cm, with error bars, against Q, in 1/angstrom, from

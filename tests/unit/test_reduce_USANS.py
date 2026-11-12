@@ -21,7 +21,9 @@ from usansred import reduce_USANS
 from usansred.io.read import read_config
 from usansred.reduce_USANS import (
     FIRST_RUN_LOG,
+    REDUCTION_FAILED,
     THICKNESS_LOG,
+    as_run_number,
     build_setup,
     collect_sequences,
     main,
@@ -33,6 +35,7 @@ from usansred.reduce_USANS import (
     reduce_run_sequence,
     reduce_sequence,
     reduced_sequence_plot,
+    reduction_failure_block,
     sample_thickness,
     save_figure,
     upload_figure,
@@ -120,15 +123,16 @@ def write_sample_file(outdir: Path, first_run: int, **sample_info) -> None:
     sample_file.write_text(json.dumps(json.loads(sample_file.read_text()) | sample_info))
 
 
-def write_event_file(path: Path, first_run: list[int] | None) -> Path:
+def write_event_file(path: Path, first_run: list | None, dtype=np.int32) -> Path:
     """Write an HDF5 file holding only the log FirstRun of an event file, with the values given.
 
+    The values are stored with ``dtype``, as integers by default; ``h5py.string_dtype()`` stores text.
     Without values, the file has no such log.
     """
     with h5py.File(path, "w") as nexus:
         logs = nexus.create_group("entry/DASlogs")
         if first_run is not None:
-            logs.create_dataset(f"{FIRST_RUN_LOG}/value", data=np.array(first_run, dtype=np.int32))
+            logs.create_dataset(f"{FIRST_RUN_LOG}/value", data=np.array(first_run, dtype=dtype))
     return path
 
 
@@ -165,20 +169,72 @@ class TestReadFirstRun:
         with pytest.raises(OSError, match="file signature not found"):
             read_first_run(str(event_file))
 
+    def test_text_value(self, tmp_path):
+        event_file = write_event_file(tmp_path / "USANS_41713.nxs.h5", ["Not Set"], dtype=h5py.string_dtype())
+
+        assert read_first_run(str(event_file)) == "Not Set"
+
+    def test_float_value(self, tmp_path):
+        event_file = write_event_file(tmp_path / "USANS_41713.nxs.h5", [41713.5], dtype=np.float64)
+
+        value = read_first_run(str(event_file))
+
+        assert value == 41713.5
+        assert type(value) is float
+
+
+class TestAsRunNumber:
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (41713, 41713),
+            (41713.0, 41713),
+            ("41713", 41713),
+            (-1, -1),
+            (0, 0),
+            (41713.5, None),
+            (float("nan"), None),
+            (float("inf"), None),
+            ("Not Set", None),
+            ("", None),
+            (True, None),
+            (None, None),
+        ],
+        ids=[
+            "integer",
+            "whole_float",
+            "numeric_text",
+            "minus_one",
+            "zero",
+            "fractional",
+            "nan",
+            "infinity",
+            "text",
+            "empty_text",
+            "boolean",
+            "none",
+        ],
+    )
+    def test_conversion(self, value, expected):
+        assert as_run_number(value) == expected
+
 
 class TestMainSkipsRuns:
     @pytest.mark.parametrize(
-        ("first_run", "reason"),
+        ("first_run", "dtype", "reason"),
         [
-            ([-1], f"its log {FIRST_RUN_LOG} is -1, which is not a run number"),
-            ([41845, 0], f"its log {FIRST_RUN_LOG} is 0, which is not a run number"),
-            ([-5], f"its log {FIRST_RUN_LOG} is -5, which is not a run number"),
-            (None, f"it has no log {FIRST_RUN_LOG}"),
+            ([-1], np.int32, f"its log {FIRST_RUN_LOG} is -1, which is not a run number"),
+            ([41845, 0], np.int32, f"its log {FIRST_RUN_LOG} is 0, which is not a run number"),
+            ([-5], np.int32, f"its log {FIRST_RUN_LOG} is -5, which is not a run number"),
+            (None, np.int32, f"it has no log {FIRST_RUN_LOG}"),
+            (["Not Set"], h5py.string_dtype(), f"its log {FIRST_RUN_LOG} is 'Not Set', which is not a run number"),
+            ([float("nan")], np.float64, f"its log {FIRST_RUN_LOG} is nan, which is not a run number"),
+            ([41713.5], np.float64, f"its log {FIRST_RUN_LOG} is 41713.5, which is not a run number"),
         ],
-        ids=["minus_one", "zero", "negative", "no_log"],
+        ids=["minus_one", "zero", "negative", "no_log", "text", "nan", "fractional"],
     )
-    def test_run_outside_a_sequence(self, tmp_path, monkeypatch, log, first_run, reason):
-        event_file = write_event_file(tmp_path / "USANS_41712.nxs.h5", first_run)
+    def test_run_outside_a_sequence(self, tmp_path, monkeypatch, log, first_run, dtype, reason):
+        event_file = write_event_file(tmp_path / "USANS_41712.nxs.h5", first_run, dtype)
         outdir = tmp_path / "shared"
         outdir.mkdir()
 
@@ -946,6 +1002,20 @@ class TestUploadFigure:
             upload_figure("41715", "<div>raw</div>")
 
 
+class TestReductionFailureBlock:
+    def test_heading_and_traceback(self):
+        try:
+            raise RuntimeError("Experiment failed: x < 0")
+        except RuntimeError as error:
+            block = reduction_failure_block(error)
+
+        assert block.startswith(f"<h2>{REDUCTION_FAILED}</h2>\n<pre>")
+        assert block.endswith("</pre>")
+        assert "Traceback (most recent call last)" in block
+        assert "test_heading_and_traceback" in block
+        assert "RuntimeError: Experiment failed: x &lt; 0" in block
+
+
 class TestReduceAndShow:
     @pytest.fixture
     def upload(self, monkeypatch) -> StandInUpload:
@@ -981,14 +1051,48 @@ class TestReduceAndShow:
         assert upload.uploads == []
         assert (tmp_path / "USANS_41715.html").exists()
 
-    def test_raw_scan_alone_if_step_2_fails(self, tmp_path, monkeypatch, upload):
+    def test_failure_shown_if_step_2_fails(self, tmp_path, monkeypatch, upload):
+        self.stand_in_step_2(monkeypatch, ValueError("autoconfig.json: <invalid> JSON"))
+
+        with pytest.raises(ValueError, match="autoconfig.json"):
+            reduce_and_show(str(tmp_path), 41713, "41715", "<div>raw</div>", no_publish=False)
+
+        ((instrument, run_number, files),) = upload.uploads
+        figure = files["file"]
+        assert (instrument, run_number) == ("USANS", "41715")
+        assert figure.startswith("<div>raw</div>\n")
+        assert f"<h2>{REDUCTION_FAILED}</h2>" in figure
+        assert "Traceback (most recent call last)" in figure
+        assert "ValueError: autoconfig.json: &lt;invalid&gt; JSON" in figure
+        assert figure in (tmp_path / "USANS_41715.html").read_text()
+
+    def test_failure_alone_without_raw_scan(self, tmp_path, monkeypatch, upload):
+        self.stand_in_step_2(monkeypatch, ValueError("autoconfig.json: invalid JSON"))
+
+        with pytest.raises(ValueError, match="autoconfig.json"):
+            reduce_and_show(str(tmp_path), 41713, "41715", None, no_publish=False)
+
+        ((_, _, files),) = upload.uploads
+        assert files["file"].startswith(f"<h2>{REDUCTION_FAILED}</h2>")
+
+    def test_failure_not_uploaded_with_no_publish(self, tmp_path, monkeypatch, upload):
+        self.stand_in_step_2(monkeypatch, ValueError("autoconfig.json: invalid JSON"))
+
+        with pytest.raises(ValueError, match="autoconfig.json"):
+            reduce_and_show(str(tmp_path), 41713, "41715", "<div>raw</div>", no_publish=True)
+
+        assert upload.uploads == []
+        assert REDUCTION_FAILED in (tmp_path / "USANS_41715.html").read_text()
+
+    def test_failure_raised_after_upload_failure(self, tmp_path, monkeypatch, log):
+        StandInUpload(monkeypatch, requests.ConnectionError("no connection"))
         self.stand_in_step_2(monkeypatch, ValueError("autoconfig.json: invalid JSON"))
 
         with pytest.raises(ValueError, match="autoconfig.json"):
             reduce_and_show(str(tmp_path), 41713, "41715", "<div>raw</div>", no_publish=False)
 
-        assert upload.uploads == [("USANS", "41715", {"file": "<div>raw</div>"})]
-        assert "<div>raw</div>" in (tmp_path / "USANS_41715.html").read_text()
+        assert any("cannot be uploaded" in message for message in log.messages)
+        assert REDUCTION_FAILED in (tmp_path / "USANS_41715.html").read_text()
 
     def test_raw_scan_alone_if_nothing_reduced(self, tmp_path, monkeypatch, upload):
         self.stand_in_step_2(monkeypatch, None)
