@@ -6,11 +6,14 @@ the sequences to the reduction.
 
 import json
 import logging
+import os
 import re
 import shutil
 import sys
+import time
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import h5py
 import numpy as np
@@ -21,11 +24,14 @@ from usansred import reduce_USANS
 from usansred.io.read import read_config
 from usansred.reduce_USANS import (
     FIRST_RUN_LOG,
+    PREPROCESSING_FAILED,
     REDUCTION_FAILED,
     THICKNESS_LOG,
+    PreprocessingError,
     as_run_number,
     build_setup,
     collect_sequences,
+    failure_block,
     main,
     parse_arguments,
     raw_scan_plot,
@@ -35,9 +41,10 @@ from usansred.reduce_USANS import (
     reduce_run_sequence,
     reduce_sequence,
     reduced_sequence_plot,
-    reduction_failure_block,
     sample_thickness,
     save_figure,
+    scanned_motors,
+    update_sequence_info,
     upload_figure,
     write_config,
 )
@@ -254,6 +261,149 @@ class TestMainSkipsRuns:
         assert any("is not processed" in message and reason in message for message in log.messages)
 
 
+class StandInLog:
+    """Stands in for a Mantid time-series log, with the statistics of its values."""
+
+    def __init__(self, name: str, values: list[float]):
+        self.name = name
+        self.values = np.asarray(values, dtype=float)
+
+    def getStatistics(self):
+        return SimpleNamespace(mean=self.values.mean(), standard_deviation=self.values.std())
+
+
+class StandInScanRun:
+    """Stands in for the run information of a Mantid workspace, holding the logs of motors."""
+
+    def __init__(self, logs: list[StandInLog], run_number: str = "41714"):
+        self.logs = logs
+        self.run_number = run_number
+
+    def getProperties(self):
+        return self.logs
+
+    def getProperty(self, name: str):
+        assert name == "run_number"
+        return SimpleNamespace(value=self.run_number)
+
+
+class TestScannedMotors:
+    def test_varying_motor(self):
+        run = StandInScanRun([StandInLog("BL1A:Mot:ARN", [200, 220, 240]), StandInLog("BL1A:Mot:Sample", [5, 5, 5])])
+
+        assert scanned_motors(run) == ["BL1A:Mot:ARN"]
+
+    def test_motor_varying_around_zero(self):
+        run = StandInScanRun([StandInLog("BL1A:Mot:ARN", [-20, 0, 20])])
+
+        assert scanned_motors(run) == ["BL1A:Mot:ARN"]
+
+    def test_small_variation_is_not_a_scan(self):
+        # Standard deviation of about 0.4 % of the mean
+        run = StandInScanRun([StandInLog("BL1A:Mot:ARN", [200, 201, 202])])
+
+        assert scanned_motors(run) == []
+
+    def test_readback_and_other_logs_ignored(self):
+        run = StandInScanRun([StandInLog("BL1A:Mot:ARN.RBV", [200, 300]), StandInLog("BL1A:Det:Rate", [1, 100])])
+
+        assert scanned_motors(run) == []
+
+    def test_several_motors(self):
+        run = StandInScanRun([StandInLog("BL1A:Mot:ARN", [200, 300]), StandInLog("BL1A:Mot:ASN", [10, 30])])
+
+        assert scanned_motors(run) == ["BL1A:Mot:ARN", "BL1A:Mot:ASN"]
+
+
+class TestMainProcessesRuns:
+    """main() for a run of a sequence, with stand-ins for the loading of the events and for both steps."""
+
+    @pytest.fixture
+    def run(self, monkeypatch):
+        """Stand-ins for Mantid and for step 2; returns the calls of preprocess_run and reduce_and_show."""
+        calls = SimpleNamespace(preprocess=[], reduce_and_show=[])
+        monkeypatch.setattr(reduce_USANS, "LoadEventNexus", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(reduce_USANS, "mtd", {"USANS": SimpleNamespace(getRun=lambda: StandInScanRun([]))})
+        monkeypatch.setattr(reduce_USANS, "reduce_and_show", lambda *args: calls.reduce_and_show.append(args))
+        return calls
+
+    def run_main(self, tmp_path, monkeypatch, first_run, *options) -> Path:
+        event_file = write_event_file(tmp_path / "USANS_41714.nxs.h5", [first_run], dtype=type(first_run))
+        outdir = tmp_path / "shared"
+        outdir.mkdir()
+        monkeypatch.setattr(sys, "argv", ["reduce_USANS.py", str(event_file), str(outdir), *options])
+        main()
+        return outdir
+
+    def test_steps_receive_the_validated_first_run(self, tmp_path, monkeypatch, run):
+        def preprocess_run(_filename, _outdir, first_run, run_number, load_monitors, figure):
+            run.preprocess.append((first_run, run_number, load_monitors))
+            figure.raw_scan = "<div>raw</div>"
+
+        monkeypatch.setattr(reduce_USANS, "preprocess_run", preprocess_run)
+
+        outdir = self.run_main(tmp_path, monkeypatch, 41713.0, "--no_publish")
+
+        assert run.preprocess == [(41713, "41714", True)]
+        assert type(run.preprocess[0][0]) is int
+        assert run.reduce_and_show == [(str(outdir), 41713, "41714", "<div>raw</div>", True)]
+
+    def test_preprocessing_failure_shown(self, tmp_path, monkeypatch, run):
+        upload = StandInUpload(monkeypatch)
+
+        def preprocess_run(*args):
+            figure = args[-1]
+            figure.raw_scan = "<div>raw</div>"
+            raise RuntimeError("SaveAscii failed: <disk full>")
+
+        monkeypatch.setattr(reduce_USANS, "preprocess_run", preprocess_run)
+
+        with pytest.raises(RuntimeError, match="SaveAscii failed"):
+            self.run_main(tmp_path, monkeypatch, 41713)
+
+        ((instrument, run_number, files),) = upload.uploads
+        figure = files["file"]
+        assert (instrument, run_number) == ("USANS", "41714")
+        assert figure.startswith("<div>raw</div>\n")
+        assert f"<h2>{PREPROCESSING_FAILED}</h2>" in figure
+        assert "RuntimeError: SaveAscii failed: &lt;disk full&gt;" in figure
+        outdir = tmp_path / "shared"
+        assert figure in (outdir / "USANS_41714.html").read_text()
+        assert run.reduce_and_show == []
+        assert not list(outdir.glob("*.json"))
+
+    def test_run_without_scanned_motor(self, tmp_path, monkeypatch, run):
+        upload = StandInUpload(monkeypatch)
+
+        def preprocess_run(*_args):
+            raise PreprocessingError("no log BL1A:Mot:* varies during the run, so the run is not a scan")
+
+        monkeypatch.setattr(reduce_USANS, "preprocess_run", preprocess_run)
+
+        with pytest.raises(PreprocessingError, match="not a scan"):
+            self.run_main(tmp_path, monkeypatch, 41713)
+
+        ((_, _, files),) = upload.uploads
+        assert files["file"].startswith(f"<h2>{PREPROCESSING_FAILED}</h2>")
+        assert "PreprocessingError: no log BL1A:Mot:* varies during the run" in files["file"]
+        assert run.reduce_and_show == []
+
+    @pytest.mark.usefixtures("run")
+    def test_preprocessing_failure_not_uploaded_with_no_publish(self, tmp_path, monkeypatch):
+        upload = StandInUpload(monkeypatch)
+
+        def preprocess_run(*_args):
+            raise RuntimeError("SaveAscii failed")
+
+        monkeypatch.setattr(reduce_USANS, "preprocess_run", preprocess_run)
+
+        with pytest.raises(RuntimeError, match="SaveAscii failed"):
+            self.run_main(tmp_path, monkeypatch, 41713, "--no_publish")
+
+        assert upload.uploads == []
+        assert PREPROCESSING_FAILED in (tmp_path / "shared" / "USANS_41714.html").read_text()
+
+
 class TestCommandLine:
     def test_arguments(self):
         args = parse_arguments(["USANS_41713.nxs.h5", "shared"])
@@ -347,6 +497,16 @@ class TestRecordRun:
 
         assert json.loads(sample_file.read_text())["thickness"] == 0.1
 
+    def test_unreadable_scan_file_is_left_unchanged(self, tmp_path):
+        scan_file = tmp_path / "scan_41713.json"
+        # A file left partly written by a job that was stopped
+        scan_file.write_text('{"41713": {"iq": "USANS_41713_detector_3.6.txt", "ti')
+
+        with pytest.raises(ValueError, match="scan_41713.json cannot be read, and is left unchanged"):
+            record_run(str(tmp_path), 41713, "41714", "USANS_41714_detector_3.6.txt", "Align:S115_dry", 0.1)
+
+        assert scan_file.read_text() == '{"41713": {"iq": "USANS_41713_detector_3.6.txt", "ti'
+
     def test_step_2_reads_recorded_runs(self, tmp_path):
         for run in range(41713, 41719):
             record_run(str(tmp_path), 41713, str(run), f"USANS_{run}_detector_3.6.txt", "Align:S115_dry", 0.3)
@@ -354,6 +514,54 @@ class TestRecordRun:
         (sample,) = build_setup(collect_sequences(str(tmp_path))).samples
 
         assert (sample.start_scan_num, sample.num_of_scans, sample.thickness) == (41713, 6, 0.3)
+
+
+class TestUpdateSequenceInfo:
+    def test_creates_file(self, tmp_path):
+        out_file = tmp_path / "scan_41713.json"
+
+        update_sequence_info(str(out_file), {"41713": {"title": "S115"}})
+
+        assert json.loads(out_file.read_text()) == {"41713": {"title": "S115"}}
+
+    def test_adds_and_replaces_entries(self, tmp_path):
+        out_file = tmp_path / "scan_41713.json"
+        out_file.write_text(json.dumps({"41713": {"title": "S115"}, "41714": {"title": "old"}}))
+
+        update_sequence_info(str(out_file), {"41714": {"title": "S115"}, "41715": {"title": "S115"}})
+
+        assert json.loads(out_file.read_text()) == {
+            "41713": {"title": "S115"},
+            "41714": {"title": "S115"},
+            "41715": {"title": "S115"},
+        }
+
+    def test_leaves_no_temporary_file(self, tmp_path):
+        out_file = tmp_path / "scan_41713.json"
+        out_file.write_text(json.dumps({"41713": {"title": "S115"}}))
+
+        update_sequence_info(str(out_file), {"41714": {"title": "S115"}})
+
+        assert list(tmp_path.iterdir()) == [out_file]
+
+    @pytest.mark.parametrize("content", ["", '{"41713": {', "not JSON"], ids=["empty", "partly_written", "text"])
+    def test_unreadable_file_raises(self, tmp_path, content):
+        out_file = tmp_path / "scan_41713.json"
+        out_file.write_text(content)
+
+        with pytest.raises(ValueError, match="cannot be read, and is left unchanged"):
+            update_sequence_info(str(out_file), {"41714": {"title": "S115"}})
+
+        assert out_file.read_text() == content
+
+    def test_file_without_object_raises(self, tmp_path):
+        out_file = tmp_path / "scan_41713.json"
+        out_file.write_text("[41713]")
+
+        with pytest.raises(ValueError, match="does not hold a JSON object"):
+            update_sequence_info(str(out_file), {"41714": {"title": "S115"}})
+
+        assert out_file.read_text() == "[41713]"
 
 
 class TestCollectSequences:
@@ -639,6 +847,84 @@ class TestReduceSequence:
         autodir = str(tmp_path / "auto")
         assert reduction.reduced == [(sequence_file, autodir)]
         assert reduction.reports == [{"config_file_path": setup_file, "output_dir": autodir, "include_unscaled": False}]
+
+
+class TestReductionLogs:
+    """reduce_sequence adds the logs of a failed reduction to its error."""
+
+    def stand_in_failing_experiment(self, monkeypatch, logs: dict[str, str]):
+        """Replace Experiment with one that writes ``logs`` in its output directory, then raises."""
+
+        class FailingExperiment:
+            def __init__(self, **_kwargs):
+                self.output_dir = None
+
+            def reduce(self, output_dir: str | None = None) -> None:
+                for name, text in logs.items():
+                    (Path(output_dir) / f"reduction_{name}.log").write_text(text)
+                raise RuntimeError("Cannot write detector data for sample S115_dry: first harmonic data is missing.")
+
+        monkeypatch.setattr(reduce_USANS.reduce, "Experiment", FailingExperiment)
+        monkeypatch.setattr(reduce_USANS, "generate_report", lambda **_kwargs: pytest.fail("report written"))
+
+    def write_sequence_setup(self, tmp_path, background: str | None = None) -> str:
+        setup = {"samples": [entry("S115_dry", 41713, 6)]}
+        if background is not None:
+            setup["background"] = {**entry(background, 41741, 6), "thickness": 0.1}
+        write_setup(tmp_path, setup, 41713)
+        return str(tmp_path / "autoconfig_41713.json")
+
+    def test_log_of_failed_sample_added(self, tmp_path, monkeypatch):
+        self.stand_in_failing_experiment(monkeypatch, {"S115_dry": "FileNotFoundError: USANS_41714_peak_1.txt\n"})
+        sequence_file = self.write_sequence_setup(tmp_path)
+
+        with pytest.raises(RuntimeError, match="first harmonic data is missing") as raised:
+            reduce_sequence(sequence_file, str(tmp_path / "autoconfig.json"), str(tmp_path))
+
+        (note,) = raised.value.__notes__
+        assert "auto/reduction_S115_dry.log" in note
+        assert "FileNotFoundError: USANS_41714_peak_1.txt" in note
+
+    def test_logs_of_background_and_sample_added(self, tmp_path, monkeypatch):
+        self.stand_in_failing_experiment(monkeypatch, {"Empty": "background log\n", "S115_dry": "sample log\n"})
+        sequence_file = self.write_sequence_setup(tmp_path, background="Empty")
+
+        with pytest.raises(RuntimeError) as raised:
+            reduce_sequence(sequence_file, str(tmp_path / "autoconfig.json"), str(tmp_path))
+
+        notes = raised.value.__notes__
+        assert ["sample log" in notes[0], "background log" in notes[1]] == [True, True]
+
+    def test_earlier_log_left_out(self, tmp_path, monkeypatch):
+        self.stand_in_failing_experiment(monkeypatch, {})
+        sequence_file = self.write_sequence_setup(tmp_path)
+        (tmp_path / "auto").mkdir()
+        earlier_log = tmp_path / "auto" / "reduction_S115_dry.log"
+        earlier_log.write_text("log of an earlier reduction\n")
+        an_hour_ago = time.time() - 3600
+        os.utime(earlier_log, (an_hour_ago, an_hour_ago))
+
+        with pytest.raises(RuntimeError) as raised:
+            reduce_sequence(sequence_file, str(tmp_path / "autoconfig.json"), str(tmp_path))
+
+        assert not hasattr(raised.value, "__notes__")
+
+    def test_logs_shown_in_figure(self, tmp_path, monkeypatch):
+        upload = StandInUpload(monkeypatch)
+        self.stand_in_failing_experiment(monkeypatch, {"S115_dry": "FileNotFoundError: USANS_41714_peak_1.txt\n"})
+        sequence_file = self.write_sequence_setup(tmp_path)
+        monkeypatch.setattr(
+            reduce_USANS,
+            "reduce_run_sequence",
+            lambda outdir, _first_run: reduce_sequence(sequence_file, str(tmp_path / "autoconfig.json"), outdir),
+        )
+
+        with pytest.raises(RuntimeError, match="first harmonic data is missing"):
+            reduce_and_show(str(tmp_path), 41713, "41714", "<div>raw</div>", no_publish=False)
+
+        ((_, _, files),) = upload.uploads
+        assert f"<h2>{REDUCTION_FAILED}</h2>" in files["file"]
+        assert "FileNotFoundError: USANS_41714_peak_1.txt" in files["file"]
 
 
 class StandInReduction:
@@ -1002,18 +1288,28 @@ class TestUploadFigure:
             upload_figure("41715", "<div>raw</div>")
 
 
-class TestReductionFailureBlock:
-    def test_heading_and_traceback(self):
+class TestFailureBlock:
+    @pytest.mark.parametrize("heading", [PREPROCESSING_FAILED, REDUCTION_FAILED])
+    def test_heading_and_traceback(self, heading):
         try:
             raise RuntimeError("Experiment failed: x < 0")
         except RuntimeError as error:
-            block = reduction_failure_block(error)
+            block = failure_block(heading, error)
 
-        assert block.startswith(f"<h2>{REDUCTION_FAILED}</h2>\n<pre>")
+        assert block.startswith(f"<h2>{heading}</h2>\n<pre>")
         assert block.endswith("</pre>")
         assert "Traceback (most recent call last)" in block
         assert "test_heading_and_traceback" in block
         assert "RuntimeError: Experiment failed: x &lt; 0" in block
+
+    def test_notes_after_traceback(self):
+        error = RuntimeError("first harmonic data is missing")
+        error.add_note("Log of the reduction, auto/reduction_S115_dry.log:\nFileNotFoundError: <peak_1>")
+
+        block = failure_block(REDUCTION_FAILED, error)
+
+        assert block.index("first harmonic data is missing") < block.index("auto/reduction_S115_dry.log")
+        assert "FileNotFoundError: &lt;peak_1&gt;" in block
 
 
 class TestReduceAndShow:

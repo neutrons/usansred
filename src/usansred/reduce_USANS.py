@@ -6,6 +6,7 @@ import math
 import os
 import re
 import sys
+import time
 import traceback
 import warnings
 from dataclasses import dataclass, field
@@ -38,23 +39,61 @@ logger = get_logger(__name__)
 use("agg")
 np.seterr(all="ignore")
 warnings.filterwarnings("ignore", module="numpy")
-peaks = []
 
 
-def update_sequence_info(out_file, info):
-    scan_dict_global = {}
+def write_file(path: str, text: str) -> None:
+    """Write a text file, to a temporary file in the same directory renamed at the end.
 
+    A reader of the file never sees it partly written, and a job stopped while writing leaves the
+    earlier content in place.
+
+    Parameters
+    ----------
+    path : str
+        Path of the file.
+    text : str
+        Content of the file.
+    """
+    # The process ID keeps the temporary files of two overlapping calls apart
+    temporary_file = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(temporary_file, "x") as fd:
+            fd.write(text)
+        os.replace(temporary_file, path)
+    finally:
+        if os.path.exists(temporary_file):
+            os.remove(temporary_file)
+
+
+def update_sequence_info(out_file: str, info: dict) -> None:
+    """Add entries to a file of a sequence, ``scan_<N>.json`` or ``sample_<N>.json``, replacing those of the same key.
+
+    The file is created if it does not exist, and written with ``write_file``.
+
+    Parameters
+    ----------
+    out_file : str
+        Path of the file.
+    info : dict
+        The entries.
+
+    Raises
+    ------
+    ValueError
+        If the file exists but does not hold a JSON object. It is left unchanged: starting a new file
+        would lose the runs recorded in it, which step 2 would then exclude.
+    """
+    content = {}
     if os.path.isfile(out_file):
-        with open(out_file, "r") as fd:
-            try:
-                scan_dict_global = json.loads(fd.read())
-            except:  # noqa E722
-                logger.error("Could not read json file: creating a new one")
-
-    scan_dict_global.update(info)
-
-    with open(out_file, "w") as fd:
-        fd.write(json.dumps(scan_dict_global))
+        try:
+            with open(out_file) as fd:
+                content = json.load(fd)
+        except ValueError as error:
+            raise ValueError(f"{out_file} cannot be read, and is left unchanged: correct it") from error
+        if not isinstance(content, dict):
+            raise ValueError(f"{out_file} does not hold a JSON object, and is left unchanged: correct it")
+    content.update(info)
+    write_file(out_file, json.dumps(content))
 
 
 def get_sequence_info(seq_file):
@@ -609,16 +648,48 @@ def write_config(config: ReductionConfig, setup_file: str) -> None:
     setup_file : str
         Path of the setup file.
     """
-    # The process ID keeps the temporary files of two overlapping calls apart
-    temporary_file = f"{setup_file}.{os.getpid()}.tmp"
+    write_file(setup_file, config.model_dump_json(indent=2, exclude_none=True) + "\n")
+
+
+# Margin, in seconds, by which a log of the reduction may seem older than the start of the reduction
+LOG_TIME_MARGIN = 2.0
+
+
+def add_reduction_logs(error: BaseException, sequence_file: str, autodir: str, started: float) -> None:
+    """Add to the error of a failed reduction the logs that it wrote, ``reduction_<name>.log``.
+
+    ``Experiment.reduce`` logs the error of a failed sample to its log file and goes on, and the error it
+    raises afterwards only states that the data are missing: the cause is in the log. Each log of a
+    measurement of ``sequence_file`` written since ``started`` is added as a note, which is shown after
+    the traceback.
+
+    Parameters
+    ----------
+    error : BaseException
+        The error raised by the reduction.
+    sequence_file : str
+        Path of the setup file reduced, ``autoconfig_<N>.json``.
+    autodir : str
+        Directory of the reduced data, where the logs are written.
+    started : float
+        Time at which the reduction started, as returned by ``time.time()``; older logs are left out.
+    """
     try:
-        with open(temporary_file, "x") as fd:
-            fd.write(config.model_dump_json(indent=2, exclude_none=True))
-            fd.write("\n")
-        os.replace(temporary_file, setup_file)
-    finally:
-        if os.path.exists(temporary_file):
-            os.remove(temporary_file)
+        config = read_config(sequence_file)
+    except (OSError, ValueError):
+        return
+    measurements = [*config.samples, config.background, config.empty_cell]
+    for name in dict.fromkeys(measurement.name for measurement in measurements if measurement is not None):
+        log_file = os.path.join(autodir, f"reduction_{name}.log")
+        try:
+            # The margin allows for file systems that store modification times to the second
+            if os.path.getmtime(log_file) < started - LOG_TIME_MARGIN:
+                continue
+            with open(log_file) as fd:
+                log = fd.read()
+        except OSError:
+            continue
+        error.add_note(f"\nLog of the reduction, {os.path.join(REDUCTION_DIRNAME, os.path.basename(log_file))}:\n{log}")
 
 
 def reduce_sequence(sequence_file: str, setup_file: str, outdir: str) -> None:
@@ -638,7 +709,13 @@ def reduce_sequence(sequence_file: str, setup_file: str, outdir: str) -> None:
     os.makedirs(autodir, exist_ok=True)
 
     exp = reduce.Experiment(config_file=sequence_file)
-    exp.reduce(output_dir=autodir)
+    started = time.time()
+    try:
+        exp.reduce(output_dir=autodir)
+    # The reduction can raise any error; the logs written are added to it, and it is raised again unchanged
+    except Exception as error:
+        add_reduction_logs(error, sequence_file, autodir, started)
+        raise
 
     # The summary leaves out the _unscaled files (#107)
     generate_report(config_file_path=setup_file, output_dir=exp.output_dir, include_unscaled=False)
@@ -764,19 +841,23 @@ def reduced_sequence_plot(run_number: str, det_1_file: str) -> str | None:
         return None
 
 
-# Heading of the block shown in the figure of a run in place of the reduced sequence, when step 2 fails
+# Headings of the block shown in the figure of a run when step 1 or step 2 fails
+PREPROCESSING_FAILED = "Preprocessing Failed"
 REDUCTION_FAILED = "Reduction Failed"
 
 
-def reduction_failure_block(error: BaseException) -> str:
-    """Build the block shown in the figure of a run when step 2 fails: a heading and the traceback.
+def failure_block(heading: str, error: BaseException) -> str:
+    """Build the block shown in the figure of a run when step 1 or step 2 fails: a heading and the traceback.
 
-    The traceback is escaped, so that characters such as ``<`` in a message are shown as text.
+    The traceback ends with the notes added to the error, such as the log of a failed reduction. It is
+    escaped, so that characters such as ``<`` in a message are shown as text.
 
     Parameters
     ----------
+    heading : str
+        The heading, ``PREPROCESSING_FAILED`` or ``REDUCTION_FAILED``.
     error : BaseException
-        The error raised by step 2.
+        The error raised.
 
     Returns
     -------
@@ -784,7 +865,7 @@ def reduction_failure_block(error: BaseException) -> str:
         The block, as HTML.
     """
     trace = "".join(traceback.format_exception(error))
-    return f"<h2>{REDUCTION_FAILED}</h2>\n<pre>{html.escape(trace)}</pre>"
+    return f"<h2>{heading}</h2>\n<pre>{html.escape(trace)}</pre>"
 
 
 def save_figure(run_number: str, panels: list[str | None], outdir: str) -> str | None:
@@ -878,7 +959,7 @@ def reduce_and_show(outdir: str, first_run: int, run_number: str, raw_scan: str 
         det_1_file = reduce_run_sequence(outdir, first_run)
     # The reduction can raise any error; it is shown in the figure, then raised again unchanged
     except Exception as error:
-        show_figure(run_number, [raw_scan, reduction_failure_block(error)], outdir, no_publish)
+        show_figure(run_number, [raw_scan, failure_block(REDUCTION_FAILED, error)], outdir, no_publish)
         raise
     reduced = reduced_sequence_plot(run_number, det_1_file) if det_1_file is not None else None
     show_figure(run_number, [raw_scan, reduced], outdir, no_publish)
@@ -901,6 +982,316 @@ def show_figure(run_number: str, panels: list[str | None], outdir: str, no_publi
     figure = save_figure(run_number, panels, outdir)
     if figure is not None and not no_publish:
         upload_figure(run_number, figure)
+
+
+# Prefix of the logs of the motors of the instrument
+MOTOR_LOG_PREFIX = "BL1A:Mot:"
+
+
+class PreprocessingError(RuntimeError):
+    """A run that step 1 cannot preprocess, for a reason other than an error of Mantid."""
+
+
+@dataclass
+class RunFigure:
+    """The panels of the figure of a run built so far, kept when step 1 or step 2 fails.
+
+    Parameters
+    ----------
+    raw_scan : str | None
+        The panel of the raw scan, as returned by ``raw_scan_plot``, or ``None`` until it is built.
+    """
+
+    raw_scan: str | None = None
+
+
+def scanned_motors(run) -> list[str]:
+    """Find the motors scanned during a run: those whose log varies.
+
+    A log ``BL1A:Mot:<motor>`` varies when its standard deviation is above 1 % of the absolute value of
+    its mean, or above 0 if its mean is 0. The readback logs, ending in ``.RBV``, are not considered.
+
+    Parameters
+    ----------
+    run : mantid.api.Run
+        The run information of the workspace of the events.
+
+    Returns
+    -------
+    list[str]
+        Names of the logs of the scanned motors, such as ``BL1A:Mot:ARN``, in the order of the logs of the run.
+    """
+    motors = []
+    for item in run.getProperties():
+        if item.name.startswith(MOTOR_LOG_PREFIX) and not item.name.endswith(".RBV"):
+            stats = item.getStatistics()
+            if (
+                abs(stats.mean) > 0
+                and abs(stats.standard_deviation / stats.mean) > 0.01
+                or abs(stats.mean) == 0
+                and abs(stats.standard_deviation) > 0.0
+            ):
+                motors.append(item.name)
+    return motors
+
+
+def preprocess_run(
+    filename: str, outdir: str, first_run: int, run_number: str, load_monitors: bool, figure: RunFigure
+) -> None:
+    """Step 1: write the files of a run whose events are loaded in the workspace ``USANS``, and record the run.
+
+    The run is recorded in ``scan_<N>.json`` and ``sample_<N>.json`` only once all its files are written,
+    so that a run on which this step fails is not recorded, and step 2 excludes it (#107).
+
+    Parameters
+    ----------
+    filename : str
+        Path of the event file of the run.
+    outdir : str
+        Output directory of the preprocessing script.
+    first_run : int
+        Run number of the first run of the sequence, as returned by ``as_run_number``.
+    run_number : str
+        Run number of the run.
+    load_monitors : bool
+        Whether the monitors are loaded, in the workspace ``USANS_monitors``.
+    figure : RunFigure
+        Receives the panel of the raw scan as soon as it is built, so that it is shown even if a later
+        part of this step fails.
+
+    Raises
+    ------
+    PreprocessingError
+        If no motor is scanned during the run.
+    """
+
+    # LoadEventNexus(filename, LoadMonitors=False, OutputWorkspace="USANS")
+    # load_monitors = False
+
+    file_prefix = os.path.split(filename)[1].split(".")[0]
+
+    # if mtd['USANS'].getRun().hasProperty("BL1A:CS:Scan:USANS:Wavelength"):
+    #    main_wl = mtd['USANS'].getRun().getProperty("BL1A:CS:Scan:USANS:Wavelength").value[0]
+    # else:
+    #    main_wl = "main_peak"
+
+    # Get ROI from logs
+    wavelength = [3.6, 1.8, 1.2, 0.9, 0.72, 0.6]
+    roi_min = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Min").value[-1]
+    # roi_step = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Size").value[-1]
+
+    # Reference to the item in the wavelength array
+    main_index = 1
+    # Time-of-flight regions of the detector, in microseconds: the main region, then one per harmonic.
+    # Local to the call, so that two calls in one process, as in the tests, do not add to the same list.
+    peaks = []
+    for i in range(1, 8):
+        lower_bound = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:%s:Min" % i).value[-1]
+        tof_step = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:%s:Size" % i).value[-1]
+        if i > 1 and lower_bound == roi_min:
+            main_index = i - 2
+        peaks.append([lower_bound * 1000.0, (lower_bound + tof_step) * 1000.0])
+    main_wl = wavelength[main_index]
+
+    # Produce ASCII data
+    Rebin(InputWorkspace="USANS", Params="0,10,17000", OutputWorkspace="USANS")
+    file_path = os.path.join(outdir, "%s_detector_trans.txt" % file_prefix)
+    save_summed_spectra("USANS", file_path, header="TOF, COUNTS, ERROR")
+
+    CropWorkspace(
+        InputWorkspace="USANS",
+        StartWorkspaceIndex=0,
+        EndWorkspaceIndex=1023,
+        OutputWorkspace="USANS_detector",
+    )
+    file_path = os.path.join(outdir, "%s_detector.txt" % file_prefix)
+    save_summed_spectra("USANS_detector", file_path, header="TOF, COUNTS, ERROR")
+
+    CropWorkspace(
+        InputWorkspace="USANS",
+        StartWorkspaceIndex=1024,
+        EndWorkspaceIndex=2047,
+        OutputWorkspace="USANS_trans",
+    )
+    file_path = os.path.join(outdir, "%s_trans.txt" % file_prefix)
+    save_summed_spectra("USANS_trans", file_path, header="TOF, COUNTS, ERROR")
+
+    if load_monitors:
+        Rebin(
+            InputWorkspace="USANS_monitors",
+            Params="0,10,17000",
+            OutputWorkspace="USANS_monitors",
+        )
+        file_path = os.path.join(outdir, "%s_monitor.txt" % file_prefix)
+        save_ascii("USANS_monitors", file_path, header="TOF, COUNTS, ERROR")
+
+    # The motors scanned during the run: their logs are the x axis of the scans
+    scan_vars = scanned_motors(mtd["USANS"].getRun())
+    if not scan_vars:
+        raise PreprocessingError(f"no log {MOTOR_LOG_PREFIX}* varies during the run, so the run is not a scan")
+    for scan_var in scan_vars:
+        short_name = scan_var.removeprefix(MOTOR_LOG_PREFIX)
+
+        y_monitor = None
+        if load_monitors:
+            StepScan(
+                InputWorkspace="USANS_monitors",
+                OutputWorkspace="mon_scan_table",
+            )
+            ConvertTableToMatrixWorkspace(
+                InputWorkspace="mon_scan_table",
+                ColumnX=scan_var,
+                ColumnY="Counts",
+                ColumnE="Error",
+                OutputWorkspace="USANS_scan_monitor",
+            )
+            file_path = os.path.join(outdir, "%s_monitor_scan_%s.txt" % (file_prefix, short_name))
+            save_ascii("USANS_scan_monitor", file_path, header=f"{scan_var}, COUNTS, ERROR")
+            y_monitor = mtd["USANS_scan_monitor"].readY(0)
+
+        iq_file_path_simple = os.path.join(outdir, "%s_iq_%s_%s.txt" % (file_prefix, short_name, main_wl))
+        iq_fd_simple = open(iq_file_path_simple, "w")
+
+        iq_file_path = os.path.join(outdir, "%s_iq_%s.txt" % (file_prefix, short_name))
+        iq_fd = open(iq_file_path, "w")
+
+        start_time = mtd["USANS"].getRun().getProperty("start_time").value
+        experiment = mtd["USANS"].getRun().getProperty("experiment_identifier").value
+        run_title = mtd["USANS"].getRun().getProperty("run_title").value
+        sequence_index = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Index").value[-1]
+        meta_wavelength = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Wavelength").value[-1]
+        print(f"Wavelength: {wavelength[main_index]} [{meta_wavelength}]")
+
+        iq_fd.write("# Experiment %s Run %s\n" % (experiment, run_number))
+        iq_fd.write("# Run start time: %s\n" % start_time)
+        iq_fd.write("# Title: %s\n" % run_title)
+        iq_fd.write("# Sequence ID: %s\n" % first_run)
+        iq_fd.write("# Sequence index: %s\n" % sequence_index)
+        iq_fd.write("# Selected wavelength: %s\n" % wavelength[main_index])
+        iq_fd.write(
+            "# %-8s %-10s %-10s %-10s %-10s %-10s %-10s %-5s\n"
+            % ("Q", "I(Q)", "dI(Q)", "dQ", "N(Q)", "dN(Q)", "Mon(Q)", "Lambda")
+        )
+        iq_fd_simple.write("# Experiment %s Run %s\n" % (experiment, run_number))
+        iq_fd_simple.write("# Run start time: %s\n" % start_time)
+        iq_fd_simple.write("# Title: %s\n" % run_title)
+        iq_fd_simple.write("# Sequence ID: %s\n" % first_run)
+        iq_fd_simple.write("# Sequence index: %s\n" % sequence_index)
+        iq_fd_simple.write("# Selected wavelength: %s\n" % wavelength[main_index])
+        iq_fd_simple.write("# %-8s %-10s %-10s\n" % ("Q", "I(Q)", "dI(Q)"))
+
+        for i in range(len(peaks)):
+            peak = peaks[i]
+            CropWorkspace(
+                InputWorkspace="USANS_detector",
+                OutputWorkspace="peak_detector",
+                XMin=peak[0],
+                XMax=peak[1],
+            )
+            StepScan(InputWorkspace="peak_detector", OutputWorkspace="scan_table")
+            ConvertTableToMatrixWorkspace(
+                InputWorkspace="scan_table",
+                ColumnX=scan_var,
+                ColumnY="Counts",
+                ColumnE="Error",
+                OutputWorkspace="USANS_scan_detector",
+            )
+            mtd["USANS_scan_detector"].getAxis(1).getUnit().setLabel("Counts", "Counts")
+            x_data = mtd["USANS_scan_detector"].readX(0)  # rotation angle (arcsec) of the analyzer
+            y_data = mtd["USANS_scan_detector"].readY(0)  # total counts at detector for each analyzer angle
+            e_data = mtd["USANS_scan_detector"].readE(0)
+
+            if i == 0:
+                # Kept for record_run, since file_path is reassigned below
+                main_scan_file = os.path.join(outdir, "%s_detector_%s.txt" % (file_prefix, main_wl))
+                save_ascii("USANS_scan_detector", main_scan_file, header=f"{scan_var}, COUNTS, ERROR")
+                # json_file_path = os.path.join(outdir, "%s_plot_data.json" % file_prefix)
+                # SavePlot1DAsJson(
+                #     InputWorkspace="USANS_scan_detector", JsonFilename=json_file_path, PlotName="main_output"
+                # )
+
+                figure.raw_scan = raw_scan_plot(run_number, x_data, y_data, e_data, scan_var)
+
+                for i_theta in range(len(x_data)):
+                    q = 2.0 * math.pi * math.sin(x_data[i_theta] * math.pi / 180.0 / 3600.0) / wavelength[main_index]
+                    # if q<=0:
+                    #    continue
+
+                    # Write I(q) file
+                    i_q = y_data[i_theta] / y_monitor[i_theta]
+                    di_q = math.sqrt(
+                        (e_data[i_theta] / y_monitor[i_theta]) ** 2 + y_data[i_theta] ** 2 / y_monitor[i_theta] ** 3
+                    )
+                    iq_fd_simple.write("%-10.6g %-10.6g %-10.6g\n" % (q, i_q, di_q))
+
+            else:
+                file_path = os.path.join(
+                    outdir,
+                    "%s_detector_scan_%s_peak_%s.txt" % (file_prefix, short_name, i),
+                )
+                save_ascii("USANS_scan_detector", file_path, header=f"{scan_var}, COUNTS, ERROR")
+                for i_theta in range(len(x_data)):
+                    q = 2.0 * math.pi * math.sin(x_data[i_theta] * math.pi / 180.0 / 3600.0) / wavelength[i - 1]
+                    # if q<=0:
+                    #    continue
+
+                    # Write complete I(q) file
+                    i_q = y_data[i_theta] / y_monitor[i_theta]
+                    di_q = math.sqrt(
+                        (e_data[i_theta] / y_monitor[i_theta]) ** 2 + y_data[i_theta] ** 2 / y_monitor[i_theta] ** 3
+                    )
+                    if i_q > 0:
+                        iq_fd.write(
+                            "%-10.6g %-10.6g %-10.6g %-10.6g %-10.6g %-10.6g %-10.6g %-5.4g\n"
+                            % (
+                                q,
+                                i_q,
+                                di_q,
+                                0,
+                                y_data[i_theta],
+                                e_data[i_theta],
+                                y_monitor[i_theta],
+                                wavelength[i - 1],
+                            )
+                        )
+
+            CropWorkspace(
+                InputWorkspace="USANS_trans",
+                OutputWorkspace="peak_trans",
+                XMin=peak[0],
+                XMax=peak[1],
+            )
+            StepScan(InputWorkspace="peak_trans", OutputWorkspace="scan_table")
+            ConvertTableToMatrixWorkspace(
+                InputWorkspace="scan_table",
+                ColumnX=scan_var,
+                ColumnY="Counts",
+                OutputWorkspace="USANS_scan_trans",
+            )
+
+            if i == 0:
+                file_path = os.path.join(outdir, "%s_trans_%s.txt" % (file_prefix, main_wl))
+            else:
+                file_path = os.path.join(
+                    outdir,
+                    "%s_trans_scan_%s_peak_%s.txt" % (file_prefix, short_name, i),
+                )
+            save_ascii("USANS_scan_trans", file_path, header=f"{scan_var}, COUNTS, ERROR")
+
+        iq_fd.close()
+        iq_fd_simple.close()
+
+        # Record the run in its sequence only now that all its files are written, so that a run on
+        # which step 1 fails is not recorded, and step 2 excludes it (#107). The first run is the value
+        # validated by as_run_number, so that the file names are scan_<N>.json with N an integer.
+        record_run(
+            outdir,
+            first_run,
+            run_number,
+            main_scan_file,
+            run_title,
+            sample_thickness(mtd["USANS"].getRun()),
+        )
 
 
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
@@ -956,250 +1347,16 @@ def main():
         LoadEventNexus(filename, LoadMonitors=False, OutputWorkspace="USANS")
         load_monitors = False
     run_number = mtd["USANS"].getRun().getProperty("run_number").value
-    # The panel of the raw scan, shown after step 2 with that of the reduced sequence (#107)
-    raw_scan = None
 
-    # LoadEventNexus(filename, LoadMonitors=False, OutputWorkspace="USANS")
-    # load_monitors = False
-
-    file_prefix = os.path.split(filename)[1].split(".")[0]
-
-    # if mtd['USANS'].getRun().hasProperty("BL1A:CS:Scan:USANS:Wavelength"):
-    #    main_wl = mtd['USANS'].getRun().getProperty("BL1A:CS:Scan:USANS:Wavelength").value[0]
-    # else:
-    #    main_wl = "main_peak"
-
-    # Get ROI from logs
-    wavelength = [3.6, 1.8, 1.2, 0.9, 0.72, 0.6]
-    roi_min = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Min").value[-1]
-    # roi_step = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:1:Size").value[-1]
-
-    # Reference to the item in the wavelength array
-    main_index = 1
-    for i in range(1, 8):
-        lower_bound = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:%s:Min" % i).value[-1]
-        tof_step = mtd["USANS"].getRun().getProperty("BL1A:Det:N1:Det1:TOF:ROI:%s:Size" % i).value[-1]
-        if i > 1 and lower_bound == roi_min:
-            main_index = i - 2
-        peaks.append([lower_bound * 1000.0, (lower_bound + tof_step) * 1000.0])
-    main_wl = wavelength[main_index]
-
-    # Produce ASCII data
-    Rebin(InputWorkspace="USANS", Params="0,10,17000", OutputWorkspace="USANS")
-    file_path = os.path.join(outdir, "%s_detector_trans.txt" % file_prefix)
-    save_summed_spectra("USANS", file_path, header="TOF, COUNTS, ERROR")
-
-    CropWorkspace(
-        InputWorkspace="USANS",
-        StartWorkspaceIndex=0,
-        EndWorkspaceIndex=1023,
-        OutputWorkspace="USANS_detector",
-    )
-    file_path = os.path.join(outdir, "%s_detector.txt" % file_prefix)
-    save_summed_spectra("USANS_detector", file_path, header="TOF, COUNTS, ERROR")
-
-    CropWorkspace(
-        InputWorkspace="USANS",
-        StartWorkspaceIndex=1024,
-        EndWorkspaceIndex=2047,
-        OutputWorkspace="USANS_trans",
-    )
-    file_path = os.path.join(outdir, "%s_trans.txt" % file_prefix)
-    save_summed_spectra("USANS_trans", file_path, header="TOF, COUNTS, ERROR")
-
-    if load_monitors:
-        Rebin(
-            InputWorkspace="USANS_monitors",
-            Params="0,10,17000",
-            OutputWorkspace="USANS_monitors",
-        )
-        file_path = os.path.join(outdir, "%s_monitor.txt" % file_prefix)
-        save_ascii("USANS_monitors", file_path, header="TOF, COUNTS, ERROR")
-
-    # Find whether we have a motor turning
-    short_name = ""
-    for item in mtd["USANS"].getRun().getProperties():
-        if item.name.startswith("BL1A:Mot:") and not item.name.endswith(".RBV"):
-            stats = item.getStatistics()
-            if (
-                abs(stats.mean) > 0
-                and abs(stats.standard_deviation / item.getStatistics().mean) > 0.01
-                or abs(stats.mean) == 0
-                and abs(stats.standard_deviation) > 0.0
-            ):
-                scan_var = item.name
-                short_name = item.name.replace("BL1A:Mot:", "")
-
-                y_monitor = None
-                if load_monitors:
-                    StepScan(
-                        InputWorkspace="USANS_monitors",
-                        OutputWorkspace="mon_scan_table",
-                    )
-                    ConvertTableToMatrixWorkspace(
-                        InputWorkspace="mon_scan_table",
-                        ColumnX=scan_var,
-                        ColumnY="Counts",
-                        ColumnE="Error",
-                        OutputWorkspace="USANS_scan_monitor",
-                    )
-                    file_path = os.path.join(outdir, "%s_monitor_scan_%s.txt" % (file_prefix, short_name))
-                    save_ascii("USANS_scan_monitor", file_path, header=f"{scan_var}, COUNTS, ERROR")
-                    y_monitor = mtd["USANS_scan_monitor"].readY(0)
-
-                iq_file_path_simple = os.path.join(outdir, "%s_iq_%s_%s.txt" % (file_prefix, short_name, main_wl))
-                iq_fd_simple = open(iq_file_path_simple, "w")
-
-                iq_file_path = os.path.join(outdir, "%s_iq_%s.txt" % (file_prefix, short_name))
-                iq_fd = open(iq_file_path, "w")
-
-                start_time = mtd["USANS"].getRun().getProperty("start_time").value
-                experiment = mtd["USANS"].getRun().getProperty("experiment_identifier").value
-                run_title = mtd["USANS"].getRun().getProperty("run_title").value
-                sequence_index = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Index").value[-1]
-                meta_wavelength = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Wavelength").value[-1]
-                print(f"Wavelength: {wavelength[main_index]} [{meta_wavelength}]")
-
-                iq_fd.write("# Experiment %s Run %s\n" % (experiment, run_number))
-                iq_fd.write("# Run start time: %s\n" % start_time)
-                iq_fd.write("# Title: %s\n" % run_title)
-                iq_fd.write("# Sequence ID: %s\n" % first_run)
-                iq_fd.write("# Sequence index: %s\n" % sequence_index)
-                iq_fd.write("# Selected wavelength: %s\n" % wavelength[main_index])
-                iq_fd.write(
-                    "# %-8s %-10s %-10s %-10s %-10s %-10s %-10s %-5s\n"
-                    % ("Q", "I(Q)", "dI(Q)", "dQ", "N(Q)", "dN(Q)", "Mon(Q)", "Lambda")
-                )
-                iq_fd_simple.write("# Experiment %s Run %s\n" % (experiment, run_number))
-                iq_fd_simple.write("# Run start time: %s\n" % start_time)
-                iq_fd_simple.write("# Title: %s\n" % run_title)
-                iq_fd_simple.write("# Sequence ID: %s\n" % first_run)
-                iq_fd_simple.write("# Sequence index: %s\n" % sequence_index)
-                iq_fd_simple.write("# Selected wavelength: %s\n" % wavelength[main_index])
-                iq_fd_simple.write("# %-8s %-10s %-10s\n" % ("Q", "I(Q)", "dI(Q)"))
-
-                for i in range(len(peaks)):
-                    peak = peaks[i]
-                    CropWorkspace(
-                        InputWorkspace="USANS_detector",
-                        OutputWorkspace="peak_detector",
-                        XMin=peak[0],
-                        XMax=peak[1],
-                    )
-                    StepScan(InputWorkspace="peak_detector", OutputWorkspace="scan_table")
-                    ConvertTableToMatrixWorkspace(
-                        InputWorkspace="scan_table",
-                        ColumnX=scan_var,
-                        ColumnY="Counts",
-                        ColumnE="Error",
-                        OutputWorkspace="USANS_scan_detector",
-                    )
-                    mtd["USANS_scan_detector"].getAxis(1).getUnit().setLabel("Counts", "Counts")
-                    x_data = mtd["USANS_scan_detector"].readX(0)  # rotation angle (arcsec) of the analyzer
-                    y_data = mtd["USANS_scan_detector"].readY(0)  # total counts at detector for each analyzer angle
-                    e_data = mtd["USANS_scan_detector"].readE(0)
-
-                    if i == 0:
-                        # Kept for record_run, since file_path is reassigned below
-                        main_scan_file = os.path.join(outdir, "%s_detector_%s.txt" % (file_prefix, main_wl))
-                        save_ascii("USANS_scan_detector", main_scan_file, header=f"{scan_var}, COUNTS, ERROR")
-                        # json_file_path = os.path.join(outdir, "%s_plot_data.json" % file_prefix)
-                        # SavePlot1DAsJson(
-                        #     InputWorkspace="USANS_scan_detector", JsonFilename=json_file_path, PlotName="main_output"
-                        # )
-
-                        raw_scan = raw_scan_plot(run_number, x_data, y_data, e_data, scan_var)
-
-                        for i_theta in range(len(x_data)):
-                            q = (
-                                2.0
-                                * math.pi
-                                * math.sin(x_data[i_theta] * math.pi / 180.0 / 3600.0)
-                                / wavelength[main_index]
-                            )
-                            # if q<=0:
-                            #    continue
-
-                            # Write I(q) file
-                            i_q = y_data[i_theta] / y_monitor[i_theta]
-                            di_q = math.sqrt(
-                                (e_data[i_theta] / y_monitor[i_theta]) ** 2
-                                + y_data[i_theta] ** 2 / y_monitor[i_theta] ** 3
-                            )
-                            iq_fd_simple.write("%-10.6g %-10.6g %-10.6g\n" % (q, i_q, di_q))
-
-                    else:
-                        file_path = os.path.join(
-                            outdir,
-                            "%s_detector_scan_%s_peak_%s.txt" % (file_prefix, short_name, i),
-                        )
-                        save_ascii("USANS_scan_detector", file_path, header=f"{scan_var}, COUNTS, ERROR")
-                        for i_theta in range(len(x_data)):
-                            q = 2.0 * math.pi * math.sin(x_data[i_theta] * math.pi / 180.0 / 3600.0) / wavelength[i - 1]
-                            # if q<=0:
-                            #    continue
-
-                            # Write complete I(q) file
-                            i_q = y_data[i_theta] / y_monitor[i_theta]
-                            di_q = math.sqrt(
-                                (e_data[i_theta] / y_monitor[i_theta]) ** 2
-                                + y_data[i_theta] ** 2 / y_monitor[i_theta] ** 3
-                            )
-                            if i_q > 0:
-                                iq_fd.write(
-                                    "%-10.6g %-10.6g %-10.6g %-10.6g %-10.6g %-10.6g %-10.6g %-5.4g\n"
-                                    % (
-                                        q,
-                                        i_q,
-                                        di_q,
-                                        0,
-                                        y_data[i_theta],
-                                        e_data[i_theta],
-                                        y_monitor[i_theta],
-                                        wavelength[i - 1],
-                                    )
-                                )
-
-                    CropWorkspace(
-                        InputWorkspace="USANS_trans",
-                        OutputWorkspace="peak_trans",
-                        XMin=peak[0],
-                        XMax=peak[1],
-                    )
-                    StepScan(InputWorkspace="peak_trans", OutputWorkspace="scan_table")
-                    ConvertTableToMatrixWorkspace(
-                        InputWorkspace="scan_table",
-                        ColumnX=scan_var,
-                        ColumnY="Counts",
-                        OutputWorkspace="USANS_scan_trans",
-                    )
-
-                    if i == 0:
-                        file_path = os.path.join(outdir, "%s_trans_%s.txt" % (file_prefix, main_wl))
-                    else:
-                        file_path = os.path.join(
-                            outdir,
-                            "%s_trans_scan_%s_peak_%s.txt" % (file_prefix, short_name, i),
-                        )
-                    save_ascii("USANS_scan_trans", file_path, header=f"{scan_var}, COUNTS, ERROR")
-
-                iq_fd.close()
-                iq_fd_simple.close()
-
-                # Record the run in its sequence only now that all its files are written, so that a run on
-                # which step 1 fails is not recorded, and step 2 excludes it (#107). The first run is the value
-                # validated by as_run_number, so that the file names are scan_<N>.json with N an integer.
-                record_run(
-                    outdir,
-                    first_run,
-                    run_number,
-                    main_scan_file,
-                    run_title,
-                    sample_thickness(mtd["USANS"].getRun()),
-                )
-
-    # Reduce the sequence of the run alone, and show the figure of the run
-    reduce_and_show(outdir, first_run, run_number, raw_scan, args.no_publish)
+    # A failure of step 1 or step 2 is shown in the figure of the run, then raised again (#107)
+    figure = RunFigure()
+    try:
+        preprocess_run(filename, outdir, first_run, run_number, load_monitors, figure)
+    # Step 1 can raise any error; it is shown in the figure, then raised again unchanged
+    except Exception as error:
+        show_figure(run_number, [figure.raw_scan, failure_block(PREPROCESSING_FAILED, error)], outdir, args.no_publish)
+        raise
+    reduce_and_show(outdir, first_run, run_number, figure.raw_scan, args.no_publish)
 
 
 if __name__ == "__main__":

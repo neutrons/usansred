@@ -58,7 +58,7 @@ Runs That Are Skipped
 
 Measurements for a particular sample, or for an empty-cell,
 are recorded as a sequence of runs, and the instrument control system writes in the event
-file of each run the log ``BL1A:CS:Scan:USANS:FirstRun``. Ths is the run number of the first run of the
+file of each run the log ``BL1A:CS:Scan:USANS:FirstRun``. This is the run number of the first run of the
 sequence that the run belongs to. This log is read first, without loading the events. A run whose log
 is missing, or is 0 or below, such as the runs with ``FirstRun = -1`` recorded before each sequence,
 is not part of any sequence (see :ref:`collecting run sequences <collecting-run-sequences>`).
@@ -67,7 +67,7 @@ It is skipped: nothing is written, and the script ends with exit status 0.
 Output Files for Each Run
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The Nexus file containing the events of the run are loaded,
+The NeXus file containing the events of the run is loaded,
 and 21 text files are written in the output directory, each with a
 header naming its columns. In the names, ``<run>`` is the run number,
 ``<motor>`` the short name of the motor scanned during the run, ``ARN`` for the rotation of the analyzer,
