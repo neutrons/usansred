@@ -1056,7 +1056,6 @@ def main():
                 start_time = mtd["USANS"].getRun().getProperty("start_time").value
                 experiment = mtd["USANS"].getRun().getProperty("experiment_identifier").value
                 run_title = mtd["USANS"].getRun().getProperty("run_title").value
-                sequence_first_run = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:FirstRun").value[-1]
                 sequence_index = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Index").value[-1]
                 meta_wavelength = mtd["USANS"].getRun().getProperty("BL1A:CS:Scan:USANS:Wavelength").value[-1]
                 print(f"Wavelength: {wavelength[main_index]} [{meta_wavelength}]")
@@ -1064,7 +1063,7 @@ def main():
                 iq_fd.write("# Experiment %s Run %s\n" % (experiment, run_number))
                 iq_fd.write("# Run start time: %s\n" % start_time)
                 iq_fd.write("# Title: %s\n" % run_title)
-                iq_fd.write("# Sequence ID: %s\n" % sequence_first_run)
+                iq_fd.write("# Sequence ID: %s\n" % first_run)
                 iq_fd.write("# Sequence index: %s\n" % sequence_index)
                 iq_fd.write("# Selected wavelength: %s\n" % wavelength[main_index])
                 iq_fd.write(
@@ -1074,7 +1073,7 @@ def main():
                 iq_fd_simple.write("# Experiment %s Run %s\n" % (experiment, run_number))
                 iq_fd_simple.write("# Run start time: %s\n" % start_time)
                 iq_fd_simple.write("# Title: %s\n" % run_title)
-                iq_fd_simple.write("# Sequence ID: %s\n" % sequence_first_run)
+                iq_fd_simple.write("# Sequence ID: %s\n" % first_run)
                 iq_fd_simple.write("# Sequence index: %s\n" % sequence_index)
                 iq_fd_simple.write("# Selected wavelength: %s\n" % wavelength[main_index])
                 iq_fd_simple.write("# %-8s %-10s %-10s\n" % ("Q", "I(Q)", "dI(Q)"))
@@ -1101,24 +1100,15 @@ def main():
                     e_data = mtd["USANS_scan_detector"].readE(0)
 
                     if i == 0:
-                        file_path = os.path.join(outdir, "%s_detector_%s.txt" % (file_prefix, main_wl))
-                        save_ascii("USANS_scan_detector", file_path, header=f"{scan_var}, COUNTS, ERROR")
+                        # Kept for record_run, since file_path is reassigned below
+                        main_scan_file = os.path.join(outdir, "%s_detector_%s.txt" % (file_prefix, main_wl))
+                        save_ascii("USANS_scan_detector", main_scan_file, header=f"{scan_var}, COUNTS, ERROR")
                         # json_file_path = os.path.join(outdir, "%s_plot_data.json" % file_prefix)
                         # SavePlot1DAsJson(
                         #     InputWorkspace="USANS_scan_detector", JsonFilename=json_file_path, PlotName="main_output"
                         # )
 
                         raw_scan = raw_scan_plot(run_number, x_data, y_data, e_data, scan_var)
-
-                        # Save scan info to use for stitching later
-                        record_run(
-                            outdir,
-                            sequence_first_run,
-                            run_number,
-                            file_path,
-                            run_title,
-                            sample_thickness(mtd["USANS"].getRun()),
-                        )
 
                         for i_theta in range(len(x_data)):
                             q = (
@@ -1195,6 +1185,18 @@ def main():
 
                 iq_fd.close()
                 iq_fd_simple.close()
+
+                # Record the run in its sequence only now that all its files are written, so that a run on
+                # which step 1 fails is not recorded, and step 2 excludes it (#107). The first run is the value
+                # validated by as_run_number, so that the file names are scan_<N>.json with N an integer.
+                record_run(
+                    outdir,
+                    first_run,
+                    run_number,
+                    main_scan_file,
+                    run_title,
+                    sample_thickness(mtd["USANS"].getRun()),
+                )
 
     # Reduce the sequence of the run alone, and show the figure of the run
     reduce_and_show(outdir, first_run, run_number, raw_scan, args.no_publish)
