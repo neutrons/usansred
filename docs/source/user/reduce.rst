@@ -8,7 +8,7 @@ After the experiment, the raw data should be stored in your experiment folder:
 
 .. code-block:: bash
 
-   $ cd /SNS/USANS/IPTS-XXXXXX/shared/autoreduce/
+   $ cd /SNS/USANS/IPTS-*****/shared/autoreduce/
    $ usansred
 
 The steps of the reduction, the normalizations applied to the data, and the stitching of the
@@ -275,13 +275,16 @@ Apart from this, files of measurements that are not in the setup file, and files
 names, are left untouched. Do not save edited data under these names in the output directory, since the
 next reduction deletes them.
 
+.. _summary-report:
+
 The Summary Report
 ~~~~~~~~~~~~~~~~~~
 
 The ``summary.xlsx`` report covers the first-harmonic files and, with ``save_all_harmonics``, the
 two stitched files. Each file gets its own worksheet with a chart, and its curve is also added to
-one of three summary charts: "Unscaled", "Original" (scaled data), or "BG Subtracted". The
-stitched curves are drawn with markers only, since the points of different harmonics are
+one of three summary charts: "Unscaled", "Original" (scaled data), or "BG Subtracted". A summary
+chart is included only when it holds at least one curve: without a background or an empty cell, for
+instance, there is no "BG Subtracted" chart. The stitched curves are drawn with markers only, since the points of different harmonics are
 interleaved where the harmonics overlap. In every chart, a curve is named after its file, without
 the ``.txt`` extension.
 

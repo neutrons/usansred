@@ -233,8 +233,8 @@ def test_generate_report_includes_stitched_profiles(tmp_path, monkeypatch):
 
     parts = _workbook_xml(output_dir / "summary.xlsx")
     sheet_names = re.findall(r'<sheet name="([^"]*)"', parts["xl/workbook.xml"])
+    # No unscaled file is present, so there is no "Unscaled" chart sheet
     assert sheet_names == [
-        "Unscaled",
         "Original",
         "BG Subtracted",
         "S115_pc3_det_1",
@@ -281,7 +281,7 @@ def test_generate_report_without_stitched_profiles(tmp_path, caplog, monkeypatch
         generate_report(str(config), output_dir=str(output_dir))
 
     sheet_names = re.findall(r'<sheet name="([^"]*)"', _workbook_xml(output_dir / "summary.xlsx")["xl/workbook.xml"])
-    assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "S1_det_1"]
+    assert sheet_names == ["Original", "S1_det_1"]
     assert "Sample S1_det_stitched.txt file path does not exist!" in caplog.messages
     assert "Sample S1_det_background_subtracted_stitched.txt file path does not exist!" in caplog.messages
 
@@ -297,7 +297,7 @@ def test_generate_report_with_apostrophe_at_start_of_measurement_name(tmp_path):
     generate_report(str(config), output_dir=str(output_dir))
 
     sheet_names = re.findall(r'<sheet name="([^"]*)"', _workbook_xml(output_dir / "summary.xlsx")["xl/workbook.xml"])
-    assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "_S1_det_1"]
+    assert sheet_names == ["Original", "_S1_det_1"]
 
 
 @pytest.mark.parametrize("config_name", ["setup.json", "setup.csv"])
@@ -333,7 +333,7 @@ def test_generate_report_skips_csv_rows_skipped_by_the_reduction(tmp_path):
     generate_report(str(config), output_dir=str(output_dir))
 
     sheet_names = re.findall(r'<sheet name="([^"]*)"', _workbook_xml(output_dir / "summary.xlsx")["xl/workbook.xml"])
-    assert sheet_names == ["Unscaled", "Original", "BG Subtracted", "S1_det_1"]
+    assert sheet_names == ["Original", "S1_det_1"]
 
 
 def test_generate_report_classifies_files_by_suffix(tmp_path):
@@ -364,3 +364,84 @@ def test_generate_report_classifies_files_by_suffix(tmp_path):
         f"{name}_det_1_background_subtracted",
         f"{name}_det_background_subtracted_stitched",
     ]
+
+
+def _sheet_names(path) -> list[str]:
+    """Names of the sheets of a workbook, in order."""
+    return re.findall(r'<sheet name="([^"]*)"', _workbook_xml(path)["xl/workbook.xml"])
+
+
+def _write_sample_files(tmp_path, *filenames: str):
+    """Write a setup file for sample S1, and the reduced data files given, in ``tmp_path/reduced``."""
+    config = tmp_path / "setup.json"
+    config.write_text(
+        json.dumps({"samples": [{"name": "S1", "start_scan_num": 1, "num_of_scans": 1, "thickness": 0.1}]})
+    )
+    output_dir = tmp_path / "reduced"
+    output_dir.mkdir()
+    for filename in filenames:
+        _write_profile(output_dir / filename, 10)
+    return config, output_dir
+
+
+@pytest.mark.parametrize(
+    ("include_unscaled", "expected"),
+    [
+        (True, ["Unscaled", "Original", "S1_det_1", "S1_det_1_unscaled"]),
+        (False, ["Original", "S1_det_1"]),
+    ],
+    ids=["default", "without_unscaled"],
+)
+def test_generate_report_include_unscaled(tmp_path, include_unscaled, expected):
+    config, output_dir = _write_sample_files(tmp_path, "S1_det_1_unscaled.txt", "S1_det_1.txt")
+
+    generate_report(str(config), output_dir=str(output_dir), include_unscaled=include_unscaled)
+
+    assert _sheet_names(output_dir / "summary.xlsx") == expected
+
+
+def test_generate_report_default_includes_unscaled(tmp_path):
+    config, output_dir = _write_sample_files(tmp_path, "S1_det_1_unscaled.txt", "S1_det_1.txt")
+
+    generate_report(str(config), output_dir=str(output_dir))
+
+    assert "Unscaled" in _sheet_names(output_dir / "summary.xlsx")
+
+
+def test_generate_report_creates_only_chart_sheets_with_a_curve(tmp_path):
+    """Without a background, there is no "BG Subtracted" chart sheet."""
+    config, output_dir = _write_sample_files(tmp_path, "S1_det_1_background_subtracted.txt")
+
+    generate_report(str(config), output_dir=str(output_dir))
+
+    assert _sheet_names(output_dir / "summary.xlsx") == ["BG Subtracted", "S1_det_1_background_subtracted"]
+
+
+def test_generate_report_replaces_earlier_report(tmp_path):
+    config, output_dir = _write_sample_files(tmp_path, "S1_det_1.txt")
+    (output_dir / "summary.xlsx").write_text("earlier report")
+    files_before = set(output_dir.iterdir())
+
+    generate_report(str(config), output_dir=str(output_dir))
+
+    assert set(output_dir.iterdir()) == files_before
+    assert _sheet_names(output_dir / "summary.xlsx") == ["Original", "S1_det_1"]
+
+
+def test_generate_report_keeps_earlier_report_if_writing_fails(tmp_path, monkeypatch):
+    config, output_dir = _write_sample_files(tmp_path, "S1_det_1.txt")
+    (output_dir / "summary.xlsx").write_text("earlier report")
+    files_before = set(output_dir.iterdir())
+
+    def write_part_and_fail(path: str, *_args) -> None:
+        with open(path, "w") as fd:
+            fd.write("part of a workbook")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(usansred.summary, "_write_workbook", write_part_and_fail)
+
+    with pytest.raises(OSError, match="disk full"):
+        generate_report(str(config), output_dir=str(output_dir))
+
+    assert set(output_dir.iterdir()) == files_before
+    assert (output_dir / "summary.xlsx").read_text() == "earlier report"

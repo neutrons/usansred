@@ -19,6 +19,11 @@ User Guide
 .. toctree::
    :maxdepth: 2
 
+   /source/user/monitoring_runs
+
+.. toctree::
+   :maxdepth: 2
+
    /source/user/reduce
 
 

@@ -132,8 +132,47 @@ def get_filenames_from_samples(sample_name: str) -> list[str]:
         raise ValueError(f"Sample name is empty or not valid: {sample_name}")
 
 
-def generate_report(config_file_path: str, data_dir: str | None = None, output_dir: str | None = None):
+# Chart sheets of the summary report, in the order of the workbook, with the title of their chart
+CHART_SHEETS = {
+    "Unscaled": "Unscaled Data",
+    "Original": "Original Data",
+    "BG Subtracted": "Background Subtracted",
+}
+
+
+def chart_sheet_of(filename: str) -> str:
+    """Name of the chart sheet that shows the curve of a reduced data file.
+
+    Parameters
+    ----------
+    filename : str
+        Name of the reduced data file.
+
+    Returns
+    -------
+    str
+        One of the keys of ``CHART_SHEETS``.
+    """
+    # Match the file-name suffixes, not a substring, since the measurement name itself
+    # may contain "background_subtracted"
+    if filename.endswith(("_background_subtracted.txt", "_background_subtracted_stitched.txt")):
+        return "BG Subtracted"
+    if filename.endswith("unscaled.txt"):
+        return "Unscaled"
+    return "Original"
+
+
+def generate_report(
+    config_file_path: str,
+    data_dir: str | None = None,
+    output_dir: str | None = None,
+    include_unscaled: bool = True,
+):
     """Generate report from a reduction config file.
+
+    The report, ``summary.xlsx``, has a worksheet for each reduced data file found, and a chart sheet
+    for each kind of file (see ``CHART_SHEETS``) that holds at least one curve. It is written to a
+    temporary file in ``output_dir``, then renamed, so that a reader never sees it partly written.
 
     Parameters
     ----------
@@ -143,6 +182,8 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
         Directory where the reduced data are stored. If None, use the `reduced` dir in the config file directory.
     output_dir : str | None
         Where to save the report. If None, use `data_folder/reduced`.
+    include_unscaled : bool
+        Whether the report includes the ``_unscaled`` files and the ``Unscaled`` chart sheet.
     """
     # Validate inputs
     if not os.path.exists(config_file_path):
@@ -164,46 +205,15 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
     config = read_config(config_file_path)
     names = ([config.background.name] if config.background is not None else []) + [s.name for s in config.samples]
     sample_files = [filename for name in names for filename in get_filenames_from_samples(name)]
+    if not include_unscaled:
+        sample_files = [filename for filename in sample_files if chart_sheet_of(filename) != "Unscaled"]
 
     # Make sure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    xlsx_writer = pandas.ExcelWriter(os.path.join(output_dir, "summary.xlsx"), engine="xlsxwriter")
-
-    # Create a workbook and add chartsheets for different data types
-
-    workbook = xlsx_writer.book
-    # nbFormat = workbook.add_format({"bold": False})
-
-    # Create a chart sheet for unscaled data
-    chartsheet_unscaled = workbook.add_chartsheet("Unscaled")
-    main_chart_unscaled = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
-
-    # Create a chart sheet for original data
-    chartsheet_orig = workbook.add_chartsheet("Original")
-    main_chart_orig = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
-
-    # data with background removed
-    chartsheet_subtracted = workbook.add_chartsheet("BG Subtracted")
-    main_chart_subtracted = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
-
-    main_chart_unscaled.set_x_axis({"name": "Q (1/A)", "log_base": 10})
-
-    main_chart_unscaled.set_y_axis({"name": "I (1/cm)", "log_base": 10})
-    main_chart_unscaled.set_title({"name": "Unscaled Data"})
-
-    main_chart_orig.set_x_axis({"name": "Q (1/A)", "log_base": 10})
-
-    main_chart_orig.set_y_axis({"name": "I (1/cm)", "log_base": 10})
-    main_chart_orig.set_title({"name": "Original Data"})
-
-    main_chart_subtracted.set_x_axis({"name": "Q (1/A)", "log_base": 10})
-
-    main_chart_subtracted.set_y_axis({"name": "I (1/cm)", "log_base": 10})
-    main_chart_subtracted.set_title({"name": "Background Subtracted"})
-
-    # Process each sample file and add data to the corresponding charts
-    used_sheet_names = {"unscaled", "original", "bg subtracted"}  # the chart sheets
+    # The files found, and the chart sheets that hold their curves, are known before the workbook is
+    # created, so that only the chart sheets with a curve are created, in the order of CHART_SHEETS
+    found_files = []
     for file in sample_files:
         fp = os.path.join(output_dir, file)
 
@@ -214,6 +224,57 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
         if os.stat(fp).st_size == 0:
             logger.warning(f"Sample file {file} is empty and will be skipped. ")
             continue
+
+        found_files.append(file)
+
+    report_file = os.path.join(output_dir, "summary.xlsx")
+    # The process ID keeps the temporary files of two overlapping calls apart; the extension must be
+    # that of the engine
+    temporary_file = os.path.join(output_dir, f"summary.{os.getpid()}.tmp.xlsx")
+    try:
+        _write_workbook(temporary_file, found_files, output_dir)
+        os.replace(temporary_file, report_file)
+    finally:
+        if os.path.exists(temporary_file):
+            os.remove(temporary_file)
+
+    logger.info(f"complete processing {config_file_path}")
+    return
+
+
+def _write_workbook(path: str, files: list[str], data_dir: str) -> None:
+    """Write the workbook of the summary report.
+
+    Parameters
+    ----------
+    path : str
+        Path of the workbook.
+    files : list[str]
+        Names of the reduced data files, which exist and are not empty.
+    data_dir : str
+        Directory of the reduced data files.
+    """
+    xlsx_writer = pandas.ExcelWriter(path, engine="xlsxwriter")
+    workbook = xlsx_writer.book
+
+    # Create the chart sheets that hold at least one curve
+    needed = {chart_sheet_of(file) for file in files}
+    chartsheets = {}
+    main_charts = {}
+    for name, title in CHART_SHEETS.items():
+        if name not in needed:
+            continue
+        chartsheets[name] = workbook.add_chartsheet(name)
+        main_chart = workbook.add_chart({"type": "scatter", "subtype": "smooth_with_markers"})
+        main_chart.set_x_axis({"name": "Q (1/A)", "log_base": 10})
+        main_chart.set_y_axis({"name": "I (1/cm)", "log_base": 10})
+        main_chart.set_title({"name": title})
+        main_charts[name] = main_chart
+
+    # Process each sample file and add data to the corresponding charts
+    used_sheet_names = {name.lower() for name in CHART_SHEETS}  # the chart sheets
+    for file in files:
+        fp = os.path.join(data_dir, file)
 
         logger.info(f"Reading sample file {file} to summary.xlsx")
         df = pandas.read_csv(
@@ -271,35 +332,18 @@ def generate_report(config_file_path: str, data_dir: str | None = None, output_d
         chart.add_series(series)
 
         # Add data series to the main chartsheets
-        # Match the file-name suffixes, not a substring, since the measurement name itself
-        # may contain "background_subtracted"
-        if file.endswith(("_background_subtracted.txt", "_background_subtracted_stitched.txt")):
-            main_chart_subtracted.add_series(dict(series))
-        elif file.endswith("unscaled.txt"):
-            main_chart_unscaled.add_series(dict(series))
-        else:
-            main_chart_orig.add_series(dict(series))
+        main_charts[chart_sheet_of(file)].add_series(dict(series))
 
         chart.set_x_axis({"name": [wn, 0, 0], "log_base": 10})
         chart.set_y_axis({"name": [wn, 0, 1], "log_base": 10})
         worksheet.insert_chart("F1", chart)
 
-    if main_chart_unscaled.series:
-        chartsheet_unscaled.set_chart(main_chart_unscaled)
+    for name, chartsheet in chartsheets.items():
+        chartsheet.set_chart(main_charts[name])
+    if "BG Subtracted" in chartsheets:
+        chartsheets["BG Subtracted"].activate()
 
-    if main_chart_orig.series:
-        chartsheet_orig.set_chart(main_chart_orig)
-
-    if main_chart_subtracted.series:
-        chartsheet_subtracted.set_chart(main_chart_subtracted)
-
-        chartsheet_subtracted.activate()
-
-    # workbook.close()
     xlsx_writer.close()
-
-    logger.info(f"complete processing {config_file_path}")
-    return
 
 
 if __name__ == "__main__":

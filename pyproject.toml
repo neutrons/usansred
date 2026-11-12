@@ -85,10 +85,13 @@ preview = ["pixi-build"]
 python = "=3.12"
 mantidworkbench = ">=6.16.0,<6.17.0"
 argcomplete = "*"
+h5py = "*"
 pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
 plot-publisher = { version = ">=1.4.0" }
+plotly = "*"
+requests = "*"
 
 [tool.pixi.pypi-dependencies]
 usansred = { path = ".", editable = true }
@@ -112,10 +115,13 @@ versioningit = "*"
 python = "=3.12"
 mantidworkbench = ">=6.16.0,<6.17.0"
 argcomplete = "*"
+h5py = "*"
 pandas = "*"
 pydantic = "*"
 xlsxwriter = "*"
 plot-publisher = { version = ">=1.4.0" }
+plotly = "*"
+requests = "*"
 
 [tool.pixi.package]
 name = "usansred"
